@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=69.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "betting-intel"
+version = "0.2.0"
+description = "Professional-grade betting intelligence system for basketball market inefficiency detection"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Betting Intelligence Team"}
+]
+
+dependencies = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "scikit-learn>=1.3",
+    "xgboost>=2.0",
+    "scipy>=1.11",
+    "statsmodels>=0.14",
+    "SQLAlchemy>=2.0",
+    "alembic>=1.13",
+    "joblib>=1.3",
+    "click>=8.1",
+    "python-dotenv>=1.0",
+    "pydantic>=2.5",
+    "pydantic-settings>=2.1",
+    "fastapi>=0.109",
+    "uvicorn[standard]>=0.27",
+    "loguru>=0.7",
+    "prometheus-client>=0.19",
+    "httpx>=0.26",
+    "python-multipart>=0.0.6",
+    "aiosqlite>=0.19",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.26",
+]
+
+dashboard = [
+    "streamlit>=1.28",
+    "plotly>=5.18",
+]
+
+[project.scripts]
+betting-intel = "betting_intel.cli.main:cli"
+betting-api = "betting_intel.api.app:run"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["betting_intel*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+markers = [
+    "slow: marks tests as slow (deselect with '-m not slow')",
+    "integration: marks tests as integration tests",
+]

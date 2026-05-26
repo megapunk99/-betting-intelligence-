@@ -1,0 +1,89 @@
+# ── Python ────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+*.manifest
+*.spec
+
+# ── Virtual Environments ───────────────────────────────────────────────────
+.env
+.venv/
+venv/
+env/
+myenv/
+virtualenv/
+
+# ── IDE / Editor ───────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Project Data ───────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+data/*.sqlite
+output/
+logs/*.log
+
+# ── Jupyter Notebooks ──────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── Testing / Coverage ─────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+*.coverage
+coverage/
+htmlcov/
+.cache/
+test_*.csv
+
+# ── Docker ─────────────────────────────────────────────────────────────────
+docker-compose.override.yml
+
+# ── OS ─────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# ── Secrets / Credentials ───────────────────────────────────────────────────
+*.key
+*.pem
+*.cert
+credentials.json
+service-account.json
+
+# ── Model Files (large binary artifacts) ────────────────────────────────────
+models/*.joblib
+models/*.pkl
+models/*.onnx
+
+# ── Windows Reserved Names ────────────────────────────────────────────────
+nul
+con
+prn
+aux
+com1
+com2
+lpt1
+lpt2
+
+# ── Misc ───────────────────────────────────────────────────────────────────
+.mypy_cache/
+.ruff_cache/
+*.orig
+*.bak

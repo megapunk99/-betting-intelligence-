@@ -1,0 +1,147 @@
+version: "3.9"
+
+services:
+  # ── PostgreSQL Database ────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: betting-postgres
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: betting_intel
+      POSTGRES_USER: betting
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U betting -d betting_intel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - betting-network
+
+  # ── API Server ─────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: betting-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./logs:/app/logs
+      - ./models:/app/models
+    environment:
+      DATABASE_URL: postgresql+psycopg2://betting:${POSTGRES_PASSWORD:-changeme}@postgres:5432/betting_intel
+      NBA_DB_PATH: /app/data/nba_data.db
+      DATA_DIR: /app/data
+      OUTPUT_DIR: /app/output
+      LOG_LEVEL: INFO
+      LOG_FORMAT: json
+      API_HOST: "0.0.0.0"
+      API_PORT: "8000"
+      API_WORKERS: "4"
+      API_KEY: ${API_KEY:-change-me}
+      ENABLE_PROMETHEUS: "true"
+      PROMETHEUS_PORT: "9090"
+    ports:
+      - "8000:8000"
+      - "9090:9090"
+    networks:
+      - betting-network
+
+  # ── Streamlit Dashboard ────────────────────────────────────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: betting-dashboard
+    restart: unless-stopped
+    depends_on:
+      - api
+    volumes:
+      - ./output:/app/output
+      - ./data:/app/data
+    environment:
+      LOG_LEVEL: INFO
+      API_URL: http://api:8000
+    ports:
+      - "8501:8501"
+    command: >
+      streamlit run dashboard/app.py
+      --server.port 8501
+      --server.address 0.0.0.0
+      --server.headless true
+    networks:
+      - betting-network
+
+  # ── Task Scheduler ─────────────────────────────────────────────────
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: betting-scheduler
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - api
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./logs:/app/logs
+    environment:
+      DATABASE_URL: postgresql+psycopg2://betting:${POSTGRES_PASSWORD:-changeme}@postgres:5432/betting_intel
+      NBA_DB_PATH: /app/data/nba_data.db
+      LOG_LEVEL: INFO
+      LOG_FORMAT: json
+    command: >
+      python -c "
+      from betting_intel.scheduler import run_scheduler;
+      run_scheduler(interval_minutes=60)
+      "
+    networks:
+      - betting-network
+
+  # ── Prometheus (optional) ──────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.50
+    container_name: betting-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9091:9090"
+    profiles:
+      - monitoring
+    networks:
+      - betting-network
+
+  # ── Grafana (optional) ────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4
+    container_name: betting-grafana
+    restart: unless-stopped
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    profiles:
+      - monitoring
+    networks:
+      - betting-network
+
+networks:
+  betting-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
