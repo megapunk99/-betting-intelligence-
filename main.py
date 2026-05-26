@@ -23,10 +23,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import (
     DB_PATH, OUTPUT_DIR, VERBOSE,
     ENABLE_LINEAR_MODEL, ENABLE_XGBOOST_MODEL, ENABLE_ENSEMBLE,
-    STRATEGIES, INITIAL_BANKROLL,
+    STRATEGIES, INITIAL_BANKROLL, UNIT_SIZE,
     ENABLE_HYPERPARAMETER_TUNING, ENABLE_STACKING_ENSEMBLE,
     ENABLE_MONTE_CARLO, MONTE_CARLO_SIMULATIONS,
-    PREFERRED_MODEL,
+    PREFERRED_MODEL, FAST_MODE,
 )
 from data.loader import NBADataLoader
 from data.features import FeatureEngineer
@@ -132,8 +132,16 @@ class BettingIntelligenceSystem:
         return self.results
 
     def _run_backtests(self, df: pd.DataFrame, feature_cols: list) -> dict:
-        """Run all v2.0 backtest strategies."""
+        """Run all v2.0 backtest strategies.
+
+        In FAST_MODE, runs only LightGBM + Momentum (2 models) for speed.
+        In full mode, runs all 7+ model strategies.
+        """
         results = {}
+
+        if FAST_MODE:
+            print("  [Fast Mode] Running only essential models (LightGBM + Momentum)")
+            print("     Use python main.py for the full 7-model comparison.\n")
 
         # ── Strategy 1: Total Points (LightGBM - v2.0) ───────────────
         print("  Running: Total Points (LightGBM - v2.0)...")
@@ -150,67 +158,91 @@ class BettingIntelligenceSystem:
         results["total_lgbm"] = result_lgbm
         self._print_result(result_lgbm)
 
-        # ── Strategy 2: Total Points (CatBoost - v2.0) ───────────────
-        print("  Running: Total Points (CatBoost - v2.0)...")
-        result_cb = self.backtester.run_walk_forward(
-            df=df,
-            feature_cols=feature_cols,
-            target_col="total_points",
-            model_builder=lambda: TotalPointsPredictor("catboost"),
-            strategy_name="pace_total",
-            model_name="CatBoost",
-            prediction_type="regression",
-            make_bets=True,
-        )
-        results["total_catboost"] = result_cb
-        self._print_result(result_cb)
+        if not FAST_MODE:
+            # ── Strategy 2: Total Points (CatBoost - v2.0) ─────────────
+            print("  Running: Total Points (CatBoost - v2.0)...")
+            result_cb = self.backtester.run_walk_forward(
+                df=df,
+                feature_cols=feature_cols,
+                target_col="total_points",
+                model_builder=lambda: TotalPointsPredictor("catboost"),
+                strategy_name="pace_total",
+                model_name="CatBoost",
+                prediction_type="regression",
+                make_bets=True,
+            )
+            results["total_catboost"] = result_cb
+            self._print_result(result_cb)
 
-        # ── Strategy 3: Total Points (Bayesian Ridge - v2.0) ─────────
-        print("  Running: Total Points (Bayesian Ridge - v2.0)...")
-        result_br = self.backtester.run_walk_forward(
-            df=df,
-            feature_cols=feature_cols,
-            target_col="total_points",
-            model_builder=lambda: TotalPointsPredictor("bayesian"),
-            strategy_name="pace_total",
-            model_name="BayesianRidge",
-            prediction_type="regression",
-            make_bets=True,
-        )
-        results["total_bayesian"] = result_br
-        self._print_result(result_br)
+            # ── Strategy 3: Total Points (Bayesian Ridge - v2.0) ─────────
+            print("  Running: Total Points (Bayesian Ridge - v2.0)...")
+            result_br = self.backtester.run_walk_forward(
+                df=df,
+                feature_cols=feature_cols,
+                target_col="total_points",
+                model_builder=lambda: TotalPointsPredictor("bayesian"),
+                strategy_name="pace_total",
+                model_name="BayesianRidge",
+                prediction_type="regression",
+                make_bets=True,
+            )
+            results["total_bayesian"] = result_br
+            self._print_result(result_br)
 
-        # ── Strategy 4: Total Points (Random Forest - v2.0) ──────────
-        print("  Running: Total Points (Random Forest - v2.0)...")
-        result_rf = self.backtester.run_walk_forward(
-            df=df,
-            feature_cols=feature_cols,
-            target_col="total_points",
-            model_builder=lambda: TotalPointsPredictor("random_forest"),
-            strategy_name="pace_total",
-            model_name="RandomForest",
-            prediction_type="regression",
-            make_bets=True,
-        )
-        results["total_rf"] = result_rf
-        self._print_result(result_rf)
+            # ── Strategy 4: Total Points (Random Forest - v2.0) ──────────
+            print("  Running: Total Points (Random Forest - v2.0)...")
+            result_rf = self.backtester.run_walk_forward(
+                df=df,
+                feature_cols=feature_cols,
+                target_col="total_points",
+                model_builder=lambda: TotalPointsPredictor("random_forest"),
+                strategy_name="pace_total",
+                model_name="RandomForest",
+                prediction_type="regression",
+                make_bets=True,
+            )
+            results["total_rf"] = result_rf
+            self._print_result(result_rf)
 
-        # ── Strategy 5: Spread Prediction (LightGBM - v2.0) ──────────
-        print("  Running: Spread Prediction (LightGBM - v2.0)...")
-        result_spread = self.backtester.run_walk_forward(
-            df=df,
-            feature_cols=feature_cols,
-            target_col="point_diff",
-            model_builder=lambda: SpreadPredictor("lightgbm"),
-            strategy_name="spread_model",
-            model_name="LightGBM",
-            prediction_type="regression",
-            make_bets=True,
-        )
-        results["spread"] = result_spread
-        self._print_result(result_spread)
+            # ── Strategy 5: Spread Prediction (LightGBM - v2.0) ──────────
+            print("  Running: Spread Prediction (LightGBM - v2.0)...")
+            result_spread = self.backtester.run_walk_forward(
+                df=df,
+                feature_cols=feature_cols,
+                target_col="point_diff",
+                model_builder=lambda: SpreadPredictor("lightgbm"),
+                strategy_name="spread_model",
+                model_name="LightGBM",
+                prediction_type="regression",
+                make_bets=True,
+            )
+            results["spread"] = result_spread
+            self._print_result(result_spread)
 
-        # ── Strategy 6: Momentum Reversion (LightGBM + Calibration - v2.0) ──
+            # ── Strategy 7: Stacking Ensemble (v2.0) ─────────────────────
+            if ENABLE_STACKING_ENSEMBLE:
+                print("  Running: Stacking Ensemble (v2.0)...")
+                results["ensemble"] = self._build_ensemble(results)
+
+            # ── Strategy 8: Elo-Based Prediction (v2.0) ──────────────────
+            if "elo_home_pre" in df.columns:
+                elo_features = [c for c in feature_cols if "elo" in c]
+                if len(elo_features) >= 3:
+                    print("  Running: Elo-Based Prediction (v2.0)...")
+                    result_elo = self.backtester.run_walk_forward(
+                        df=df,
+                        feature_cols=elo_features,
+                        target_col="total_points",
+                        model_builder=lambda: TotalPointsPredictor("ridge"),
+                        strategy_name="pace_total",
+                        model_name="EloOnly",
+                        prediction_type="regression",
+                        make_bets=True,
+                    )
+                    results["elo_based"] = result_elo
+                    self._print_result(result_elo)
+
+        # ── Strategy 6: Momentum Reversion (ran in both modes) ────────
         print("  Running: Momentum Reversion (Calibrated LGBM - v2.0)...")
 
         # Select momentum features
@@ -238,29 +270,6 @@ class BettingIntelligenceSystem:
         )
         results["momentum"] = result_momentum
         self._print_result(result_momentum)
-
-        # ── Strategy 7: Stacking Ensemble (v2.0) ─────────────────────
-        if ENABLE_STACKING_ENSEMBLE:
-            print("  Running: Stacking Ensemble (v2.0)...")
-            results["ensemble"] = self._build_ensemble(results)
-
-        # ── Strategy 8: Elo-Based Prediction (v2.0) ──────────────────
-        if "elo_home_pre" in df.columns:
-            elo_features = [c for c in feature_cols if "elo" in c]
-            if len(elo_features) >= 3:
-                print("  Running: Elo-Based Prediction (v2.0)...")
-                result_elo = self.backtester.run_walk_forward(
-                    df=df,
-                    feature_cols=elo_features,
-                    target_col="total_points",
-                    model_builder=lambda: TotalPointsPredictor("ridge"),
-                    strategy_name="pace_total",
-                    model_name="EloOnly",
-                    prediction_type="regression",
-                    make_bets=True,
-                )
-                results["elo_based"] = result_elo
-                self._print_result(result_elo)
 
         return results
 
@@ -558,27 +567,56 @@ class BettingIntelligenceSystem:
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="Betting Intelligence v2.0 Pipeline")
+    parser = argparse.ArgumentParser(
+        description="Betting Intelligence v2.0 Pipeline",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python main.py                           # Fast mode: LightGBM + Momentum only (default)
+  python main.py --full                    # Full pipeline: all 7+ models
+  python main.py --tune                    # Enable hyperparameter tuning (Optuna)
+  python main.py --live                    # Live predictions for upcoming games
+  python main.py --live --demo             # Live predictions in demo mode (no API key)
+        """
+    )
     parser.add_argument("--live", action="store_true",
                         help="Run live prediction mode: fetch upcoming games from TheOddsAPI")
     parser.add_argument("--demo", action="store_true",
                         help="Run with demo data (no API key needed)")
+    parser.add_argument("--full", action="store_true",
+                        help="Run full pipeline with all models (default is fast mode)")
+    parser.add_argument("--tune", action="store_true",
+                        help="Enable Optuna hyperparameter tuning (off by default for speed)")
     parser.add_argument("--no-tune", action="store_true",
-                        help="Skip hyperparameter tuning")
+                        help="Explicitly skip hyperparameter tuning")
     args = parser.parse_args()
+
+    # Override config based on CLI args
+    if args.full:
+        import config
+        config.FAST_MODE = False
+
+    tuning = not args.no_tune if args.no_tune else args.tune
+    if tuning:
+        import config
+        config.ENABLE_HYPERPARAMETER_TUNING = True
 
     if args.live:
         # Run the live prediction engine instead
         print("Starting LIVE prediction engine with TheOddsAPI...\n")
         from predict_tomorrow import AdvancedPredictionEngine
         engine = AdvancedPredictionEngine(
-            tune_hyperparams=not args.no_tune,
+            tune_hyperparams=tuning,
             live_mode=True,
             demo_mode=args.demo,
         )
         results = engine.run()
     else:
-        # Run the full backtesting pipeline
+        # Run the backtesting pipeline
+        mode_label = "FAST" if FAST_MODE else "FULL"
+        print(f"Running {mode_label} pipeline...")
+        print("  Use --full for all models, --tune for hyperparameter tuning\n")
+
         system = BettingIntelligenceSystem()
         results = system.run_full_pipeline()
 

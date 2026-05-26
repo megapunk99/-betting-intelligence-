@@ -215,11 +215,15 @@ class WalkForwardEngine:
                 actual_total = row.get("total_points", actual)
                 predicted_total = prediction
 
-                # Simplified market line: use rolling average as proxy
-                market_line = row.get("predicted_total_base", predicted_total)
+                # Market line baseline: use trailing average as proxy for sportsbook's line
+                # This is deliberately NOT a feature the model sees during training.
+                market_line = row.get(
+                    "market_line_baseline",
+                    row.get("trailing_avg_total_10g", predicted_total)
+                )
 
                 # Edge = our prediction vs market
-                edge_pct = (predicted_total - market_line) / market_line
+                edge_pct = (predicted_total - market_line) / market_line if market_line > 0 else 0.0
 
                 if abs(edge_pct) < MIN_EDGE_THRESHOLD:
                     return None

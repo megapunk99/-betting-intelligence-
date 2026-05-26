@@ -215,7 +215,7 @@ class OddsAPIClient:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         if not self.api_key or self.api_key == "" or self.api_key == "your-api-key-here":
-            print("  ⚠️  No OddsAPI key set. Set ODDS_API_KEY in config.py or env.")
+            print("  [!] No OddsAPI key set. Set ODDS_API_KEY in config.py or env.")
             print(f"     Get a free key at: https://the-odds-api.com/\n")
             self._configured = False
         else:

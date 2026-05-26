@@ -130,31 +130,31 @@ class FeatureEngineer:
                 .transform(lambda x: x.rolling(10, min_periods=1).std().shift(1))
             )
 
-        # ── Head-to-Head Base Features ────────────────────────────────
-        df["predicted_pace"] = (
-            df.get("avg_pace_5g_home", 100).fillna(100)
-            + df.get("avg_pace_5g_away", 100).fillna(100)
-        ) / 2
+        # ── Market Line Baseline (for backtesting — NOT used as a feature) ─
+        # This is a simple trailing average used as a proxy for the sportsbook's line.
+        # It is deliberately excluded from select_features() to prevent data leakage.
+        df["market_line_baseline"] = (
+            df.get("avg_pts_5g_home", 110).fillna(110) +
+            df.get("avg_pts_5g_away", 108).fillna(108)
+        ) / 1.0  # Simple average of home and away scoring
 
-        df["offensive_strength"] = (
-            df.get("avg_pts_5g_home", 100).fillna(100)
-            + df.get("avg_pts_5g_away", 100).fillna(100)
+        # Also compute a pace-adjusted baseline for comparison
+        df["market_line_pace_adj"] = (
+            df.get("avg_pace_5g_home", 100).fillna(100) +
+            df.get("avg_pace_5g_away", 100).fillna(100)
+        ) / 2.0 * 2.1  # Approximate points per possession * pace
+
+        # Pre-compute a simple trailing average of total points for the last 3 games each team played
+        # This serves as a simple baseline that's independent of the model features
+        df["trailing_avg_total_10g"] = (
+            df.groupby("TEAM_ID_home")["team_pts_home"]
+            .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
+            .fillna(105)
+            +
+            df.groupby("TEAM_ID_away")["team_pts_away"]
+            .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
+            .fillna(105)
         )
-
-        df["defensive_strength"] = (
-            df.get("avg_pts_allowed_home", 100).fillna(100)
-            + df.get("avg_pts_allowed_away", 100).fillna(100)
-        )
-
-        df["predicted_total_base"] = (
-            df["offensive_strength"] + df["defensive_strength"]
-        ) / 2
-
-        # Home court advantage (placeholder - can refine)
-        df["home_advantage"] = 1.0
-
-        # Rest interaction
-        df["rest_interaction"] = df["rest_advantage"] * df["home_advantage"]
 
         # ── Clean Up ──────────────────────────────────────────────────
         df = df.drop(columns=["rest_home_key", "rest_away_key"], errors="ignore")
@@ -178,7 +178,12 @@ class FeatureEngineer:
         return result.fillna(0)
 
     def select_features(self, df: pd.DataFrame) -> List[str]:
-        """Auto-detect feature columns from a dataframe."""
+        """Auto-detect feature columns from a dataframe.
+
+        IMPORTANT: Excludes market-line proxy columns and other post-computed
+        fields to prevent data leakage (the model should not see the benchmark
+        it's being evaluated against).
+        """
         exclude = {
             "GAME_ID", "SEASON_ID", "TEAM_ID_home", "TEAM_ID_away",
             "TEAM_ABBREVIATION_home", "TEAM_ABBREVIATION_away",
@@ -190,5 +195,9 @@ class FeatureEngineer:
             "rest_home_key", "rest_away_key",
             # Post-game stats not available pre-game:
             "MIN_home", "MIN_away",
+            # Market-line proxy columns — NOT features (prevent leakage):
+            "market_line_baseline",
+            "market_line_pace_adj",
+            "trailing_avg_total_10g",
         }
         return [c for c in df.columns if c not in exclude and df[c].dtype in ("float64", "int64")]

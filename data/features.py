@@ -634,7 +634,13 @@ class FeatureEngineer:
         return R * c
 
     def select_features(self, df: pd.DataFrame) -> List[str]:
-        """Auto-detect feature columns from a dataframe."""
+        """
+        Auto-detect feature columns from a dataframe.
+
+        IMPORTANT: Excludes market-line proxy columns and other post-computed
+        fields to prevent data leakage (the model should not see the benchmark
+        it's being evaluated against).
+        """
         exclude = {
             "GAME_ID", "SEASON_ID", "TEAM_ID_home", "TEAM_ID_away",
             "TEAM_ABBREVIATION_home", "TEAM_ABBREVIATION_away",
@@ -645,5 +651,16 @@ class FeatureEngineer:
             "total_points", "point_diff", "home_team_name", "away_team_name",
             "home_team", "away_team",
             "MIN_home", "MIN_away",
+            # Market-line proxy columns — NOT features (prevent leakage):
+            "predicted_total_base",
+            "predicted_total_advanced",
+            "predicted_pace",
+            "offensive_strength",
+            "defensive_strength",
+            "home_advantage",
+            "rest_interaction",
+            "market_line_baseline",
+            "market_line_pace_adj",
+            "trailing_avg_total_10g",
         }
         return [c for c in df.columns if c not in exclude and df[c].dtype in ("float64", "int64")]

@@ -61,13 +61,13 @@ class TotalPointsPredictor(BasePredictor):
             self.model = LinearRegression()
         elif model_type == "xgboost" and XGBOOST_AVAILABLE:
             self.model = XGBRegressor(
-                n_estimators=200, max_depth=4, learning_rate=0.1,
+                n_estimators=100, max_depth=4, learning_rate=0.1,
                 subsample=0.8, colsample_bytree=0.8,
-                random_state=42, n_jobs=-1
+                random_state=42, n_jobs=-1, early_stopping_rounds=20
             )
         elif model_type == "xgboost":
             self.model = GradientBoostingRegressor(
-                n_estimators=200, max_depth=3, learning_rate=0.1,
+                n_estimators=100, max_depth=3, learning_rate=0.1,
                 subsample=0.8, random_state=42
             )
         else:

@@ -19,7 +19,7 @@ TEST_START_DATE = "2023-11-01"
 TEST_END_DATE = "2024-04-14"
 
 # ── Feature Engineering (v2.0) ─────────────────────────────────────────────
-ROLLING_WINDOWS = [3, 5, 10, 20]  # Game windows for rolling averages
+ROLLING_WINDOWS = [3, 5, 10]     # Game windows for rolling averages (20 removed for speed)
 MAX_REST_DAYS = 7                 # Cap for rest days feature
 BACK_TO_BACK_PENALTY = True       # Include B2B flag
 ENABLE_ELO_RATINGS = True         # Compute Elo ratings (v2.0)
@@ -35,14 +35,19 @@ MIN_TRAIN_SAMPLES = 50           # Minimum training samples required
 
 # Model selection (v2.0)
 PREFERRED_MODEL = "lightgbm"     # Options: lightgbm, catboost, xgboost, ridge, ensemble
-ENABLE_HYPERPARAMETER_TUNING = True  # Use Optuna for tuning
-ENABLE_STACKING_ENSEMBLE = True      # Use stacking ensemble meta-model
+
+# These are disabled by default for performance. Enable with --tune or config changes.
+ENABLE_HYPERPARAMETER_TUNING = False  # Use Optuna for tuning (off by default for speed)
+ENABLE_STACKING_ENSEMBLE = False      # Use stacking ensemble meta-model (off by default)
 ENABLE_PROBABILITY_CALIBRATION = True # Calibrate classification probabilities
 ENABLE_BAYESIAN_UNCERTAINTY = True   # Use Bayesian models for uncertainty
 
+# Fast mode: when True, runs only LightGBM + Momentum (1-2 models instead of 7)
+FAST_MODE = True                     # Runs only essential models for quick results
+
 # ── Monte Carlo Simulation (v2.0) ──────────────────────────────────────────
 ENABLE_MONTE_CARLO = True            # Run Monte Carlo simulation
-MONTE_CARLO_SIMULATIONS = 5000       # Number of simulated seasons
+MONTE_CARLO_SIMULATIONS = 1000       # Number of simulated seasons (reduced from 5000 for speed)
 MONTE_CARLO_BETS_PER_SEASON = 500    # Bets per simulated season
 
 # ── Betting Simulation ─────────────────────────────────────────────────────

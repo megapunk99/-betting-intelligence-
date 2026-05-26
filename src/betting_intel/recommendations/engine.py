@@ -642,9 +642,10 @@ class RecommendationEngine:
                 c for c in feature_df.columns if any(
                     kw in c for kw in ["streak", "momentum", "win_pct", "margin_volatility",
                                        "rest_advantage", "rest_", "avg_pm_", "avg_pts_",
-                                       "pace_", "predicted_pace", "offensive_strength",
-                                       "defensive_strength", "predicted_total_base",
-                                       "home_advantage", "rest_interaction"]
+                                       "pace_", "avg_pace_", "avg_ts_", "avg_efg_",
+                                       "elo_", "weighted_", "last_3_margin", "last_5_margin",
+                                       "fatigue", "travel", "tz_", "net_rating",
+                                       "form_", "win_prob", "home_advantage"]
                 )
             ]
 

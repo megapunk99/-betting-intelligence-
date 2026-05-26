@@ -32,7 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import (
     DB_PATH, INITIAL_BANKROLL, MIN_EDGE_THRESHOLD, UNIT_SIZE,
     ODDS_API_KEY, ODDS_CACHE_TTL_MINUTES, ODDS_DEFAULT_MARKETS,
-    ODDS_DEFAULT_REGIONS,
+    ODDS_DEFAULT_REGIONS, FAST_MODE,
 )
 from data.loader import NBADataLoader
 from data.features import FeatureEngineer
@@ -76,7 +76,7 @@ class AdvancedPredictionEngine:
         if live_mode and not demo_mode:
             key_valid = ODDS_API_KEY and ODDS_API_KEY != "your-api-key-here" and len(ODDS_API_KEY) > 10
             if not key_valid:
-                print("  ℹ️  No valid ODDS_API_KEY found. Running in demo mode.")
+                print("  [Info] No valid ODDS_API_KEY found. Running in demo mode.")
                 print("     Set ODDS_API_KEY in config.py or as env variable for real data.")
                 print("     Get a free key at: https://the-odds-api.com/\n")
                 self.demo_mode = True
@@ -165,11 +165,19 @@ class AdvancedPredictionEngine:
         return self.results
 
     def _train_models(self, df: pd.DataFrame, feature_cols: List[str]) -> Dict:
-        """Train all models using walk-forward validation."""
+        """Train models using walk-forward validation.
+
+        When FAST_MODE is True, only trains LightGBM + Momentum
+        for quick results. Otherwise trains the full ensemble.
+        """
         model_results = {}
 
         # ── Total Points Prediction (REGRESSION) ──
-        print("  Training Total Points models...")
+        if FAST_MODE:
+            print("  Training total points model (FAST_MODE: LightGBM only)...")
+        else:
+            print("  Training Total Points models (full ensemble)...")
+
         X = df[feature_cols].values
         y_total = df["total_points"].values
         split = int(len(X) * 0.7)
@@ -187,34 +195,35 @@ class AdvancedPredictionEngine:
         model_results["total_lgbm"] = {"model": lgbm_model, "metrics": lgbm_metrics}
         print(f"    LightGBM: MAE={lgbm_metrics['mae']:.1f}, R²={lgbm_metrics['r2']:.3f}")
 
-        # CatBoost
-        cb_model = TotalPointsPredictor("catboost")
-        cb_model.fit(X_train, y_train)
-        cb_metrics = cb_model.evaluate(X_test, y_test)
-        model_results["total_catboost"] = {"model": cb_model, "metrics": cb_metrics}
-        print(f"    CatBoost: MAE={cb_metrics['mae']:.1f}, R²={cb_metrics['r2']:.3f}")
+        if not FAST_MODE:
+            # CatBoost
+            cb_model = TotalPointsPredictor("catboost")
+            cb_model.fit(X_train, y_train)
+            cb_metrics = cb_model.evaluate(X_test, y_test)
+            model_results["total_catboost"] = {"model": cb_model, "metrics": cb_metrics}
+            print(f"    CatBoost: MAE={cb_metrics['mae']:.1f}, R²={cb_metrics['r2']:.3f}")
 
-        # Bayesian Ridge (uncertainty)
-        br_model = TotalPointsPredictor("bayesian")
-        br_model.fit(X_train, y_train)
-        br_metrics = br_model.evaluate(X_test, y_test)
-        model_results["total_bayesian"] = {"model": br_model, "metrics": br_metrics}
-        print(f"    BayesianRidge: MAE={br_metrics['mae']:.1f}, R²={br_metrics['r2']:.3f}")
+            # Bayesian Ridge (uncertainty)
+            br_model = TotalPointsPredictor("bayesian")
+            br_model.fit(X_train, y_train)
+            br_metrics = br_model.evaluate(X_test, y_test)
+            model_results["total_bayesian"] = {"model": br_model, "metrics": br_metrics}
+            print(f"    BayesianRidge: MAE={br_metrics['mae']:.1f}, R²={br_metrics['r2']:.3f}")
 
-        # Stacking Ensemble
-        ensemble = StackingEnsemblePredictor("regression")
-        ensemble.add_base_model(lgbm_model)
-        ensemble.add_base_model(cb_model)
-        ensemble.add_base_model(br_model)
-        try:
-            ensemble.fit(X_train, y_train)
-            ensemble_preds = ensemble.predict(X_test)
-            ensemble_mae = np.mean(np.abs(ensemble_preds - y_test))
-            ensemble_r2 = 1 - np.sum((ensemble_preds - y_test)**2) / np.sum((y_test - y_test.mean())**2)
-            model_results["total_ensemble"] = {"model": ensemble, "metrics": {"mae": ensemble_mae, "r2": ensemble_r2}}
-            print(f"    StackingEnsemble: MAE={ensemble_mae:.1f}, R²={ensemble_r2:.3f}")
-        except Exception as e:
-            print(f"    [!] Ensemble failed: {e}")
+            # Stacking Ensemble
+            ensemble = StackingEnsemblePredictor("regression")
+            ensemble.add_base_model(lgbm_model)
+            ensemble.add_base_model(cb_model)
+            ensemble.add_base_model(br_model)
+            try:
+                ensemble.fit(X_train, y_train)
+                ensemble_preds = ensemble.predict(X_test)
+                ensemble_mae = np.mean(np.abs(ensemble_preds - y_test))
+                ensemble_r2 = 1 - np.sum((ensemble_preds - y_test)**2) / np.sum((y_test - y_test.mean())**2)
+                model_results["total_ensemble"] = {"model": ensemble, "metrics": {"mae": ensemble_mae, "r2": ensemble_r2}}
+                print(f"    StackingEnsemble: MAE={ensemble_mae:.1f}, R²={ensemble_r2:.3f}")
+            except Exception as e:
+                print(f"    [!] Ensemble failed: {e}")
 
         # ── Momentum/Classification Model ──
         print("  Training Momentum (classification) model...")
@@ -276,13 +285,16 @@ class AdvancedPredictionEngine:
                 else:
                     pred_std = total_models[best_model_key]["metrics"]["mae"]
 
-                # Market line approximation (use predicted total base)
-                market_line = row.get("predicted_total_advanced",
-                                     row.get("predicted_total_base",
-                                            row.get("avg_pts_5g_home", 110) + row.get("avg_pts_5g_away", 105)))
+                # Market line baseline: use trailing average as proxy for sportsbook's line
+                # This is deliberately NOT a feature the model sees during training.
+                market_line = row.get(
+                    "market_line_baseline",
+                    row.get("trailing_avg_total_10g",
+                            row.get("avg_pts_5g_home", 110) + row.get("avg_pts_5g_away", 105))
+                )
                 market_line = float(market_line) if not np.isnan(market_line) else 220.0
 
-                edge_pct = (total_pred - market_line) / max(market_line, 1)
+                edge_pct = (total_pred - market_line) / max(market_line, 1) if market_line > 0 else 0.0
 
                 # Momentum probability
                 home_win_prob = 0.5
@@ -328,12 +340,12 @@ class AdvancedPredictionEngine:
         predictions = []
 
         # ── 1. Fetch upcoming games from TheOddsAPI ─────────────────────
-        print("\n  ┌─ Fetching live odds from TheOddsAPI ──────────────┐")
+        print("\n  [Fetching live odds from TheOddsAPI...]")
         odds_games = self.odds_client.get_upcoming_games_with_odds(
             use_cache=not self.demo_mode  # Don't cache demo games
         )
-        print(f"  │ Found {len(odds_games)} upcoming NBA games")
-        print("  └──────────────────────────────────────────────────┘")
+        print(f"  Found {len(odds_games)} upcoming NBA games")
+
 
         if not odds_games:
             print("  [!] No upcoming games found. Check API key or try --demo mode.")
@@ -367,7 +379,7 @@ class AdvancedPredictionEngine:
                 )
 
                 if feature_row is None:
-                    print(f"  [{i}/{len(odds_games)}] {game.matchup:45s} ⏭️  Insufficient historical data")
+                    print(f"  [{i}/{len(odds_games)}] {game.matchup:45s}  [Skip] Insufficient historical data")
                     continue
 
                 # Create feature array for prediction
@@ -431,10 +443,10 @@ class AdvancedPredictionEngine:
                 })
 
                 edge_str = f"{edge_pct:+.1%} edge" if abs(edge_pct) > 0.01 else "no edge"
-                print(f"  [{i}/{len(odds_games)}] {game.matchup:45s} 🎯 {total_pred:.0f} vs {market_total:.0f} ({edge_str})")
+                print(f"  [{i}/{len(odds_games)}] {game.matchup:45s}  > {total_pred:.0f} vs {market_total:.0f} ({edge_str})")
 
             except Exception as e:
-                print(f"  [{i}/{len(odds_games)}] {game.matchup:45s} ❌ Error: {e}")
+                print(f"  [{i}/{len(odds_games)}] {game.matchup:45s}  [Error] {e}")
                 continue
 
         print(f"\n  Generated predictions for {len(predictions)}/{len(odds_games)} games")
@@ -583,7 +595,7 @@ class AdvancedPredictionEngine:
         if not factors:
             factors.append("Statistical model identifies marginal edge")
 
-        return " • ".join(factors) if factors else "No significant factors identified"
+        return "; ".join(factors) if factors else "No significant factors identified"
 
     def _display_results(self, predictions: List[Dict],
                           recommendations: List[Dict],

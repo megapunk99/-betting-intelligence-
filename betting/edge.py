@@ -271,7 +271,7 @@ class EdgeDetector:
         ]
 
         for i, signal in enumerate(self.signals, 1):
-            action = "✅ ACTIONABLE" if signal.is_actionable else "⚠️  MONITOR"
+            action = "[ACTIONABLE]" if signal.is_actionable else "[MONITOR]"
             lines.extend([
                 f"\n{i}. {signal.description}",
                 f"   Type:     {signal.edge_type} | {action}",

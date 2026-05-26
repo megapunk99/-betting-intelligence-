@@ -147,19 +147,28 @@ class EdgeDetector:
         Hypothesis: Pace changes (roster changes, coaching) are
         not immediately priced into totals.
         """
-        if "predicted_pace" not in df.columns or "total_points" not in df.columns:
+        # Try both old and new pace column names
+        pace_col = "predicted_pace" if "predicted_pace" in df.columns else (
+            "market_line_pace_adj" if "market_line_pace_adj" in df.columns else None
+        )
+        baseline_col = "market_line_baseline" if "market_line_baseline" in df.columns else (
+            "predicted_total_base" if "predicted_total_base" in df.columns else None
+        )
+
+        if pace_col is None or "total_points" not in df.columns:
             return None
 
         # High pace games
-        high_pace = df[df["predicted_pace"] > df["predicted_pace"].quantile(0.75)].copy()
-        low_pace = df[df["predicted_pace"] < df["predicted_pace"].quantile(0.25)].copy()
+        high_pace = df[df[pace_col] > df[pace_col].quantile(0.75)].copy()
+        low_pace = df[df[pace_col] < df[pace_col].quantile(0.25)].copy()
 
         if len(high_pace) < 20 or len(low_pace) < 20:
             return None
 
         # If actual totals exceed predictions more in high-pace games
-        high_pace["total_pred"] = high_pace.get("predicted_total_base", high_pace["total_points"].mean())
-        low_pace["total_pred"] = low_pace.get("predicted_total_base", low_pace["total_points"].mean())
+        market_line = baseline_col or "total_points"
+        high_pace["total_pred"] = high_pace.get(market_line, high_pace["total_points"].mean())
+        low_pace["total_pred"] = low_pace.get(market_line, low_pace["total_points"].mean())
 
         high_residual = (high_pace["total_points"] - high_pace["total_pred"]).mean()
         low_residual = (low_pace["total_points"] - low_pace["total_pred"]).mean()
@@ -271,7 +280,7 @@ class EdgeDetector:
         ]
 
         for i, signal in enumerate(self.signals, 1):
-            action = "✅ ACTIONABLE" if signal.is_actionable else "⚠️  MONITOR"
+            action = "[ACTIONABLE]" if signal.is_actionable else "[MONITOR]"
             lines.extend([
                 f"\n{i}. {signal.description}",
                 f"   Type:     {signal.edge_type} | {action}",
