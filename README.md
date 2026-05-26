@@ -4,7 +4,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![CI](https://github.com/YOUR_USERNAME/betting-intelligence/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/betting-intelligence/actions)
+[![CI](https://github.com/megapunk99/betting-intelligence/actions/workflows/ci.yml/badge.svg)](https://github.com/megapunk99/betting-intelligence/actions)
 
 ---
 
@@ -47,7 +47,7 @@ Smaller leagues have **less efficient markets** — algorithms trained on top-ti
 
 ```bash
 # Clone the repo
-git clone https://github.com/YOUR_USERNAME/betting-intelligence.git
+git clone https://github.com/megapunk99/betting-intelligence.git
 cd betting-intelligence
 
 # Install with all dependencies
