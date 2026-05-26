@@ -1,0 +1,57 @@
+{% if bets %}
+<div class="glass-card rounded-xl overflow-hidden" id="bets-table-inner">
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b border-white/5 text-gray-500 text-xs uppercase tracking-wider">
+                    <th class="text-left py-3 px-4 font-medium">#</th>
+                    <th class="text-left py-3 px-4 font-medium">Action</th>
+                    <th class="text-left py-3 px-4 font-medium">Matchup</th>
+                    <th class="text-left py-3 px-4 font-medium">Type</th>
+                    <th class="text-right py-3 px-4 font-medium">Edge</th>
+                    <th class="text-right py-3 px-4 font-medium">Stake</th>
+                    <th class="text-left py-3 px-4 font-medium">Confidence</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for bet in bets %}
+                <tr class="border-b border-white/5 hover:bg-white/[0.02] transition-colors {% if bet.is_clear_pick %}bg-accent-500/[0.03]{% endif %}">
+                    <td class="py-3 px-4 text-gray-500">{{ loop.index }}</td>
+                    <td class="py-3 px-4">
+                        <div class="flex items-center gap-2">
+                            {% if bet.is_clear_pick %}<span class="clear-badge text-[0.6rem]">★</span>{% endif %}
+                            <span class="font-semibold text-white">${{ bet.stake_dollars|int }}</span>
+                            <span class="text-gray-400">on</span>
+                            <span class="text-gray-200">{{ bet.bet_side[:40] }}{% if bet.bet_side|length > 40 %}...{% endif %}</span>
+                        </div>
+                    </td>
+                    <td class="py-3 px-4 text-gray-400 text-xs">{{ bet.matchup }}</td>
+                    <td class="py-3 px-4">
+                        <span class="text-xs px-2 py-0.5 rounded bg-dark-600 text-gray-400">{{ bet.bet_type_icon }} {{ bet.bet_type_display }}</span>
+                    </td>
+                    <td class="py-3 px-4 text-right">
+                        <span class="font-semibold {% if bet.edge_pct > 0 %}edge-positive{% else %}edge-negative{% endif %}">
+                            {% if bet.edge_pct > 0 %}+{% endif %}{{ bet.edge_pct }}%
+                        </span>
+                    </td>
+                    <td class="py-3 px-4 text-right font-semibold text-blue-400">${{ bet.stake_dollars|int }}</td>
+                    <td class="py-3 px-4">
+                        <span class="text-xs {% if bet.confidence == 'VERY HIGH' %}text-accent-400{% elif bet.confidence == 'HIGH' %}text-blue-400{% elif bet.confidence == 'MEDIUM' %}text-yellow-400{% else %}text-gray-500{% endif %}">
+                            {{ bet.confidence }}
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="p-4 border-t border-white/5 text-center text-xs text-gray-600">
+        {{ bets|length }} bets shown
+    </div>
+</div>
+{% else %}
+<div class="glass-card rounded-xl p-8 text-center">
+    <div class="text-4xl mb-3"></div>
+    <p class="text-gray-500">No bets match your filters.</p>
+</div>
+{% endif %}

@@ -205,6 +205,51 @@ def dashboard(port: int):
     )
 
 
+# ── Web App (FastAPI) Commands ─────────────────────────────────────────────
+@cli.group()
+def web():
+    """Web app (FastAPI) commands."""
+    pass
+
+
+@web.command("start")
+@click.option("--host", default="0.0.0.0", help="Host to bind to")
+@click.option("--port", default=8000, type=int, help="Port to listen on")
+@click.option("--reload", is_flag=True, help="Auto-reload on code changes")
+def web_start(host: str, port: int, reload: bool):
+    """
+    Start the FastAPI web GUI for betting recommendations.
+
+    Features:
+    - Dashboard with top clear picks and stats
+    - Clear Picks page with filters
+    - Today's Card grouped by game
+    - All Bets with sortable table
+    - Player Props generator
+    - JSON API endpoints
+    """
+    import sys as _sys
+    import subprocess
+
+    web_dir = Path(__file__).resolve().parent.parent.parent.parent / "web"
+    click.echo(f" Starting FastAPI Web App at http://localhost:{port}")
+    click.echo(f" Dashboard:  http://localhost:{port}/")
+    click.echo(f" Clear Picks: http://localhost:{port}/clear-picks")
+    click.echo(f" API:         http://localhost:{port}/api/bets")
+    click.echo()
+
+    subprocess.run(
+        [
+            _sys.executable, "-m", "uvicorn", "web.app:app",
+            "--host", host,
+            "--port", str(port),
+            "--reload" if reload else "--no-reload",
+            "--log-level", "info",
+        ],
+        cwd=settings.project_root,
+    )
+
+
 # ── Small League Commands ──────────────────────────────────────────────
 @cli.group()
 def small_leagues():

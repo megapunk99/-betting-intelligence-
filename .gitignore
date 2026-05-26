@@ -82,6 +82,11 @@ com2
 lpt1
 lpt2
 
+# ── Generated / Cache ────────────────────────────────────────────────────────
+cache/
+catboost_info/
+prometheus.yml
+
 # ── Misc ───────────────────────────────────────────────────────────────────
 .mypy_cache/
 .ruff_cache/

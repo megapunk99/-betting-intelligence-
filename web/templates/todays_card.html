@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Today's Card{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-6 fade-in">
+    <div>
+        <h1 class="text-3xl font-extrabold text-white flex items-center gap-2">
+            <span></span> Today's Card
+        </h1>
+        <p class="text-sm text-gray-500 mt-1">{{ todays_bets|length }} bets across {{ games|length }} games</p>
+    </div>
+</div>
+
+{% if games %}
+<div class="grid gap-6">
+    {% for matchup, game_info in games.items() %}
+    <div class="glass-card rounded-xl overflow-hidden fade-in">
+        <!-- Game Header -->
+        <div class="px-5 py-4 border-b border-white/5 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <span class="text-lg"></span>
+                <div>
+                    <div class="font-bold text-white text-lg">{{ matchup }}</div>
+                    <div class="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
+                        <span class="px-2 py-0.5 rounded bg-dark-600">{{ game_info.league }}</span>
+                        <span>{{ today }}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="text-right text-sm">
+                {% set clear_count = game_info.bets|selectattr('is_clear_pick')|list|length %}
+                {% if clear_count > 0 %}
+                <span class="clear-badge">{{ clear_count }} clear picks</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Bets -->
+        {% for bet in game_info.bets %}
+        <div class="px-5 py-3 {% if not loop.last %}border-b border-white/5{% endif %} {% if bet.is_clear_pick %}bg-accent-500/[0.03]{% endif %} hover:bg-white/[0.02] transition-colors">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3 min-w-0 flex-1">
+                    {% if bet.is_clear_pick %}<span class="clear-badge text-[0.6rem] shrink-0">★</span>{% endif %}
+                    <div class="min-w-0">
+                        <div class="font-semibold text-white">
+                            ${{ bet.stake_dollars|int }}
+                            <span class="text-gray-400 font-normal">on</span>
+                            {{ bet.bet_side }}
+                        </div>
+                        <div class="text-xs text-gray-500 mt-0.5">{{ bet.reasoning[:120] }}</div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4 shrink-0 ml-4">
+                    <div class="text-right">
+                        <div class="text-sm font-bold {% if bet.edge_pct > 0 %}edge-positive{% endif %}">
+                            +{{ bet.edge_pct|round(1) }}%
+                        </div>
+                        <div class="text-xs text-gray-600">edge</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-sm font-bold text-blue-400">${{ bet.stake_dollars|int }}</div>
+                        <div class="text-xs text-gray-600">stake</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs text-gray-500">{{ bet.confidence }}</div>
+                        <div class="text-xs text-gray-600">{{ bet.bet_type_display }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Summary -->
+{% set total_stake = todays_bets|sum(attribute='stake_dollars') %}
+{% set clear_count = todays_bets|selectattr('is_clear_pick')|list|length %}
+<div class="glass-card rounded-xl p-5 text-center mt-6 fade-in">
+    <div class="text-xs text-gray-500 uppercase tracking-wider">Today's Total Exposure</div>
+    <div class="text-3xl font-extrabold text-accent-400 mt-1">${{ total_stake|int }}</div>
+    <div class="text-sm text-gray-500 mt-1">
+        {{ todays_bets|length }} bets · {{ clear_count }} clear picks · {{ games|length }} games
+    </div>
+</div>
+{% else %}
+<div class="glass-card rounded-xl p-12 text-center fade-in">
+    <div class="text-5xl mb-4"></div>
+    <p class="text-gray-500 text-lg">No games scheduled for today</p>
+    <p class="text-gray-600 text-sm mt-2">Check back later when new games are added, or view <a href="/all-bets" class="text-accent-400 hover:underline" hx-boost="true">all bets</a>.</p>
+</div>
+{% endif %}
+{% endblock %}

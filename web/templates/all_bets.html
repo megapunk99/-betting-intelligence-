@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}All Bets{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-6 fade-in">
+    <div>
+        <h1 class="text-3xl font-extrabold text-white flex items-center gap-2">
+            <span></span> All Bets
+        </h1>
+        <p class="text-sm text-gray-500 mt-1">{{ total }} bets · Ranked by edge</p>
+    </div>
+</div>
+
+<!-- ═══ FILTERS ═══ -->
+<div class="glass-card rounded-xl p-4 mb-6 fade-in" id="bet-filters">
+    <div class="flex flex-wrap items-center gap-3">
+        <select class="filter-select" name="league"
+                hx-get="/all-bets" hx-target="#bets-table" hx-trigger="change" hx-include="closest #bet-filters">
+            <option value="all" {% if selected_league == 'all' %}selected{% endif %}>All Leagues</option>
+            {% for l in leagues %}
+            <option value="{{ l }}" {% if selected_league == l %}selected{% endif %}>{{ l }}</option>
+            {% endfor %}
+        </select>
+
+        <select class="filter-select" name="bet_type"
+                hx-get="/all-bets" hx-target="#bets-table" hx-trigger="change" hx-include="closest #bet-filters">
+            <option value="all" {% if selected_type == 'all' %}selected{% endif %}>All Types</option>
+            {% for t in types %}
+            <option value="{{ t }}" {% if selected_type == t %}selected{% endif %}>{{ t.replace('_', ' ') }}</option>
+            {% endfor %}
+        </select>
+
+        <select class="filter-select" name="sort_by"
+                hx-get="/all-bets" hx-target="#bets-table" hx-trigger="change" hx-include="closest #bet-filters">
+            <option value="edge" {% if sort_by == 'edge' %}selected{% endif %}>Sort by Edge</option>
+            <option value="stake" {% if sort_by == 'stake' %}selected{% endif %}>Sort by Stake</option>
+            <option value="confidence" {% if sort_by == 'confidence' %}selected{% endif %}>Sort by Confidence</option>
+        </select>
+
+        <div class="flex items-center gap-2">
+            <span class="text-xs text-gray-500">Min edge:</span>
+            <input type="range" name="min_edge" min="0" max="10" step="0.5" value="{{ min_edge * 100 }}"
+                   class="w-24 accent-accent-400"
+                   hx-get="/all-bets" hx-target="#bets-table" hx-trigger="change" hx-include="closest #bet-filters"
+                   oninput="document.getElementById('ab-edge-value').textContent = this.value + '%'">
+            <span class="text-xs text-gray-400" id="ab-edge-value">{{ min_edge * 100 }}%</span>
+        </div>
+
+        <span class="text-sm text-gray-500 ml-auto">{{ total }} bets</span>
+    </div>
+</div>
+
+<!-- ═══ BETS TABLE ═══ -->
+<div id="bets-table">
+    {% include "partials/bets_table.html" %}
+</div>
+{% endblock %}

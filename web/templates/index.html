@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<!-- ═══ HERO ═══ -->
+<div class="text-center py-8 fade-in">
+    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent-500/10 border border-accent-500/20 text-accent-400 text-xs mb-4">
+        <span class="w-2 h-2 rounded-full bg-accent-400 animate-pulse"></span>
+        Live — {{ generated_at }}
+    </div>
+    <h1 class="text-4xl sm:text-5xl font-extrabold gradient-text mb-2">EXACT BETS</h1>
+    <p class="text-gray-500 text-sm">Place these bets. No probabilities. No confusion.</p>
+</div>
+
+<!-- ═══ STATS ROW ═══ -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 fade-in">
+    <div class="glass-card rounded-xl p-5 text-center">
+        <div class="stat-value text-accent-400">{{ summary.clear_picks }}</div>
+        <div class="text-xs text-gray-500 uppercase tracking-wider mt-1">★ Clear Picks</div>
+    </div>
+    <div class="glass-card rounded-xl p-5 text-center">
+        <div class="stat-value text-blue-400">{{ summary.games_available }}</div>
+        <div class="text-xs text-gray-500 uppercase tracking-wider mt-1"> Games Available</div>
+    </div>
+    <div class="glass-card rounded-xl p-5 text-center">
+        <div class="stat-value text-purple-400">{{ summary.total_bets }}</div>
+        <div class="text-xs text-gray-500 uppercase tracking-wider mt-1"> Total Bets</div>
+    </div>
+    <div class="glass-card rounded-xl p-5 text-center">
+        <div class="stat-value text-accent-400">${{ "{:,.0f}".format(summary.total_stake|float) }}</div>
+        <div class="text-xs text-gray-500 uppercase tracking-wider mt-1"> Total Stake</div>
+    </div>
+</div>
+
+<!-- ═══ CLEAR PICKS ═══ -->
+<div class="fade-in">
+    <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-bold text-white flex items-center gap-2">
+            <span>★</span> High-Confidence Picks
+        </h2>
+        <a href="/clear-picks" class="text-accent-400 text-sm hover:underline" hx-boost="true">
+            View all →
+        </a>
+    </div>
+
+    {% set top_picks = clear_picks[:6] %}
+    {% if top_picks %}
+    <div class="grid gap-3">
+        {% for cp in top_picks %}
+        {% set bet = cp.bet %}
+        {% set idx = loop.index %}
+        <div class="glass-card highlight rounded-xl p-5 fade-in" style="animation-delay: {{ loop.index * 0.05 }}s">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-1.5">
+                        <span class="clear-badge">★ PLACE THIS BET #{{ idx }}</span>
+                        <span class="text-xs text-gray-500">{{ bet.matchup }}</span>
+                        <span class="text-xs px-2 py-0.5 rounded bg-dark-600 text-gray-400">{{ bet.league }}</span>
+                        <span class="text-xs px-2 py-0.5 rounded {% if cp.risk_level == 'CONSERVATIVE' %}bg-green-900/50 text-green-400{% elif cp.risk_level == 'MODERATE' %}bg-yellow-900/50 text-yellow-400{% else %}bg-red-900/50 text-red-400{% endif %}">
+                            {{ cp.risk_level }}
+                        </span>
+                    </div>
+                    <div class="text-xl sm:text-2xl font-extrabold text-white">
+                        $<span class="text-accent-400">{{ bet.stake_dollars|int }}</span>
+                        <span class="text-gray-400 font-normal">on</span>
+                        {{ bet.bet_side }}
+                    </div>
+                    <div class="flex flex-wrap gap-2 mt-2">
+                        {% for reason in cp.reasons[:2] %}
+                        <span class="text-xs text-gray-500">→ {{ reason[:80] }}{% if reason|length > 80 %}...{% endif %}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="flex items-center gap-6 sm:text-right">
+                    <div>
+                        <div class="text-lg font-bold text-accent-400">+{{ bet.edge_pct|round(1) }}%</div>
+                        <div class="text-xs text-gray-600">Edge</div>
+                    </div>
+                    <div>
+                        <div class="text-lg font-bold text-blue-400">${{ bet.stake_dollars|int }}</div>
+                        <div class="text-xs text-gray-600">Stake</div>
+                    </div>
+                    <div>
+                        <div class="text-sm font-bold text-gray-300">{{ cp.clear_score|int }}/100</div>
+                        <div class="text-xs text-gray-600">Confidence</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="glass-card rounded-xl p-8 text-center">
+        <div class="text-4xl mb-3"></div>
+        <p class="text-gray-500">No clear picks found at this threshold.</p>
+        <p class="text-gray-600 text-sm mt-1">Try lowering the edge threshold or check back after new games are added.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ═══ TODAY'S GAMES ═══ -->
+<div class="mt-10 fade-in">
+    <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-bold text-white flex items-center gap-2">
+            <span></span> Today's Games
+        </h2>
+        <a href="/todays-card" class="text-accent-400 text-sm hover:underline" hx-boost="true">
+            Full card →
+        </a>
+    </div>
+
+    {% if games %}
+    <div class="grid md:grid-cols-2 gap-4">
+        {% for matchup, game_info in games.items() %}
+        <div class="glass-card rounded-xl p-4 fade-in">
+            <div class="flex items-center justify-between mb-3">
+                <div class="font-semibold text-white text-sm">{{ matchup }}</div>
+                <span class="text-xs px-2 py-0.5 rounded bg-dark-600 text-gray-400">{{ game_info.league }}</span>
+            </div>
+            {% for bet in game_info.bets[:4] %}
+            <div class="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+                <div class="flex items-center gap-2 min-w-0">
+                    {% if bet.is_clear_pick %}<span class="clear-badge text-[0.6rem]">★</span>{% endif %}
+                    <span class="text-sm {% if bet.is_clear_pick %}text-white font-medium{% else %}text-gray-400{% endif %} truncate">
+                        {{ bet.action }}
+                    </span>
+                </div>
+                <span class="text-sm font-semibold {% if bet.edge_pct > 0 %}edge-positive{% else %}edge-negative{% endif %} ml-2 shrink-0">
+                    +{{ bet.edge_pct|round(1) }}%
+                </span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="glass-card rounded-xl p-8 text-center">
+        <p class="text-gray-500">No games scheduled for today.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ═══ QUICK BET TYPE BREAKDOWN ═══ -->
+<div class="mt-10 fade-in">
+    <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
+        <span></span> Market Breakdown
+    </h2>
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        {% for type_key, count in summary.by_type.items() %}
+        <div class="glass-card rounded-xl p-4 text-center">
+            <div class="text-lg font-bold text-white">{{ count }}</div>
+            <div class="text-xs text-gray-500 mt-1 capitalize">{{ type_key.replace('_', ' ') }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

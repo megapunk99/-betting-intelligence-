@@ -1,0 +1,60 @@
+{% if clear_picks %}
+<div class="grid gap-3" id="clear-picks-list-inner">
+    {% for cp in clear_picks %}
+    {% set bet = cp.bet %}
+    {% set idx = loop.index %}
+    <div class="glass-card highlight rounded-xl p-5 fade-in">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-1.5 flex-wrap">
+                    <span class="clear-badge">★ PLACE THIS BET #{{ idx }}</span>
+                    <span class="text-xs text-gray-500">{{ bet.matchup }}</span>
+                    <span class="text-xs px-2 py-0.5 rounded bg-dark-600 text-gray-400">{{ bet.league }}</span>
+                    <span class="text-xs px-2 py-0.5 rounded {% if cp.risk_level == 'CONSERVATIVE' %}bg-green-900/50 text-green-400{% elif cp.risk_level == 'MODERATE' %}bg-yellow-900/50 text-yellow-400{% else %}bg-red-900/50 text-red-400{% endif %}">
+                        {{ cp.risk_level }}
+                    </span>
+                    <span class="text-xs text-gray-500">{{ cp.clear_score|int }}/100 confidence</span>
+                </div>
+                <div class="text-xl sm:text-2xl font-extrabold text-white">
+                    $<span class="text-accent-400">{{ bet.stake_dollars|int }}</span>
+                    <span class="text-gray-400 font-normal">on</span>
+                    {{ bet.bet_side }}
+                </div>
+                <div class="flex items-center gap-2 mt-2 flex-wrap">
+                    <span class="text-xs text-gray-500">{{ bet.bet_type_display }}</span>
+                    {% for reason in cp.reasons %}
+                    <span class="text-xs text-gray-600">→ {{ reason[:100] }}{% if reason|length > 100 %}...{% endif %}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="flex items-center gap-6 sm:text-right shrink-0">
+                <div>
+                    <div class="text-lg font-bold text-accent-400">+{{ bet.edge_pct|round(1) }}%</div>
+                    <div class="text-xs text-gray-600">Edge</div>
+                </div>
+                <div>
+                    <div class="text-lg font-bold text-blue-400">${{ bet.stake_dollars|int }}</div>
+                    <div class="text-xs text-gray-600">Stake</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+    {% set total_stake = clear_picks|sum(attribute='bet.stake_dollars') %}
+    {% set avg_edge = clear_picks|map(attribute='bet.edge_pct')|list|sum / clear_picks|length if clear_picks else 0 %}
+    <div class="glass-card rounded-xl p-5 text-center mt-4">
+        <div class="text-xs text-gray-500 uppercase tracking-wider">Total to Bet</div>
+        <div class="text-3xl font-extrabold text-accent-400 mt-1">${{ total_stake|int }}</div>
+        <div class="text-sm text-gray-500 mt-1">
+            {{ clear_picks|length }} bets · Avg edge: {{ avg_edge|round(1) }}%
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="glass-card rounded-xl p-8 text-center">
+    <div class="text-4xl mb-3"></div>
+    <p class="text-gray-500">No clear picks match your filters.</p>
+    <p class="text-gray-600 text-sm mt-1">Try lowering the edge threshold or selecting a different league.</p>
+</div>
+{% endif %}
