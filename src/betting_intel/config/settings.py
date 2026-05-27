@@ -86,16 +86,47 @@ class Settings(BaseSettings):
     # ── Small League Configuration ──────────────────────────────────────
     enable_small_leagues: bool = Field(
         default=True,
-        description="Enable small-league data ingestion (LNB Pro B, CEBL, BNXT)",
+        description="Enable small-league data ingestion (LNB Pro B, CEBL, BNXT, WNBA, EuroLeague Women, soccer)",
     )
     small_league_cache_dir: Optional[str] = Field(
         default=None,
         description="Cache directory for small-league data.",
     )
+
+    # ── Live Odds & WebSocket Configuration ────────────────────────────
+    enable_live_odds: bool = Field(default=False, description="Enable live odds polling")
+    odds_api_key: str = Field(
+        default="your-api-key-here",
+        description="API key for TheOddsAPI (v4). Get one free at https://the-odds-api.com/",
+    )
+    odds_poll_interval: int = Field(
+        default=30, ge=10, le=300,
+        description="Polling interval in seconds for live odds",
+    )
+    odds_movement_threshold_pct: float = Field(
+        default=2.0, ge=0.5, le=50.0,
+        description="Minimum percentage change to emit line movement alert",
+    )
+    odds_snapshots_db: str = Field(
+        default="./data/odds_snapshots.db",
+        description="SQLite path for time-series odds snapshots",
+    )
+
+    # ── Alert / Notification Configuration ─────────────────────────────
+    enable_alerts: bool = Field(default=False, description="Enable alert dispatch")
+    enable_telegram: bool = Field(default=False, description="Enable Telegram bot alerts")
+    telegram_bot_token: str = Field(default="", description="Telegram Bot token from @BotFather")
+    telegram_chat_id: str = Field(default="", description="Target Telegram chat ID for alerts")
+    enable_discord: bool = Field(default=False, description="Enable Discord webhook alerts")
+    discord_webhook_url: str = Field(default="", description="Discord webhook URL for alerts")
+    alert_min_edge_pct: float = Field(default=3.0, ge=0.0, le=100.0, description="Minimum edge % to send alert")
+    alert_min_confidence: float = Field(default=0.55, ge=0.0, le=1.0, description="Minimum confidence to send alert")
+    alert_min_stake: float = Field(default=50.0, ge=0.0, description="Minimum stake $ to send alert")
+    alert_rate_limit_seconds: int = Field(default=60, ge=0, description="Min seconds between alerts for same game")
     # PrivateAttrs store raw env-var values; properties parse them.
     # We use PrivateAttr because pydantic-settings struggles with list/dict
     # types from .env files (trying to JSON-parse comma-separated values).
-    _active_small_leagues_raw: str = PrivateAttr(default="lnb_pro_b,cebl,bnxt")
+    _active_small_leagues_raw: str = PrivateAttr(default="lnb_pro_b,cebl,bnxt,wnba,euroleague_women,soccer_belgian_pro_league")
     _small_league_seasons_raw: str = PrivateAttr(default="")
 
     def __init__(self, **kwargs):
@@ -134,6 +165,10 @@ class Settings(BaseSettings):
             "lnb_pro_b": ["2025-2026", "2024-2025"],
             "cebl": ["2025", "2024"],
             "bnxt": ["2025-2026", "2024-2025"],
+            "wnba": [2025, 2024],
+            "euroleague_women": ["2024-2025", "2023-2024"],
+            "soccer_belgian_pro_league": ["2024", "2025"],
+            "soccer_womens_super_league": ["2024", "2025"],
         }
 
     # ── Derived Paths ──────────────────────────────────────────────────

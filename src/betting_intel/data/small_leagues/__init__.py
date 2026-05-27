@@ -1,4 +1,4 @@
-"""Small-league data sources: LNB Pro B, CEBL, BNXT League.
+"""Small-league data sources: LNB Pro B, CEBL, BNXT League, WNBA, EuroLeague Women, soccer.
 
 Each source implements a standard interface (load_historical, load_upcoming, get_teams)
 and outputs pandas DataFrames in a unified canonical schema.
@@ -24,6 +24,10 @@ from betting_intel.data.small_leagues.base import (
 from betting_intel.data.small_leagues.thesportsdb_source import TheSportsDBSource
 from betting_intel.data.small_leagues.cebl_source import CEBLSource
 from betting_intel.data.small_leagues.bnxt_source import BNXTSource
+from betting_intel.data.small_leagues.wnba_source import WNBASource
+from betting_intel.data.small_leagues.euroleague_women_source import EuroLeagueWomenSource
+from betting_intel.data.small_leagues.soccer_source import SoccerLeagueSource, SoccerLeagueFactory
+from betting_intel.data.small_leagues.league_registry import LeagueRegistry, LeagueHealthStatus, league_registry
 
 
 class SmallLeagueIngestion:
@@ -33,6 +37,8 @@ class SmallLeagueIngestion:
         "lnb_pro_b": TheSportsDBSource,
         "cebl": CEBLSource,
         "bnxt": BNXTSource,
+        "wnba": WNBASource,
+        "euroleague_women": EuroLeagueWomenSource,
     }
 
     def __init__(self, cache_dir: Optional[str] = None):
@@ -40,6 +46,8 @@ class SmallLeagueIngestion:
         self._sources: dict[str, SmallLeagueSource] = {}
 
     def _get_source(self, league_key: str) -> SmallLeagueSource:
+        if league_key.startswith("soccer_"):
+            return self._get_soccer_source(league_key)
         if league_key not in self.SOURCES:
             available = ", ".join(sorted(self.SOURCES))
             raise ValueError(
@@ -50,13 +58,24 @@ class SmallLeagueIngestion:
             self._sources[league_key] = cls(cache_dir=self.cache_dir)
         return self._sources[league_key]
 
+    def _get_soccer_source(self, league_key: str) -> SoccerLeagueSource:
+        """Get or create a soccer league source."""
+        if league_key not in self._sources:
+            soccer_key = league_key.replace("soccer_", "")
+            self._sources[league_key] = SoccerLeagueSource(
+                league_key=soccer_key,
+                cache_dir=self.cache_dir,
+            )
+        return self._sources[league_key]
+
     def load_historical(
         self, league_key: str, seasons: Optional[list[str]] = None
     ) -> pd.DataFrame:
         """Load historical game data for a given small league.
 
         Args:
-            league_key: One of 'lnb_pro_b', 'cebl', 'bnxt'.
+            league_key: One of 'lnb_pro_b', 'cebl', 'bnxt', 'wnba', 'euroleague_women',
+                        'soccer_belgian_pro_league', 'soccer_scottish_championship', etc.
             seasons: List of season identifiers. Defaults to most recent season.
 
         Returns:
@@ -68,15 +87,7 @@ class SmallLeagueIngestion:
     def load_upcoming(
         self, league_key: str, limit: int = 20
     ) -> pd.DataFrame:
-        """Load upcoming scheduled games for a given small league.
-
-        Args:
-            league_key: One of 'lnb_pro_b', 'cebl', 'bnxt'.
-            limit: Maximum number of upcoming games to fetch.
-
-        Returns:
-            DataFrame in CANONICAL_SCHEMA (scores will be None/NaN).
-        """
+        """Load upcoming scheduled games for a given small league."""
         source = self._get_source(league_key)
         return source.load_upcoming(limit=limit)
 
@@ -88,11 +99,25 @@ class SmallLeagueIngestion:
     @staticmethod
     def list_available_leagues() -> dict[str, dict]:
         """Return metadata about all available small leagues."""
-        return dict(LEAGUE_METADATA)
+        from betting_intel.data.small_leagues.soccer_source import SOCCER_LEAGUES
+        result = dict(LEAGUE_METADATA)
+        for key, meta in SOCCER_LEAGUES.items():
+            result[f"soccer_{key}"] = {
+                **meta,
+                "data_source": "football-data.org / Flashscore",
+            }
+        return result
 
 
 __all__ = [
     "SmallLeagueIngestion",
     "CANONICAL_SCHEMA",
     "LEAGUE_METADATA",
+    "LeagueRegistry",
+    "LeagueHealthStatus",
+    "league_registry",
+    "WNBASource",
+    "EuroLeagueWomenSource",
+    "SoccerLeagueSource",
+    "SoccerLeagueFactory",
 ]

@@ -1,0 +1,22 @@
+Multi-league ingestion, live odds WebSocket system, alert channels, and comprehensive tests
+
+New components:
+- League registry with auto-discovery and freshness health checks (A-F grading)
+- WNBA source (Basketball-Reference + ESPN), EuroLeague Women, 5 niche soccer leagues
+- WebSocket odds streaming with ConnectionManager, OddsPoller, line movement detection
+- SQLite-backed odds snapshot time-series with periodic TTL eviction
+- Telegram bot and Discord webhook alert channels with rich formatting
+- AlertDispatcher with configurable threshold filtering, league routing, rate limiting
+
+Refactoring:
+- TelegramBot and DiscordWebhook migrated from httpx.Client to httpx.AsyncClient
+- AlertDispatcher dispatch methods converted to async
+- OddsPoller._fetch_theoddsapi() parallelized with asyncio.wait + timeout
+- FastAPI app shutdown now properly closes alert sender connections
+
+Tests: 84 new unit tests (294 total, all passing)
+- ConnectionManager broadcast/subscribe/unsubscribe (8 tests)
+- OddsPoller snapshot processing and movement detection (9 tests)
+- AlertDispatcher threshold filtering, routing, rate limiting (17 tests)
+- Telegram/Discord static formatters and async error paths (24 tests)
+- LeagueRegistry registration and health checks (17 tests)

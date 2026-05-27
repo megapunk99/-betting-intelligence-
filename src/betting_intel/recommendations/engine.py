@@ -41,6 +41,7 @@ from betting_intel.recommendations.bet_types import (
 )
 
 from betting_intel.recommendations.ranker import BetRanker, ClearPick
+from betting_intel.recommendations.validator import PreGameValidator
 
 logger = logging.getLogger(__name__)
 
@@ -61,11 +62,15 @@ class RecommendationEngine:
         bankroll: float = DEFAULT_BANKROLL,
         min_edge_threshold: float = 0.01,  # 1% minimum edge to show
         include_small_leagues: bool = True,
+        enable_live_validation: bool = False,  # Opt-in: enables live data validation
+        strict_validation: bool = True,
     ):
         self.bankroll = bankroll
         self.min_edge = min_edge_threshold
         self.include_small_leagues = include_small_leagues
+        self.enable_live_validation = enable_live_validation
         self.ranker = BetRanker()
+        self.validator = PreGameValidator(strict_mode=strict_validation) if enable_live_validation else None
 
         # Lazy-loaded models and data
         self._models = None
@@ -105,7 +110,11 @@ class RecommendationEngine:
         # 4. Rank and tag clear picks
         all_bets = self.ranker.rank_bets(all_bets)
 
-        # 5. Sort by edge descending
+        # 5. Validate against live data (injuries, odds freshness, line movement)
+        if self.validator is not None:
+            all_bets = self.validator.validate_all(all_bets)
+
+        # 6. Sort by adjusted edge descending
         all_bets.sort(key=lambda b: b.edge_pct, reverse=True)
 
         return all_bets
@@ -115,6 +124,12 @@ class RecommendationEngine:
         all_bets = self.generate_all_bets()
         today = date.today().isoformat()
         return [b for b in all_bets if b.game_date == today]
+
+    def get_tomorrows_card(self) -> list[BetSuggestion]:
+        """Get bets for tomorrow's games only — one-day-ahead predictions."""
+        all_bets = self.generate_all_bets()
+        tomorrow = (date.today() + timedelta(days=1)).isoformat()
+        return [b for b in all_bets if b.game_date == tomorrow]
 
     def get_clear_picks(self, threshold: float = 0.03) -> list[ClearPick]:
         """
@@ -141,7 +156,7 @@ class RecommendationEngine:
         return bets
 
     def get_summary(self) -> dict:
-        """Get a summary of available bets."""
+        """Get a summary of available bets with live validation info."""
         bets = self.generate_all_bets()
         clear = self.get_clear_picks()
 
@@ -150,7 +165,7 @@ class RecommendationEngine:
             bt = b.bet_type.value
             counts[bt] = counts.get(bt, 0) + 1
 
-        return {
+        summary = {
             "total_bets": len(bets),
             "clear_picks": len(clear),
             "games_available": len(self._todays_games),
@@ -161,6 +176,18 @@ class RecommendationEngine:
             "total_stake": sum(b.stake_dollars for b in bets),
             "bankroll": self.bankroll,
         }
+
+        # Add validation summary if live validation is enabled
+        if self.validator is not None:
+            v_summary = self.validator.get_summary(bets)
+            summary["validation"] = v_summary
+            summary["safe_bets"] = v_summary.get("safe_bets", 0)
+            summary["unsafe_bets"] = v_summary.get("unsafe_bets", 0)
+            summary["data_freshness_warnings"] = v_summary.get("warning_types", {}).get("Data freshness", 0)
+            summary["injury_warnings"] = v_summary.get("warning_types", {}).get("Injury", 0)
+            summary["stake_reduction_pct"] = v_summary.get("stake_reduction_pct", 0)
+
+        return summary
 
     # ── Game Data Loading ───────────────────────────────────────────────
 
@@ -257,6 +284,7 @@ class RecommendationEngine:
     def _get_hypothetical_games(self) -> list[dict]:
         """Generate hypothetical game data when no real data is available."""
         today = date.today()
+        tomorrow = today + timedelta(days=1)
         games = [
             {
                 "date": today.isoformat(),
@@ -290,6 +318,42 @@ class RecommendationEngine:
                 "date": today.isoformat(),
                 "home": "Nuggets",
                 "away": "Timberwolves",
+                "league": "NBA",
+                "series": "Regular Season",
+            },
+            # ── Tomorrow's Games ──────────────────────────────────────────
+            {
+                "date": tomorrow.isoformat(),
+                "home": "Celtics",
+                "away": "Pacers",
+                "league": "NBA",
+                "series": "ECF Game 7",
+            },
+            {
+                "date": tomorrow.isoformat(),
+                "home": "Warriors",
+                "away": "Lakers",
+                "league": "NBA",
+                "series": "Regular Season",
+            },
+            {
+                "date": tomorrow.isoformat(),
+                "home": "Knicks",
+                "away": "76ers",
+                "league": "NBA",
+                "series": "Regular Season",
+            },
+            {
+                "date": tomorrow.isoformat(),
+                "home": "Nuggets",
+                "away": "Timberwolves",
+                "league": "NBA",
+                "series": "Regular Season",
+            },
+            {
+                "date": tomorrow.isoformat(),
+                "home": "Heat",
+                "away": "Bucks",
                 "league": "NBA",
                 "series": "Regular Season",
             },

@@ -1,17 +1,62 @@
 """
 Feature engineering: transforms raw game data into predictive features.
 All features should be calculable BEFORE the game starts (no lookahead bias).
+
+v2.2 — Enhanced features:
+  - EMA (exponential moving average) rolling stats — more weight to recent games
+  - Trend slope calculator — detect if teams are improving/declining
+  - Travel distance & fatigue — haversine distance, time zone shifts, cumulative fatigue
+  - Consecutive road games counter
+  - Enhanced fatigue model (fatigue score, 3in4 nights, rest squared)
 """
 
 import pandas as pd
 import numpy as np
-from typing import List, Optional
+from typing import List, Optional, Tuple, Dict
+from dataclasses import dataclass
 
 from betting_intel.config import ROLLING_WINDOWS, MAX_REST_DAYS
 
 
+# ── Constants for Advanced Features ───────────────────────────────────────
+
+# NBA team arena coordinates (lat, lon) for travel distance calculation
+NBA_TEAM_CENTERS: Dict[str, Tuple[float, float]] = {
+    "Hawks": (33.755, -84.396), "Celtics": (42.366, -71.062),
+    "Nets": (40.683, -73.975), "Hornets": (35.225, -80.839),
+    "Bulls": (41.881, -87.674), "Cavaliers": (41.496, -81.688),
+    "Mavericks": (32.790, -96.810), "Nuggets": (39.748, -105.007),
+    "Pistons": (42.340, -83.056), "Warriors": (37.750, -122.203),
+    "Rockets": (29.751, -95.362), "Pacers": (39.764, -86.156),
+    "Clippers": (34.043, -118.267), "Lakers": (34.043, -118.267),
+    "Grizzlies": (35.138, -90.051), "Heat": (25.781, -80.187),
+    "Bucks": (43.043, -87.917), "Timberwolves": (44.979, -93.276),
+    "Pelicans": (29.949, -90.082), "Knicks": (40.750, -73.993),
+    "Thunder": (35.463, -97.515), "Magic": (28.539, -81.384),
+    "76ers": (39.901, -75.172), "Suns": (33.445, -112.071),
+    "Trail Blazers": (45.532, -122.667), "Kings": (38.580, -121.500),
+    "Spurs": (29.427, -98.437), "Raptors": (43.643, -79.379),
+    "Jazz": (40.768, -111.901), "Wizards": (38.898, -77.021),
+}
+
+# NBA team time zones (EST = -5, CST = -6, MST = -7, PST = -8)
+NBA_TEAM_TZ: Dict[str, int] = {
+    "Celtics": -5, "Nets": -5, "Knicks": -5, "76ers": -5, "Wizards": -5,
+    "Hawks": -5, "Heat": -5, "Hornets": -5, "Magic": -5, "Raptors": -5,
+    "Pistons": -5, "Pacers": -5, "Cavaliers": -5, "Bulls": -6,
+    "Bucks": -6, "Timberwolves": -6, "Pelicans": -6, "Thunder": -6,
+    "Mavericks": -6, "Rockets": -6, "Grizzlies": -6, "Spurs": -6,
+    "Jazz": -7, "Nuggets": -7, "Suns": -7, "Trail Blazers": -8,
+    "Kings": -8, "Warriors": -8, "Lakers": -8, "Clippers": -8,
+}
+
+
 class FeatureEngineer:
-    """Creates features for predictive models from raw game data."""
+    """Creates features for predictive models from raw game data.
+
+    v2.2 features include EMA rolling stats, trend slopes, travel distance,
+    and enhanced fatigue modeling for more accurate predictions.
+    """
 
     def __init__(self, rolling_windows: Optional[List[int]] = None):
         self.rolling_windows = rolling_windows or ROLLING_WINDOWS
@@ -110,6 +155,7 @@ class FeatureEngineer:
         for team_prefix, suffix in [("home", "home"), ("away", "away")]:
             team_id_col = f"TEAM_ID_{suffix}"
             pm_col = f"team_plus_minus_{team_prefix}"
+            pts_col = f"team_pts_{team_prefix}"
             wl_num_col = f"WL_num_{team_prefix}"
 
             # Win streak (using numeric WL)
@@ -129,6 +175,65 @@ class FeatureEngineer:
                 df.groupby(team_id_col)[pm_col]
                 .transform(lambda x: x.rolling(10, min_periods=1).std().shift(1))
             )
+
+            # ══════════════════════════════════════════════════════════
+            #  v2.2 ENHANCED FEATURES
+            # ══════════════════════════════════════════════════════════
+
+            # ── EMA Rolling Features ─────────────────────────────────
+            # Exponential Moving Average — more weight to recent games
+            for w in self.rolling_windows:
+                span = max(w, 2)  # span must be >= 2 for ewm
+                df[f"ema_pts_{w}g_{suffix}"] = (
+                    df.groupby(team_id_col)[pts_col]
+                    .transform(lambda x, sp=span: (
+                        x.ewm(span=sp, min_periods=1, adjust=False).mean().shift(1)
+                    ))
+                )
+            for w in [5, 10]:
+                span = max(w, 2)
+                df[f"ema_pm_{w}g_{suffix}"] = (
+                    df.groupby(team_id_col)[pm_col]
+                    .transform(lambda x, sp=span: (
+                        x.ewm(span=sp, min_periods=1, adjust=False).mean().shift(1)
+                    ))
+                )
+                df[f"ema_margin_{w}g_{suffix}"] = df[f"ema_pm_{w}g_{suffix}"]
+
+            # ── Trend Slope Features ─────────────────────────────────
+            # Linear trend over recent games: positive = improving, negative = declining
+            for w in [5, 10]:
+                df[f"trend_pts_{w}g_{suffix}"] = (
+                    df.groupby(team_id_col)[pts_col]
+                    .transform(lambda x, win=w: self._compute_trend_slope(x, window=win))
+                )
+                df[f"trend_pm_{w}g_{suffix}"] = (
+                    df.groupby(team_id_col)[pm_col]
+                    .transform(lambda x, win=w: self._compute_trend_slope(x, window=win))
+                )
+
+            # ── Weighted/Decay Momentum (v2.2) ───────────────────────
+            df[f"weighted_momentum_{suffix}"] = (
+                df.groupby(team_id_col)[wl_num_col]
+                .transform(lambda x: self._weighted_momentum(x, window=10))
+            )
+
+            # ── Scoring Volatility (pts_zscore) ──────────────────────
+            df[f"pts_zscore_{suffix}"] = (
+                df.groupby(team_id_col)[pts_col]
+                .transform(lambda x: (
+                    (x - x.rolling(10, min_periods=1).mean())
+                    / x.rolling(10, min_periods=1).std().replace(0, 1)
+                ).shift(1))
+            )
+
+            # ── Recent form composite: weighted win% + margin ────────
+            weighted_wins = (
+                df.groupby(team_id_col)[wl_num_col]
+                .transform(lambda x: self._weighted_momentum(x, window=5))
+            )
+            margin_5g = df.get(f"avg_pm_5g_{suffix}", 0).fillna(0)
+            df[f"form_score_{suffix}"] = weighted_wins + 0.02 * margin_5g
 
         # ── Market Line Baseline (for backtesting — NOT used as a feature) ─
         # This is a simple trailing average used as a proxy for the sportsbook's line.
@@ -165,6 +270,15 @@ class FeatureEngineer:
 
         # Player-specific / team-style features
         df = self.compute_player_specific_features(df)
+
+        # ── Travel & Fatigue Features (v2.2) ──────────────────────────
+        df = self._add_travel_features(df)
+
+        # ── Consecutive Road Games (v2.2) ──────────────────────────────
+        df = self._add_consecutive_road_games(df)
+
+        # ── Enhanced Fatigue Features (v2.2) ────────────────────────────
+        df = self._add_enhanced_fatigue(df)
 
         # ── Clean Up ──────────────────────────────────────────────────
         df = df.drop(columns=["rest_home_key", "rest_away_key"], errors="ignore")
@@ -369,6 +483,190 @@ class FeatureEngineer:
         result = pd.Series(streak, index=wl_numeric.index).shift(1)
         return result.fillna(0)
 
+    def _compute_trend_slope(self, values: pd.Series, window: int = 5) -> pd.Series:
+        """
+        Compute the linear trend slope over a rolling window.
+        Positive = improving (increasing values), Negative = declining.
+
+        Uses a simplified formula: slope = sum((x - x_mean) * (y - y_mean)) / sum((x - x_mean)^2)
+        where x = position in window, y = value
+        """
+        n = len(values)
+        result = np.full(n, np.nan)
+
+        for i in range(n):
+            if i < window:
+                result[i] = 0.0
+                continue
+
+            window_vals = values.iloc[max(0, i - window):i].values
+            if len(window_vals) < 2:
+                result[i] = 0.0
+                continue
+
+            x = np.arange(len(window_vals))
+            y = window_vals
+            x_mean = x.mean()
+            y_mean = y.mean()
+
+            numerator = np.sum((x - x_mean) * (y - y_mean))
+            denominator = np.sum((x - x_mean) ** 2)
+            slope = numerator / denominator if denominator > 0 else 0.0
+            result[i] = slope
+
+        # No shift needed — the loop already uses [i-window:i) (current row excluded)
+        return pd.Series(result, index=values.index).fillna(0.0)
+
+    def _weighted_momentum(self, wl_numeric: pd.Series, window: int = 10) -> pd.Series:
+        """Compute exponentially weighted recent performance.
+        More recent games get higher weight. Returns weighted average of wins (0-1).
+        """
+        weights = np.exp(np.linspace(-1, 0, window))
+        weights /= weights.sum()
+
+        def rolling_weighted_mean(series):
+            if len(series) < window:
+                return series.mean() if len(series) > 0 else 0.5
+            return np.sum(series.tail(window).values * weights)
+
+        result = wl_numeric.rolling(window, min_periods=1).apply(
+            rolling_weighted_mean, raw=False
+        )
+        return result.shift(1).fillna(0.5)
+
+    @staticmethod
+    def _haversine(loc1: Tuple[float, float], loc2: Tuple[float, float]) -> float:
+        """Haversine distance between two (lat, lon) points in miles."""
+        R = 3959  # Earth radius in miles
+        lat1, lon1 = np.radians(loc1)
+        lat2, lon2 = np.radians(loc2)
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = np.sin(dlat / 2) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2) ** 2
+        c = 2 * np.arcsin(np.sqrt(np.clip(a, 0.0, 1.0)))
+        return R * c
+
+    def _add_travel_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add travel distance and time zone features (v2.2).
+
+        Features:
+        - travel_distance: miles between home and away arenas
+        - travel_distance_norm: normalized 0-1
+        - tz_diff: absolute time zone difference
+        - cum_travel_home/away: cumulative travel over last 3 games
+        """
+        df = df.copy()
+
+        # Team name columns
+        df["home_team_name"] = df["TEAM_NAME_home"].astype(str).str.strip()
+        df["away_team_name"] = df["TEAM_NAME_away"].astype(str).str.strip()
+
+        def get_travel_distance(row):
+            home_team = row.get("home_team_name", "")
+            away_team = row.get("away_team_name", "")
+            home_loc = NBA_TEAM_CENTERS.get(home_team)
+            away_loc = NBA_TEAM_CENTERS.get(away_team)
+            if home_loc and away_loc:
+                return self._haversine(home_loc, away_loc)
+            return 500  # default fallback
+
+        df["travel_distance"] = df.apply(get_travel_distance, axis=1)
+        df["travel_distance_norm"] = df["travel_distance"] / 3000.0
+
+        # Time zone difference
+        df["home_tz"] = df["home_team_name"].map(NBA_TEAM_TZ).fillna(-5)
+        df["away_tz"] = df["away_team_name"].map(NBA_TEAM_TZ).fillna(-5)
+        df["tz_diff"] = abs(df["home_tz"] - df["away_tz"])
+
+        # Cumulative travel fatigue over last 3 games for each team
+        df["cum_travel_home"] = (
+            df.groupby("TEAM_ID_home")["travel_distance"]
+            .transform(lambda x: x.rolling(3, min_periods=1).sum().shift(1))
+        )
+        df["cum_travel_away"] = (
+            df.groupby("TEAM_ID_away")["travel_distance"]
+            .transform(lambda x: x.rolling(3, min_periods=1).sum().shift(1))
+        )
+        df["cum_travel_diff"] = df["cum_travel_home"].fillna(0) - df["cum_travel_away"].fillna(0)
+
+        return df
+
+    def _add_consecutive_road_games(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Count consecutive road games for each team (v2.2).
+
+        Teams on extended road trips tend to underperform, especially
+        towards the end of long trips.
+        """
+        df = df.copy()
+
+        for suffix in ["away"]:
+            team_id_col = f"TEAM_ID_{suffix}"
+
+            # Consecutive road games counter for away team
+            df[f"consec_road_{suffix}"] = (
+                df.groupby(team_id_col)[f"WL_num_{suffix}"]
+                .transform(lambda x: self._compute_consecutive_road(x.shift(1)))
+            )
+
+        df["road_trip_length"] = df["consec_road_away"].fillna(0).astype(int)
+        df["long_road_trip"] = (df["road_trip_length"] >= 4).astype(int)
+
+        return df
+
+    def _compute_consecutive_road(self, wl_numeric: pd.Series) -> pd.Series:
+        """Count consecutive games played (proxy for road games when used for away team)."""
+        result = np.zeros(len(wl_numeric))
+        count = 0
+        for i in range(len(wl_numeric)):
+            val = wl_numeric.iloc[i] if hasattr(wl_numeric, 'iloc') else wl_numeric[i]
+            if not pd.isna(val):
+                count += 1
+            else:
+                count = 0
+            result[i] = count
+        return pd.Series(result, index=wl_numeric.index).fillna(0)
+
+    def _add_enhanced_fatigue(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add enhanced fatigue features (v2.2).
+
+        Features:
+        - fatigue_home/away: non-linear fatigue score (1/(rest+0.5), capped at 2)
+        - fatigue_diff: home minus away fatigue
+        - rest_home_sq/away_sq: squared rest days (non-linear effect)
+        - rest_3in4_home/away: 3 games in 4 nights flag
+        - both_b2b: both teams on back-to-back
+        - rest_interaction: rest_advantage * home_court
+        - travel_rest_interaction: travel_distance * rest_advantage
+        """
+        df = df.copy()
+
+        # Fatigue score: lower rest = exponentially more fatigue
+        df["fatigue_home"] = np.clip(1.0 / (df["rest_home_days"] + 0.5), 0, 2)
+        df["fatigue_away"] = np.clip(1.0 / (df["rest_away_days"] + 0.5), 0, 2)
+        df["fatigue_diff"] = df["fatigue_home"] - df["fatigue_away"]
+
+        # Non-linear rest effects
+        df["rest_home_sq"] = df["rest_home_days"] ** 2
+        df["rest_away_sq"] = df["rest_away_days"] ** 2
+
+        # 3 games in 4 nights
+        df["rest_3in4_home"] = (df["rest_home_days"] <= 1).astype(int)
+        df["rest_3in4_away"] = (df["rest_away_days"] <= 1).astype(int)
+
+        # Both teams on b2b
+        df["both_b2b"] = (
+            (df["rest_home_days"] == 0) & (df["rest_away_days"] == 0)
+        ).astype(int)
+
+        # Interaction features
+        df["rest_adv_sq"] = df["rest_advantage"] ** 2
+        df["fatigue_rest_interact"] = df["fatigue_diff"] * df["rest_advantage"]
+
+        return df
+
     def select_features(self, df: pd.DataFrame) -> List[str]:
         """Auto-detect feature columns from a dataframe.
 
@@ -385,6 +683,7 @@ class FeatureEngineer:
             "SEASON_home", "SEASON_away",
             "total_points", "point_diff",
             "rest_home_key", "rest_away_key",
+            "home_team_name", "away_team_name",
             # Post-game stats not available pre-game:
             "MIN_home", "MIN_away",
             # Market-line proxy columns — NOT features (prevent leakage):
@@ -397,5 +696,6 @@ class FeatureEngineer:
             "ast_ratio_home", "ast_ratio_away",
             "ts_pct_home", "ts_pct_away",
             "reb_pct_home", "reb_pct_away",
+            "home_tz", "away_tz",  # Intermediate: use tz_diff instead
         }
-        return [c for c in df.columns if c not in exclude and df[c].dtype in ("float64", "int64")]
+        return [c for c in df.columns if c not in exclude and np.issubdtype(df[c].dtype, np.number)]

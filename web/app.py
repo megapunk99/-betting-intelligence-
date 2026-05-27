@@ -11,7 +11,7 @@ Run:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -250,6 +250,37 @@ async def todays_card_page(request: Request):
             "todays_bets": data["todays_bets"],
             "summary": data["summary"],
             "generated_at": data["generated_at"],
+            "today": date.today().isoformat(),
+        },
+    )
+
+
+@app.get("/tomorrow", response_class=HTMLResponse)
+async def tomorrow_page(request: Request):
+    """Tomorrow's betting card — one-day-ahead predictions."""
+    engine = get_engine()
+    tomorrow_bets = engine.get_tomorrows_card()
+    summary = engine.get_summary()
+
+    # Group by game
+    games = {}
+    for bet in tomorrow_bets:
+        key = bet.matchup
+        if key not in games:
+            games[key] = {"league": bet.league, "series": "", "bets": []}
+        games[key]["bets"].append(bet)
+
+    tomorrow_date = (date.today() + timedelta(days=1)).isoformat()
+
+    return templates.TemplateResponse(
+        "tomorrow.html",
+        {
+            "request": request,
+            "games": games,
+            "tomorrow_bets": tomorrow_bets,
+            "summary": summary,
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "tomorrow": tomorrow_date,
             "today": date.today().isoformat(),
         },
     )

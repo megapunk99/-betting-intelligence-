@@ -95,7 +95,7 @@ class ExposureManager:
 
     def _set_default_limits(self):
         """Set default position limits."""
-        self.limits["total"] = PositionLimit(
+        self.limits["total:all"] = PositionLimit(
             limit_type="total",
             entity="all",
             max_exposure=self.bankroll * self.default_max_exposure_pct,

@@ -26,6 +26,7 @@ from betting_intel.recommendations.bet_types import (
     ParlaySuggestion,
 )
 from betting_intel.recommendations.ranker import BetRanker, ClearPick
+from betting_intel.recommendations.validator import PreGameValidator, ValidationResult
 
 __all__ = [
     "RecommendationEngine",
@@ -42,4 +43,6 @@ __all__ = [
     "ParlaySuggestion",
     "BetRanker",
     "ClearPick",
+    "PreGameValidator",
+    "ValidationResult",
 ]

@@ -69,9 +69,18 @@ class WalkForwardEngine:
         prediction_type: str = "regression",
         make_bets: bool = True,
         market_odds_col: Optional[str] = None,
+        baseline_model_builder: Optional[Callable] = None,
+        baseline_feature_cols: Optional[List[str]] = None,
     ) -> BacktestResult:
         """
         Run walk-forward backtest.
+
+        Edge is calculated against a proper market line proxy:
+        1. If baseline_model_builder is provided: edge = (main_pred - baseline_pred) / baseline_pred,
+           where both models are trained in-fold (no lookahead). This prevents the model from
+           showing inflated win rates against a naive trailing average.
+        2. If market_odds_col is provided in df: uses that column as the market line.
+        3. Falls back to the 'market_line_baseline' column in df (naive trailing average).
 
         Args:
             df: DataFrame with features and target
@@ -83,6 +92,12 @@ class WalkForwardEngine:
             prediction_type: 'regression' or 'classification'
             make_bets: Whether to generate betting decisions
             market_odds_col: Column with market implied odds (if available)
+            baseline_model_builder: Optional builder for a "market maker" baseline model.
+                When provided, edge is calculated against this baseline's predictions
+                (trained in-fold). Use a simpler model on basic features to simulate
+                a sportsbook line.
+            baseline_feature_cols: Feature columns for the baseline model.
+                Defaults to feature_cols if not provided.
         """
         result = BacktestResult(
             strategy_name=strategy_name,
@@ -95,6 +110,10 @@ class WalkForwardEngine:
         if n < self.min_train:
             result.errors.append(f"Not enough data: {n} < {self.min_train}")
             return result
+
+        # Baseline feature columns
+        if baseline_model_builder is not None and baseline_feature_cols is None:
+            baseline_feature_cols = feature_cols
 
         # Walk-forward loop
         predictions = []
@@ -116,7 +135,7 @@ class WalkForwardEngine:
                 start_idx += self.step
                 continue
 
-            # Train
+            # Train MAIN model
             X_train = train_df[feature_cols].dropna()
             y_train = train_df.loc[X_train.index, target_col]
 
@@ -132,6 +151,18 @@ class WalkForwardEngine:
                 start_idx += self.step
                 continue
 
+            # Train BASELINE model (same training data, possibly simpler features)
+            baseline_model = None
+            if baseline_model_builder is not None:
+                X_base_train = train_df[baseline_feature_cols].dropna() if baseline_feature_cols is not None else X_train
+                y_base_train = train_df.loc[X_base_train.index, target_col]
+                if len(X_base_train) >= 50:
+                    try:
+                        baseline_model = baseline_model_builder()
+                        baseline_model.fit(X_base_train.values, y_base_train.values)
+                    except Exception:
+                        baseline_model = None
+
             # Test
             X_test = test_df[feature_cols].dropna()
             if len(X_test) == 0:
@@ -142,6 +173,18 @@ class WalkForwardEngine:
             try:
                 y_pred = model.predict(X_test.values)
                 y_actual = test_df.loc[test_indices, target_col].values
+
+                # Baseline predictions for the test set (aligned by index)
+                baseline_pred_map = {}
+                if baseline_model is not None:
+                    try:
+                        X_base_test = test_df[baseline_feature_cols].dropna() if baseline_feature_cols is not None else X_test
+                        if len(X_base_test) > 0:
+                            y_baseline_pred = baseline_model.predict(X_base_test.values)
+                            for b_idx, b_val in zip(X_base_test.index, y_baseline_pred):
+                                baseline_pred_map[b_idx] = float(b_val)
+                    except Exception:
+                        pass
 
                 predictions.extend(y_pred.tolist())
                 actuals.extend(y_actual.tolist())
@@ -154,10 +197,14 @@ class WalkForwardEngine:
                         pred = y_pred[i]
                         actual = y_actual[i]
 
+                        # Get baseline prediction for this row (aligned by index)
+                        baseline_pred = baseline_pred_map.get(idx)
+
                         bet = self._create_bet_record(
                             row, pred, actual, prediction_type,
                             strategy_name, model_name,
-                            feature_cols
+                            feature_cols,
+                            baseline_prediction=baseline_pred,
                         )
                         if bet:
                             bet_records.append(bet)
@@ -183,7 +230,18 @@ class WalkForwardEngine:
         result.total_bets = len(bet_records)
         if bet_records:
             result.bets_df = pd.DataFrame(bet_records)
+            # Remove internal tracking column before computing perf
+            if "_used_baseline" in result.bets_df.columns:
+                result.bets_df = result.bets_df.drop(columns=["_used_baseline"])
             self._compute_performance(result)
+
+        # Track baseline usage for diagnostics (print, not error)
+        if baseline_model_builder is not None and result.total_bets > 0:
+            n_with_baseline = sum(
+                1 for r in bet_records if r.get("_used_baseline", False)
+            )
+            pct = n_with_baseline / result.total_bets * 100
+            result.model_metrics["baseline_pct"] = pct
 
         # Model metrics
         if prediction_type == "regression" and len(predictions) > 0:
@@ -207,29 +265,44 @@ class WalkForwardEngine:
         strategy_name: str,
         model_name: str,
         feature_cols: List[str],
+        baseline_prediction: Optional[float] = None,
     ) -> Optional[Dict]:
-        """Create a bet record from a prediction."""
+        """Create a bet record from a prediction.
+
+        Edge is calculated against the best available market proxy, in priority order:
+        1. baseline_prediction (in-fold baseline model - most robust vs leakage)
+        2. market_line_baseline column (pre-computed column in df)
+        3. trailing_avg_total_10g column (naive trailing average)
+
+        Using an in-fold baseline model prevents the inflated win rates that occur
+        when comparing against a naive pre-computed column that may be biased low.
+        """
         try:
             if prediction_type == "regression":
                 # Total points betting
                 actual_total = row.get("total_points", actual)
                 predicted_total = prediction
 
-                # Market line baseline: use trailing average as a proxy for the sportsbook's line
-                # This is deliberately computed from lagged data only, and is NOT a feature
-                # the model sees during training (it's excluded in select_features()).
-                market_line = row.get(
-                    "market_line_baseline",
-                    row.get("trailing_avg_total_10g", predicted_total)
-                )
+                # Determine market line: prefer baseline model prediction (in-fold)
+                if baseline_prediction is not None:
+                    market_line = baseline_prediction
+                else:
+                    # Fall back to column-based market proxies
+                    market_line = row.get(
+                        "market_line_baseline",
+                        row.get("trailing_avg_total_10g", predicted_total)
+                    )
 
-                # Edge = our prediction vs market
-                edge_pct = (predicted_total - market_line) / market_line if market_line > 0 else 0.0
+                # Edge = our prediction vs market (as percentage of market)
+                if market_line > 0:
+                    edge_pct = (predicted_total - market_line) / market_line
+                else:
+                    edge_pct = 0.0
 
                 if abs(edge_pct) < MIN_EDGE_THRESHOLD:
                     return None
 
-                # Determine bet side
+                # Determine bet side and win/loss
                 if edge_pct > 0:
                     bet_side = "OVER"
                     predicted_market = market_line
@@ -241,13 +314,13 @@ class WalkForwardEngine:
                 if (bet_side == "OVER" and actual_total > predicted_market) or \
                    (bet_side == "UNDER" and actual_total < predicted_market):
                     outcome = "WIN"
-                    profit = 1.0  # 1 unit profit at -110 odds
+                    profit = 1.0
                 elif actual_total == predicted_market:
                     outcome = "PUSH"
                     profit = 0.0
                 else:
                     outcome = "LOSS"
-                    profit = -1.0  # 1 unit loss at -110 odds
+                    profit = -1.0
 
                 return {
                     "game_date": row["GAME_DATE"],
@@ -262,6 +335,7 @@ class WalkForwardEngine:
                     "edge_pct": float(edge_pct),
                     "outcome": outcome,
                     "profit_units": profit,
+                    "_used_baseline": baseline_prediction is not None,
                 }
 
             elif prediction_type == "classification":

@@ -30,7 +30,7 @@ from config import (
     PREFERRED_MODEL,
 )
 from data.loader import NBADataLoader
-from data.features import FeatureEngineer
+from src.betting_intel.data.features import FeatureEngineer
 from data.integrity import DataQualityReport
 from models.predictors import (
     TotalPointsPredictor, SpreadPredictor, MomentumModel,
@@ -199,6 +199,33 @@ class BettingIntelligenceSystem:
             print("  [Fast Mode] Running only essential models (LightGBM + Momentum)")
             print("     Use python main.py --full for the full 7-model comparison.\n")
 
+        # ── Baseline model for edge calculation ───────────────────────
+        # Use a LightGBM model on BASIC features only (rolling averages,
+        # pace, rest — like a modestly competent oddsmaker). The main model
+        # has access to ALL 159 advanced features (opponent-adjusted, SOS,
+        # play-style, momentum). Edge is the incremental value of advanced
+        # features over basic ones, calculated in-fold (NO leakage).
+        #
+        # Key: using the same model type (LightGBM) for both ensures we measure
+        # FEATURE value, not MODEL superiority. A Ridge on 35 basic features
+        # is too biased — LightGBM on the same basics is a fairer benchmark.
+        basic_feature_prefixes = ["avg_pts_", "avg_pm_", "avg_ts_", "avg_efg_",
+                                   "pace_", "rest_", "is_b2b_", "tz_",
+                                   "home_rest", "away_rest", "home_is_b2b", "away_is_b2b",
+                                   "net_rating_", "opp_avg_pts_allowed_", "opp_avg_pts_scored_"]
+
+        def _get_basic_features(all_cols):
+            selected = []
+            for col in all_cols:
+                for prefix in basic_feature_prefixes:
+                    if col.startswith(prefix):
+                        selected.append(col)
+                        break
+            return selected if len(selected) >= 5 else all_cols[:20]
+
+        def _baseline_lgbm():
+            return TotalPointsPredictor("lightgbm")
+
         # ── Strategy 1: Total Points (LightGBM - v2.0) ───────────────
         print("  Running: Total Points (LightGBM - v2.0)...")
         result_lgbm = self.backtester.run_walk_forward(
@@ -206,6 +233,8 @@ class BettingIntelligenceSystem:
             feature_cols=feature_cols,
             target_col="total_points",
             model_builder=lambda: TotalPointsPredictor("lightgbm"),
+            baseline_model_builder=_baseline_lgbm,
+            baseline_feature_cols=_get_basic_features(feature_cols),
             strategy_name="pace_total",
             model_name=f"LightGBM_{PREFERRED_MODEL}",
             prediction_type="regression",
@@ -222,6 +251,8 @@ class BettingIntelligenceSystem:
                 feature_cols=feature_cols,
                 target_col="total_points",
                 model_builder=lambda: TotalPointsPredictor("catboost"),
+                baseline_model_builder=_baseline_lgbm,
+                baseline_feature_cols=_get_basic_features(feature_cols),
                 strategy_name="pace_total",
                 model_name="CatBoost",
                 prediction_type="regression",
@@ -237,6 +268,8 @@ class BettingIntelligenceSystem:
                 feature_cols=feature_cols,
                 target_col="total_points",
                 model_builder=lambda: TotalPointsPredictor("bayesian"),
+                baseline_model_builder=_baseline_lgbm,
+                baseline_feature_cols=_get_basic_features(feature_cols),
                 strategy_name="pace_total",
                 model_name="BayesianRidge",
                 prediction_type="regression",
@@ -252,6 +285,8 @@ class BettingIntelligenceSystem:
                 feature_cols=feature_cols,
                 target_col="total_points",
                 model_builder=lambda: TotalPointsPredictor("random_forest"),
+                baseline_model_builder=_baseline_lgbm,
+                baseline_feature_cols=_get_basic_features(feature_cols),
                 strategy_name="pace_total",
                 model_name="RandomForest",
                 prediction_type="regression",

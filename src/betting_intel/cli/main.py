@@ -524,6 +524,77 @@ def recommendations_todays_card(json_output: bool):
             click.echo(f"  {cp} {action}")
 
 
+@recommendations.command("tomorrow")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+def recommendations_tomorrow(json_output: bool):
+    """Show tomorrow's predictions with exact bets to place — one-day-ahead."""
+    from betting_intel.recommendations import RecommendationEngine
+
+    engine = RecommendationEngine()
+
+    with click.progressbar(length=3, label="Loading tomorrow's card") as bar:
+        all_bets = engine.generate_all_bets()
+        bar.update(1)
+        tomorrow_bets = engine.get_tomorrows_card()
+        bar.update(1)
+        summary = engine.get_summary()
+        bar.update(1)
+
+    if json_output:
+        click.echo(json.dumps({
+            "summary": summary,
+            "bets": [b.as_dict() for b in tomorrow_bets],
+        }, indent=2))
+        return
+
+    tomorrow_date = (datetime.now() + __import__("datetime").timedelta(days=1)).strftime("%Y-%m-%d")
+
+    click.echo(f"\n{'=' * 80}")
+    click.echo(f"  TOMORROW'S BETTING CARD — {tomorrow_date}")
+    click.echo(f"  One-day-ahead predictions — place these bets")
+    click.echo(f"{'=' * 80}")
+
+    # Group by game
+    games = {}
+    for bet in tomorrow_bets:
+        key = (bet.matchup, bet.league)
+        if key not in games:
+            games[key] = []
+        games[key].append(bet)
+
+    if not games:
+        click.echo("\n  No games scheduled for tomorrow.")
+        click.echo()
+        return
+
+    total_stake = 0
+    for (matchup, league), game_bets in games.items():
+        best_bet = max(game_bets, key=lambda b: b.edge_pct)
+        game_stake = sum(b.stake_dollars for b in game_bets)
+        total_stake += game_stake
+
+        click.echo(f"\n  {'─' * 60}")
+        click.echo(f"  {matchup} ({league})")
+        click.echo(f"  {'─' * 60}")
+
+        # Prime play highlighted
+        cp = "★" if best_bet.is_clear_pick else "▶"
+        action = _format_action(best_bet)
+        click.echo(f"  {cp} PRIME PLAY: {action}")
+        click.echo(f"     Edge: {best_bet.edge_pct:.1%} | Confidence: {best_bet.confidence.value} | Stake: ${best_bet.stake_dollars:.0f}")
+
+        # Other bets
+        for bet in game_bets:
+            if bet != best_bet:
+                action = _format_action(bet)
+                click.echo(f"     {action}")
+
+    click.echo(f"\n  {'═' * 60}")
+    click.echo(f"  TOMORROW'S TOTAL EXPOSURE: ${total_stake:,.0f}")
+    click.echo(f"  {len(tomorrow_bets)} bets across {len(games)} games")
+    click.echo()
+
+
 @recommendations.command("clear-picks")
 @click.option("--min-edge", default=0.03, type=float, help="Minimum edge threshold")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")

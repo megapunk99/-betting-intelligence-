@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+{% block title %}Tomorrow's Predictions{% endblock %}
+
+{% block content %}
+<!-- ═══ HERO ═══ -->
+<div class="text-center py-8 fade-in">
+    <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gradient-to-r from-accent-500/20 to-blue-500/20 border border-accent-500/30 text-accent-400 text-xs mb-4">
+        <span class="w-2 h-2 rounded-full bg-accent-400 animate-pulse"></span>
+        One-Day-Ahead Predictions — {{ tomorrow }}
+    </div>
+    <h1 class="text-4xl sm:text-5xl font-extrabold gradient-text mb-2">
+        TOMORROW'S CARD
+    </h1>
+    <p class="text-gray-500 text-sm max-w-lg mx-auto">
+        Model predictions for tomorrow's games. Each recommendation tells you <strong class="text-white">exactly what to bet</strong> and <strong class="text-white">how much</strong>.
+    </p>
+</div>
+
+<!-- ═══ STATS BAR ═══ -->
+{% set total_stake = tomorrow_bets|sum(attribute='stake_dollars') %}
+{% set avg_edge = tomorrow_bets|map(attribute='edge_pct')|list|sum / tomorrow_bets|length if tomorrow_bets else 0 %}
+{% set clear_count = tomorrow_bets|selectattr('is_clear_pick')|list|length %}
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8 fade-in">
+    <div class="glass-card rounded-xl p-4 text-center">
+        <div class="stat-value text-accent-400">{{ games|length }}</div>
+        <div class="text-xs text-gray-500 uppercase tracking-wider mt-1"> Games</div>
+    </div>
+    <div class="glass-card rounded-xl p-4 text-center">
+        <div class="stat-value text-blue-400">{{ tomorrow_bets|length }}</div>
+        <div class="text-xs text-gray-500 uppercase tracking-wider mt-1"> Bets</div>
+    </div>
+    <div class="glass-card rounded-xl p-4 text-center">
+        <div class="stat-value text-purple-400">${{ "{:,.0f}".format(total_stake|float) }}</div>
+        <div class="text-xs text-gray-500 uppercase tracking-wider mt-1"> Total Stake</div>
+    </div>
+    <div class="glass-card rounded-xl p-4 text-center">
+        <div class="stat-value {% if avg_edge > 0.03 %}text-accent-400{% else %}text-yellow-400{% endif %}">
+            {{ (avg_edge * 100)|round(1) }}%
+        </div>
+        <div class="text-xs text-gray-500 uppercase tracking-wider mt-1"> Avg Edge</div>
+    </div>
+</div>
+
+<!-- ═══ TOMORROW'S GAMES ═══ -->
+{% if games %}
+<div class="space-y-8">
+    {% for matchup, game_info in games.items() %}
+    {% set game_bets = game_info.bets %}
+    {% set best_bet = game_bets|sort(attribute='edge_pct', reverse=True)|first %}
+    {% set game_stake = game_bets|sum(attribute='stake_dollars') %}
+    <div class="glass-card rounded-2xl overflow-hidden fade-in" style="animation-delay: {{ loop.index * 0.08 }}s">
+        <!-- ── Game Header ── -->
+        <div class="px-6 py-5 border-b border-white/5 bg-gradient-to-r from-dark-800/50 to-dark-800/20">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div class="flex items-center gap-4">
+                    <div class="flex flex-col items-center">
+                        <div class="text-3xl font-extrabold text-white">VS</div>
+                    </div>
+                    <div>
+                        <div class="text-xl font-extrabold text-white">{{ matchup }}</div>
+                        <div class="flex items-center gap-2 mt-1.5">
+                            <span class="text-xs px-2.5 py-0.5 rounded-full bg-accent-500/10 border border-accent-500/20 text-accent-400 font-medium">
+                                {{ game_info.league }}
+                            </span>
+                            {% if game_info.series %}
+                            <span class="text-xs text-gray-500">{{ game_info.series }}</span>
+                            {% endif %}
+                            <span class="text-xs text-gray-600">{{ tomorrow }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="text-right">
+                        <div class="text-xs text-gray-500 uppercase tracking-wider">Bets</div>
+                        <div class="text-lg font-bold text-white">{{ game_bets|length }}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs text-gray-500 uppercase tracking-wider">Stake</div>
+                        <div class="text-lg font-bold text-blue-400">${{ game_stake|int }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Best Bet Highlight ── -->
+        {% if best_bet %}
+        <div class="px-6 py-5 border-b border-white/5 bg-gradient-to-r from-accent-500/[0.04] to-transparent">
+            <div class="text-xs text-gray-500 uppercase tracking-wider mb-3 font-semibold"> PRIME PLAY</div>
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div class="flex-1">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="clear-badge text-xs px-3 py-1">PLACE THIS BET</span>
+                        {% if best_bet.is_clear_pick %}
+                        <span class="text-xs px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400">★ Clear Pick</span>
+                        {% endif %}
+                    </div>
+                    <div class="text-2xl sm:text-3xl font-extrabold text-white mt-2">
+                        $<span class="text-accent-400">{{ best_bet.stake_dollars|int }}</span>
+                        <span class="text-gray-400 font-normal text-xl">on</span>
+                        <span class="text-white">{{ best_bet.bet_side }}</span>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-3 mt-2">
+                        <span class="text-xs text-gray-500">{{ best_bet.bet_type_display }}</span>
+                        <span class="text-xs text-gray-600">·</span>
+                        <span class="text-xs text-gray-500">{{ best_bet.model_name }}</span>
+                        {% if best_bet.reasoning %}
+                        <span class="text-xs text-gray-600">·</span>
+                        <span class="text-xs text-gray-500 truncate max-w-md">{{ best_bet.reasoning[:120] }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="flex items-center gap-6 shrink-0">
+                    <div class="text-center">
+                        <div class="text-2xl font-extrabold text-accent-400">+{{ (best_bet.edge_pct * 100)|round(1) }}%</div>
+                        <div class="text-xs text-gray-600">Edge</div>
+                    </div>
+                    <div class="text-center">
+                        {% set conf_numeric = {'VERY_HIGH': 4, 'HIGH': 3, 'MEDIUM': 2, 'LOW': 1, 'VERY_LOW': 0} %}
+                        {% set conf_val = conf_numeric.get(best_bet.confidence.value, 2) %}
+                        <div class="text-2xl font-extrabold {% if conf_val >= 3 %}text-accent-400{% elif conf_val >= 2 %}text-blue-400{% else %}text-yellow-400{% endif %}">
+                            {{ best_bet.confidence.value }}
+                        </div>
+                        <div class="text-xs text-gray-600">Confidence</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Analysis Factors ── -->
+        <div class="px-6 py-4 border-b border-white/5 bg-dark-900/30">
+            <div class="flex flex-wrap gap-4 text-xs">
+                <div class="flex items-center gap-1.5">
+                    <span class="text-gray-600">Predicted:</span>
+                    <span class="text-white font-semibold">{{ best_bet.predicted_value|round(1) }}</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <span class="text-gray-600">Market:</span>
+                    <span class="text-gray-300">{{ best_bet.market_line }}</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <span class="text-gray-600">Stake:</span>
+                    <span class="text-blue-400 font-semibold">${{ best_bet.stake_dollars|int }}</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <span class="text-gray-600">Win Prob:</span>
+                    <span class="text-white font-semibold">{{ (best_bet.win_probability * 100)|round(0) }}%</span>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- ── All Bets for This Game ── -->
+        <div class="divide-y divide-white/5">
+            {% for bet in game_bets %}
+            {% if bet != best_bet %}
+            <div class="px-6 py-3.5 hover:bg-white/[0.02] transition-colors">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3 min-w-0 flex-1">
+                        {% if bet.is_clear_pick %}<span class="clear-badge text-[0.6rem] shrink-0">★</span>{% endif %}
+                        <span class="text-sm font-semibold text-white">
+                            ${{ bet.stake_dollars|int }}
+                            <span class="text-gray-400 font-normal">on</span>
+                            {{ bet.bet_side }}
+                        </span>
+                    </div>
+                    <div class="flex items-center gap-4 shrink-0 ml-4">
+                        <span class="text-sm font-bold {% if bet.edge_pct > 0 %}edge-positive{% endif %}">
+                            +{{ (bet.edge_pct * 100)|round(1) }}%
+                        </span>
+                        <span class="text-sm text-blue-400">${{ bet.stake_dollars|int }}</span>
+                        <span class="text-xs text-gray-500">{{ bet.confidence.value }}</span>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+
+        <!-- ── Reasoning ── -->
+        {% if best_bet and best_bet.reasoning %}
+        <div class="px-6 py-3 border-t border-white/5 bg-dark-900/20">
+            <div class="flex items-start gap-2">
+                <span class="text-xs text-gray-600 mt-0.5 shrink-0"> Why:</span>
+                <span class="text-xs text-gray-500">{{ best_bet.reasoning }}</span>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<!-- ═══ BOTTOM SUMMARY ═══ -->
+<div class="glass-card rounded-2xl p-6 text-center mt-8 fade-in">
+    <div class="text-xs text-gray-600 uppercase tracking-wider mb-1">Tomorrow's Exposure</div>
+    <div class="text-4xl font-extrabold text-accent-400">${{ "{:,.0f}".format(total_stake|float) }}</div>
+    <div class="flex items-center justify-center gap-6 mt-3 text-sm text-gray-500">
+        <span>{{ tomorrow_bets|length }} bets</span>
+        <span class="w-1 h-1 rounded-full bg-gray-600"></span>
+        <span>{{ clear_count }} clear picks</span>
+        <span class="w-1 h-1 rounded-full bg-gray-600"></span>
+        <span>{{ games|length }} games</span>
+        <span class="w-1 h-1 rounded-full bg-gray-600"></span>
+        <span>Avg edge: {{ (avg_edge * 100)|round(1) }}%</span>
+    </div>
+    {% if total_stake > 0 %}
+    <div class="mt-4 pt-4 border-t border-white/5">
+        <a href="/all-bets" class="inline-flex items-center gap-2 text-sm text-accent-400 hover:text-accent-300 transition-colors" hx-boost="true">
+            <span>View all bets including tomorrow's</span>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+            </svg>
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% else %}
+<div class="glass-card rounded-2xl p-16 text-center fade-in">
+    <div class="text-6xl mb-5"></div>
+    <p class="text-gray-500 text-xl">No games scheduled for tomorrow</p>
+    <p class="text-gray-600 text-sm mt-3 max-w-md mx-auto">
+        Predictions for tomorrow's games will appear here automatically when data is available. 
+        Check <a href="/" class="text-accent-400 hover:underline" hx-boost="true">today's card</a> 
+        for current betting opportunities.
+    </p>
+</div>
+{% endif %}
+{% endblock %}
