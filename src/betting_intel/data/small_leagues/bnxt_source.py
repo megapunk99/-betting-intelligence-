@@ -130,6 +130,15 @@ class BNXTSource(SmallLeagueSource):
             resp.raise_for_status()
 
             soup = BeautifulSoup(resp.text, "lxml")
+
+            # Detect Cloudflare challenge page
+            page_text = soup.get_text(" ", strip=True).lower()
+            if "just a moment" in page_text or "enable javascript" in page_text or "cloudflare" in page_text:
+                if not self._cloudflare_warned:
+                    logger.warning("Proballers blocked by Cloudflare, trying Flashscore fallback for upcoming...")
+                    self._cloudflare_warned = True
+                return self._scrape_upcoming_from_flashscore(limit)
+
             records = self._parse_schedule_page(soup, upcoming_only=True)
             logger.info(f"BNXT upcoming: {len(records)} games")
             if records:
@@ -137,8 +146,35 @@ class BNXTSource(SmallLeagueSource):
                 df["league"] = "bnxt"
                 self.validate_schema(df, "bnxt_upcoming")
                 return self._sort_and_dedup(df)
+        except requests.RequestException as exc:
+            status_code = exc.response.status_code if exc.response else "?"
+            logger.warning(f"Proballers blocked for BNXT upcoming (HTTP {status_code}). Non-critical — BNXT data is supplementary.")
         except Exception as exc:
-            logger.error(f"Failed to scrape BNXT upcoming: {exc}")
+            logger.warning(f"Failed to scrape BNXT upcoming: {exc}")
+
+        # Try Flashscore fallback
+        return self._scrape_upcoming_from_flashscore(limit)
+
+    def _scrape_upcoming_from_flashscore(self, limit: int = 20) -> pd.DataFrame:
+        """Fallback: scrape upcoming BNXT games from Flashscore."""
+        try:
+            self._rate_limit()
+            logger.info("Attempting Flashscore BNXT fallback for upcoming games...")
+            resp = self._session.get(FLASHSCORE_BNXT, timeout=15)
+            resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, "lxml")
+            records = self._parse_flashscore_page(soup)
+            if records:
+                # Filter to only upcoming (no scores)
+                upcoming = [r for r in records if r.get("team_score") is None]
+                logger.info(f"Flashscore BNXT upcoming: {len(upcoming)} games")
+                if upcoming:
+                    df = pd.DataFrame(upcoming[:limit])
+                    df["league"] = "bnxt"
+                    self.validate_schema(df, "bnxt_upcoming_fallback")
+                    return self._sort_and_dedup(df)
+        except Exception as exc:
+            logger.debug(f"Flashscore fallback also failed: {exc}")
 
         return pd.DataFrame(columns=list(CANONICAL_SCHEMA.keys()))
 
@@ -196,7 +232,8 @@ class BNXTSource(SmallLeagueSource):
             resp = self._session.get(url, timeout=15)
             resp.raise_for_status()
         except requests.RequestException as exc:
-            logger.error(f"Proballers error for {url}: {exc}")
+            status_code = exc.response.status_code if exc.response else "?"
+            logger.warning(f"Proballers error for BNXT {season} (HTTP {status_code}). Non-critical — trying Flashscore fallback.")
             # Try Flashscore fallback
             return self._scrape_from_flashscore(season)
 
@@ -225,7 +262,7 @@ class BNXTSource(SmallLeagueSource):
                 logger.info(f"Flashscore returned {len(records)} BNXT games")
                 return records
         except requests.RequestException as exc:
-            logger.warning(f"Flashscore also failed: {exc}")
+            logger.debug(f"Flashscore also failed for BNXT: {exc}")
 
         return []
 
