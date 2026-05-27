@@ -35,6 +35,7 @@ Thumbs.db
 data/*.db
 data/*.sqlite
 output/
+reports/
 logs/*.log
 
 # ── Jupyter Notebooks ──────────────────────────────────────────────────────
