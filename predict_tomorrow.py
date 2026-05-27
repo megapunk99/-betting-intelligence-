@@ -47,7 +47,7 @@ from models.predictors import (
 from backtesting.engine import WalkForwardEngine, BacktestResult
 from betting.edge import EdgeDetector
 from betting.bankroll import BankrollManager
-from betting.monte_carlo import MonteCarloSimulator
+from src.betting_intel.betting.monte_carlo import MonteCarloSimulator
 from backtesting.metrics import BacktestMetrics
 
 
@@ -193,7 +193,7 @@ class AdvancedPredictionEngine:
         lgbm_model.fit(X_train, y_train)
         lgbm_metrics = lgbm_model.evaluate(X_test, y_test)
         model_results["total_lgbm"] = {"model": lgbm_model, "metrics": lgbm_metrics}
-        print(f"    LightGBM: MAE={lgbm_metrics['mae']:.1f}, R²={lgbm_metrics['r2']:.3f}")
+        print(f"    LightGBM: MAE={lgbm_metrics['mae']:.1f}, R2={lgbm_metrics['r2']:.3f}")
 
         if not FAST_MODE:
             # CatBoost
@@ -201,14 +201,14 @@ class AdvancedPredictionEngine:
             cb_model.fit(X_train, y_train)
             cb_metrics = cb_model.evaluate(X_test, y_test)
             model_results["total_catboost"] = {"model": cb_model, "metrics": cb_metrics}
-            print(f"    CatBoost: MAE={cb_metrics['mae']:.1f}, R²={cb_metrics['r2']:.3f}")
+            print(f"    CatBoost: MAE={cb_metrics['mae']:.1f}, R2={cb_metrics['r2']:.3f}")
 
             # Bayesian Ridge (uncertainty)
             br_model = TotalPointsPredictor("bayesian")
             br_model.fit(X_train, y_train)
             br_metrics = br_model.evaluate(X_test, y_test)
             model_results["total_bayesian"] = {"model": br_model, "metrics": br_metrics}
-            print(f"    BayesianRidge: MAE={br_metrics['mae']:.1f}, R²={br_metrics['r2']:.3f}")
+            print(f"    BayesianRidge: MAE={br_metrics['mae']:.1f}, R2={br_metrics['r2']:.3f}")
 
             # Stacking Ensemble
             ensemble = StackingEnsemblePredictor("regression")
@@ -221,7 +221,7 @@ class AdvancedPredictionEngine:
                 ensemble_mae = np.mean(np.abs(ensemble_preds - y_test))
                 ensemble_r2 = 1 - np.sum((ensemble_preds - y_test)**2) / np.sum((y_test - y_test.mean())**2)
                 model_results["total_ensemble"] = {"model": ensemble, "metrics": {"mae": ensemble_mae, "r2": ensemble_r2}}
-                print(f"    StackingEnsemble: MAE={ensemble_mae:.1f}, R²={ensemble_r2:.3f}")
+                print(f"    StackingEnsemble: MAE={ensemble_mae:.1f}, R2={ensemble_r2:.3f}")
             except Exception as e:
                 print(f"    [!] Ensemble failed: {e}")
 

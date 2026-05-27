@@ -7,6 +7,7 @@ from pathlib import Path
 from betting_intel.config.settings import Settings, get_settings
 
 _settings = get_settings()
+settings = _settings  # Export the instance so `from betting_intel.config import settings` works
 
 # ── Core constants (matching original config.py API) ──────────────────
 PROJECT_ROOT = _settings.project_root

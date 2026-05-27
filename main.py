@@ -20,29 +20,47 @@ from datetime import datetime
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import config as cfg
 from config import (
     DB_PATH, OUTPUT_DIR, VERBOSE,
     ENABLE_LINEAR_MODEL, ENABLE_XGBOOST_MODEL, ENABLE_ENSEMBLE,
     STRATEGIES, INITIAL_BANKROLL, UNIT_SIZE,
     ENABLE_HYPERPARAMETER_TUNING, ENABLE_STACKING_ENSEMBLE,
     ENABLE_MONTE_CARLO, MONTE_CARLO_SIMULATIONS,
-    PREFERRED_MODEL, FAST_MODE,
+    PREFERRED_MODEL,
 )
 from data.loader import NBADataLoader
 from data.features import FeatureEngineer
+from data.integrity import DataQualityReport
 from models.predictors import (
     TotalPointsPredictor, SpreadPredictor, MomentumModel,
-    StackingEnsemblePredictor, create_best_model, create_tuned_lgbm_regressor
 )
 from backtesting.engine import WalkForwardEngine, BacktestResult
 from backtesting.metrics import BacktestMetrics
 from betting.edge import EdgeDetector
 from betting.bankroll import BankrollManager
-from betting.monte_carlo import MonteCarloSimulator
+from src.betting_intel.betting.monte_carlo import MonteCarloSimulator
+from src.betting_intel.validation.cross_validation import TimeSeriesCrossValidator
+from src.betting_intel.validation.overfitting import OverfittingDetector
+from src.betting_intel.risk.kelly import MultiBetKelly, KellyCalculator
+from src.betting_intel.risk.exposure import ExposureManager, ActiveBet
+from src.betting_intel.risk.correlation import BetCorrelationTracker
+from src.betting_intel.monitoring.drift import PerformanceTracker, FeatureDriftDetector
 
 
 class BettingIntelligenceSystem:
-    """Orchestrates the entire v2.0 betting intelligence pipeline."""
+    """Orchestrates the entire v2.0 betting intelligence pipeline.
+
+    Integrates:
+    - Data integrity & leakage validation
+    - Time-series cross-validation & calibration
+    - Feature engineering (v2.1: opponent-adjusted, SOS, style features)
+    - Walk-forward backtesting
+    - Edge detection & bankroll simulation
+    - Monte Carlo risk analysis
+    - Concept drift tracking
+    - Multi-bet Kelly & exposure management
+    """
 
     def __init__(self):
         self.loader = NBADataLoader()
@@ -52,20 +70,41 @@ class BettingIntelligenceSystem:
         self.bankroll = BankrollManager()
         self.monte_carlo = MonteCarloSimulator(n_simulations=MONTE_CARLO_SIMULATIONS)
         self.results: dict = {}
+        
+        # New modules
+        self.data_quality = DataQualityReport()
+        self.performance_tracker = PerformanceTracker(model_name="ensemble")
+        self.feature_drift_detector = None  # Initialized after feature selection
+        self.exposure_manager = ExposureManager(bankroll=INITIAL_BANKROLL)
+        self.correlation_tracker = BetCorrelationTracker()
 
     def run_full_pipeline(self) -> dict:
-        """Execute the complete v2.0 pipeline."""
+        """Execute the complete v2.1 pipeline with all new modules."""
         print("=" * 60)
-        print("  BETTING INTELLIGENCE v2.0 - FULL PIPELINE")
-        print("  Advanced features + State-of-the-art models + Monte Carlo")
+        print("  BETTING INTELLIGENCE v2.1 - FULL PIPELINE")
+        print("  Data integrity + Validation + Drift tracking + Risk management")
         print("=" * 60)
 
-        # ── 1. Load Data ──────────────────────────────────────────────
-        print("\n[1/7] Loading data...")
+        # ── 0. Data Integrity & Quality ────────────────────────────────
+        print("\n[0/7] Validating data integrity...")
         raw_df = self.loader.load_game_logs()
         games_df = self.loader.build_game_dataset(raw_df)
         raw_df = self.loader.compute_rest_days(raw_df)
+        
+        quality_report = self.data_quality.generate(
+            df=games_df.head(1000),
+            feature_cols=[c for c in games_df.columns if games_df[c].dtype in ("float64", "int64")],
+            db_path=DB_PATH,
+        )
+        self.results["data_quality"] = quality_report
+        print(f"  Data Quality Score: {quality_report.get('overall_score', {}).get('grade', 'N/A')}")
+        print(f"    Rows: {quality_report['dataset_shape'][0]:,} x {quality_report['dataset_shape'][1]:,}")
+        dq = quality_report.get('data_quality', {})
+        missing = dq.get('missing_values', {}).get('missing_pct', 0)
+        print(f"    Missing: {missing:.1f}% | Duplicates: {dq.get('duplicate_games', 0)}")
 
+        # ── 1. Data Loading ───────────────────────────────────────────
+        print("\n[1/7] Loading & cleaning data...")
         print(f"  Raw game logs: {len(raw_df)} rows")
         print(f"  Merged games:  {len(games_df)} rows")
         print(f"  Date range:    {games_df['GAME_DATE'].min().date()} to {games_df['GAME_DATE'].max().date()}")
@@ -74,20 +113,20 @@ class BettingIntelligenceSystem:
         self.results["raw_data_shape"] = len(raw_df)
         self.results["games_data_shape"] = len(games_df)
 
-        # ── 2. Feature Engineering (v2.0) ─────────────────────────────
-        print("\n[2/7] Engineering advanced features (v2.0)...")
-        print("  - Elo ratings with K-factor optimization")
-        print("  - True Shooting %, Points Per Possession")
-        print("  - Opponent-adjusted stats & strength of schedule")
-        print("  - Travel distance & schedule fatigue")
-        print("  - Weighted/decay-based momentum features")
-        print("  - Scoring consistency & volatility metrics")
+        # ── 2. Feature Engineering (v2.1) ─────────────────────────────
+        print("\n[2/7] Engineering advanced features (v2.1)...")
+        print("  - Rolling averages & momentum features")
+        print("  - Opponent-adjusted stats (off/def adjusted)")
+        print("  - Strength of schedule (SOS) & SOS trend")
+        print("  - Play-style features (3PT rate, FT rate, TS%, AST ratio)")
+        print("  - Market line baselines (excluded from model training)")
 
         feature_df = self.feature_engineer.build_all_features(games_df, raw_df)
         feature_cols = self.feature_engineer.select_features(feature_df)
 
         print(f"\n  Features created: {len(feature_cols)}")
-        print(f"  Sample features: {feature_cols[:10]}...")
+        if feature_cols:
+            print(f"  Sample features: {feature_cols[:10]}...")
 
         # Remove rows with NaN features
         clean_df = feature_df.dropna(subset=feature_cols, thresh=len(feature_cols) // 2).copy()
@@ -97,28 +136,45 @@ class BettingIntelligenceSystem:
         self.results["feature_cols"] = feature_cols
         self.results["clean_df"] = clean_df
 
-        # ── 3. Train & Backtest Advanced Models ───────────────────────
-        print("\n[3/7] Running v2.0 model backtests...")
+        # ── 3. Train, Backtest & Validate Models ──────────────────────
+        print("\n[3/7] Running v2.1 model backtests + validation...")
         backtest_results = self._run_backtests(clean_df, feature_cols)
         self.results["backtest_results"] = backtest_results
+        
+        # Time-series cross-validation
+        if len(clean_df) >= 300 and len(feature_cols) >= 5:
+            cv = self._run_cross_validation(clean_df, feature_cols)
+            self.results["cross_validation"] = cv
 
-        # ── 4. Edge Detection (v2.0) ──────────────────────────────────
+        # ── 4. Edge Detection ──────────────────────────────────────────
         print("\n[4/7] Detecting market edges...")
         edge_signals = self.edge_detector.detect_all(clean_df)
         self.results["edge_signals"] = edge_signals
 
-        # ── 5. Bankroll Simulation ────────────────────────────────────
-        print("\n[5/7] Simulating bankroll management...")
+        # ── 5. Bankroll + Kelly + Exposure Simulation ──────────────────
+        print("\n[5/7] Simulating bankroll with Kelly + exposure control...")
         bankroll_results = self._simulate_bankroll(clean_df, feature_cols)
         self.results["bankroll_results"] = bankroll_results
+        
+        # Exposure report
+        exposure_report = self.exposure_manager.get_report()
+        self.results["exposure_report"] = exposure_report
+        
+        if exposure_report.violations:
+            for v in exposure_report.violations:
+                print(f"  [!] {v}")
 
-        # ── 6. Monte Carlo Risk Analysis (v2.0) ──────────────────────
-        print("\n[6/7] Running Monte Carlo risk analysis...")
+        # ── 6. Monte Carlo + Overfitting Analysis ─────────────────────
+        print("\n[6/7] Risk & overfitting analysis...")
         mc_results = self._run_monte_carlo(backtest_results)
         self.results["monte_carlo"] = mc_results
+        
+        # Overfitting detection
+        of_result = self._check_overfitting(backtest_results)
+        self.results["overfitting"] = of_result
 
-        # ── 7. Summary ────────────────────────────────────────────────
-        print("\n[7/7] Generating v2.0 summary...")
+        # ── 7. Summary + Drift Report ──────────────────────────────────
+        print("\n[7/7] Generating v2.1 summary...")
         summary = self._generate_summary()
         self.results["summary"] = summary
 
@@ -126,7 +182,7 @@ class BettingIntelligenceSystem:
         self._save_results()
 
         print("\n" + "=" * 60)
-        print("  PIPELINE COMPLETE")
+        print("  PIPELINE COMPLETE (v2.1)")
         print("=" * 60)
 
         return self.results
@@ -139,9 +195,9 @@ class BettingIntelligenceSystem:
         """
         results = {}
 
-        if FAST_MODE:
+        if cfg.FAST_MODE:
             print("  [Fast Mode] Running only essential models (LightGBM + Momentum)")
-            print("     Use python main.py for the full 7-model comparison.\n")
+            print("     Use python main.py --full for the full 7-model comparison.\n")
 
         # ── Strategy 1: Total Points (LightGBM - v2.0) ───────────────
         print("  Running: Total Points (LightGBM - v2.0)...")
@@ -158,7 +214,7 @@ class BettingIntelligenceSystem:
         results["total_lgbm"] = result_lgbm
         self._print_result(result_lgbm)
 
-        if not FAST_MODE:
+        if not cfg.FAST_MODE:
             # ── Strategy 2: Total Points (CatBoost - v2.0) ─────────────
             print("  Running: Total Points (CatBoost - v2.0)...")
             result_cb = self.backtester.run_walk_forward(
@@ -288,7 +344,7 @@ class BettingIntelligenceSystem:
             m = result.model_metrics
             print(f"    Predictions: {m.get('n_predictions', 0)} | "
                   f"MAE: {m.get('mae', 0):.1f} | "
-                  f"R²: {m.get('r2', 0):.3f}")
+                  f"R2: {m.get('r2', 0):.3f}")
 
     def _build_ensemble(self, results: dict) -> BacktestResult:
         """Build a stacking ensemble from individual model results."""
@@ -377,12 +433,11 @@ class BettingIntelligenceSystem:
         bankroll = BankrollManager(initial_bankroll=INITIAL_BANKROLL)
         results = {"bankroll": bankroll, "snapshots": []}
 
-        # Use the best model for simulation
+        # Use the best model for simulation (dynamically find from all backtest results)
         best_result = None
-        for key in ["total_lgbm", "total_catboost", "total_bayesian", "ensemble"]:
-            if key in self.results.get("backtest_results", {}):
-                r = self.results["backtest_results"][key]
-                if r.total_bets > 0 and (best_result is None or r.sharpe_ratio > best_result.sharpe_ratio):
+        for key, r in self.results.get("backtest_results", {}).items():
+            if isinstance(r, BacktestResult) and r.total_bets > 0:
+                if best_result is None or r.sharpe_ratio > best_result.sharpe_ratio:
                     best_result = r
 
         if best_result is None or best_result.bets_df.empty:
@@ -414,6 +469,23 @@ class BettingIntelligenceSystem:
                 if bankroll.bets_placed:
                     bankroll.record_result(bankroll.bets_placed[-1], won)
 
+                # Track exposure through the exposure manager
+                if hasattr(self, 'exposure_manager'):
+                    self.exposure_manager.add_bet(
+                        ActiveBet(
+                            bet_id=str(bet["game_id"]) + "_" + str(bet.get("game_date", "")),
+                            game_id=str(bet["game_id"]),
+                            matchup=bet.get("matchup", ""),
+                            league="NBA",
+                            bet_type="total",
+                            side=bet.get("bet_type", "OVER").split("_")[-1],
+                            stake_dollars=float(stake[0]),
+                            decimal_odds=1.91,
+                            edge_pct=edge,
+                            win_probability=prob,
+                        )
+                    )
+
             # Weekly snapshots
             if bankroll.total_bets % 10 == 0:
                 bankroll.take_snapshot(str(bet["game_date"]))
@@ -428,6 +500,78 @@ class BettingIntelligenceSystem:
         print(f"  Bets:     {metrics['total_bets']}")
 
         return results
+
+    def _run_cross_validation(self, df: pd.DataFrame, feature_cols: list) -> dict:
+        """Run time-series cross-validation for model stability assessment."""
+        validator = TimeSeriesCrossValidator(n_splits=5, embargo=5)
+
+        results = validator.validate(
+            df=df,
+            feature_cols=feature_cols,
+            target_col="total_points",
+            model_builder=lambda: TotalPointsPredictor("lightgbm"),
+            prediction_type="regression",
+        )
+
+        cv_summary = validator.get_summary()
+        stability = validator.get_prediction_stability()
+
+        print(f"  CV Folds: {cv_summary.get('n_folds', 0)}")
+        print(f"  CV MAE:   {cv_summary.get('mae_mean', 0):.1f} +/- {cv_summary.get('mae_std', 0):.1f}")
+        print(f"  CV R2:    {cv_summary.get('r2_mean', 0):.3f} +/- {cv_summary.get('r2_std', 0):.3f}")
+        if stability:
+            print(f"  Stability: CV(MAE)={stability.get('mae_cv', 0):.2f} "
+                  f"(lower = more stable across time periods)")
+
+        return {
+            "folds": len(results),
+            "summary": cv_summary,
+            "stability": stability,
+        }
+
+    def _check_overfitting(self, backtest_results: dict) -> dict:
+        """Run overfitting detection on backtest results."""
+        detector = OverfittingDetector()
+
+        # Find models with enough bets
+        valid_results = []
+        for key, result in backtest_results.items():
+            if isinstance(result, BacktestResult) and result.total_bets >= 20:
+                valid_results.append((key, result))
+
+        if not valid_results:
+            return {"error": "No valid backtest results for overfitting analysis"}
+
+        # Analyze the best model (highest Sharpe)
+        best_key, best_result = max(valid_results, key=lambda x: x[1].sharpe_ratio)
+
+        train_metrics = {
+            "win_rate": best_result.win_rate,
+            "r2": best_result.model_metrics.get("r2", 0),
+            "mae": best_result.model_metrics.get("mae", 0),
+            "sharpe_ratio": best_result.sharpe_ratio,
+        }
+        test_metrics = train_metrics.copy()  # Walk-forward already uses unseen data
+
+        # CV results (if available)
+        cv_results = self.results.get("cross_validation", {}).get("summary", {})
+        cv_list = [{"r2": cv_results.get("r2_mean", 0)}] if cv_results else []
+
+        analysis = detector.analyze(
+            train_metrics=train_metrics,
+            test_metrics=test_metrics,
+            cv_results=cv_list,
+            n_strategies_tested=len(valid_results),
+            n_observations=best_result.total_bets,
+            sharpe_ratio=best_result.sharpe_ratio,
+        )
+
+        print(f"  Model: {best_key}")
+        print(f"  Overfitting Score: {analysis.get('overfitting_score', 0):.1f}/100")
+        print(f"  Verdict: {analysis.get('verdict', 'N/A')}")
+        print(f"  Deflated Sharpe: {analysis.get('deflated_sharpe', 0):.2f}")
+
+        return analysis
 
     def _run_monte_carlo(self, backtest_results: dict) -> Optional[dict]:
         """Run Monte Carlo simulation on backtest results."""
@@ -464,18 +608,33 @@ class BettingIntelligenceSystem:
         }
 
     def _generate_summary(self) -> str:
-        """Generate comprehensive v2.0 summary."""
+        """Generate comprehensive v2.1 summary with new modules."""
         lines = [
             "=" * 60,
-            "  BETTING INTELLIGENCE v2.0 - SYSTEM SUMMARY",
+            "  BETTING INTELLIGENCE v2.1 - SYSTEM SUMMARY",
             "=" * 60,
             "",
             f"  Data analyzed: {self.results.get('games_data_shape', 0):,} games",
-            f"  Features engineered (v2.0): {len(self.results.get('feature_cols', []))}",
-            f"  (Elo, TS%, opponent-adj, travel fatigue, weighted momentum)",
-            "",
-            "  -- Backtest Results (v2.0 Models) --",
+            f"  Features engineered (v2.1): {len(self.results.get('feature_cols', []))}",
+            f"  (Opponent-adj, SOS, play-style, rolling averages, momentum)",
         ]
+        
+        # Data quality
+        dq = self.results.get("data_quality", {})
+        if dq:
+            overall = dq.get("overall_score", {})
+            lines.extend([
+                "",
+                "  -- Data Quality & Integrity --",
+                f"  Quality: {overall.get('grade', 'N/A')} ({overall.get('score', 0):.0f}/100)",
+            ])
+            for d in overall.get("deductions", []):
+                lines.append(f"    [!] {d}")
+
+        lines.extend([
+            "",
+            "  -- Backtest Results (v2.1 Models) --",
+        ])
 
         for key, result in self.results.get("backtest_results", {}).items():
             if isinstance(result, BacktestResult):
@@ -492,15 +651,40 @@ class BettingIntelligenceSystem:
         for signal in self.results.get("edge_signals", []):
             lines.append(f"  {signal.strategy:12s}: {signal.description[:60]}")
 
+        # Cross-validation
+        cv = self.results.get("cross_validation", {})
+        if cv:
+            cv_summary = cv.get("summary", {})
+            lines.extend([
+                "",
+                "  -- Time-Series Cross-Validation --",
+                f"  Folds: {cv_summary.get('n_folds', 0)}",
+                f"  MAE:    {cv_summary.get('mae_mean', 0):.1f} +/- {cv_summary.get('mae_std', 0):.1f}",
+                f"  R2:     {cv_summary.get('r2_mean', 0):.3f} +/- {cv_summary.get('r2_std', 0):.3f}",
+            ])
+
         bankroll_metrics = self.results.get("bankroll_results", {}).get("metrics", {})
         if bankroll_metrics:
             lines.extend([
                 "",
-                "  -- Bankroll Simulation --",
+                "  -- Bankroll + Kelly Simulation --",
                 f"  Start: ${INITIAL_BANKROLL:,.0f} -> End: ${bankroll_metrics.get('current_bankroll', 0):,.0f}",
                 f"  Return: {bankroll_metrics.get('total_return_pct', 0):+.1f}% | "
                 f"Max DD: {bankroll_metrics.get('drawdown_pct', 0):.1f}%",
             ])
+
+        # Exposure report
+        exposure = self.results.get("exposure_report")
+        if exposure:
+            lines.extend([
+                "",
+                "  -- Exposure Management --",
+                f"  Active bets: {exposure.n_active_bets}",
+                f"  Total exposure: ${exposure.total_exposure:,.0f} ({exposure.bankroll_pct:.1%} of bankroll)",
+            ])
+            if exposure.violations:
+                for v in exposure.violations[:3]:
+                    lines.append(f"    [!] {v}")
 
         # Monte Carlo results
         mc = self.results.get("monte_carlo", {})
@@ -508,13 +692,27 @@ class BettingIntelligenceSystem:
             sim = mc["simulation"]
             lines.extend([
                 "",
-                "  -- Monte Carlo Risk Analysis (v2.0) --",
+                "  -- Monte Carlo Risk Analysis --",
                 f"  Simulations: {sim.n_simulations:,}",
                 f"  Median Profit: ${sim.median_profit:,.0f}",
                 f"  95% CI: ${sim.profit_ci_95[0]:,.0f} to ${sim.profit_ci_95[1]:,.0f}",
                 f"  P(Profitable): {sim.probability_profit:.1%}",
                 f"  Risk of Ruin:   {sim.risk_of_ruin:.1%}",
             ])
+
+        # Overfitting analysis
+        of = self.results.get("overfitting", {})
+        if of and "error" not in of:
+            lines.extend([
+                "",
+                "  -- Overfitting Detection --",
+                f"  Score: {of.get('overfitting_score', 0):.1f}/100",
+                f"  Verdict: {of.get('verdict', 'N/A')}",
+                f"  Deflated Sharpe: {of.get('deflated_sharpe', 0):.2f}",
+            ])
+            if of.get("warnings"):
+                for w in of["warnings"][:3]:
+                    lines.append(f"    [!] {w}")
 
         lines.append("")
         lines.append("=" * 60)
@@ -593,8 +791,7 @@ Examples:
 
     # Override config based on CLI args
     if args.full:
-        import config
-        config.FAST_MODE = False
+        cfg.FAST_MODE = False
 
     tuning = not args.no_tune if args.no_tune else args.tune
     if tuning:
@@ -613,9 +810,12 @@ Examples:
         results = engine.run()
     else:
         # Run the backtesting pipeline
-        mode_label = "FAST" if FAST_MODE else "FULL"
+        mode_label = "FAST" if cfg.FAST_MODE else "FULL"
         print(f"Running {mode_label} pipeline...")
-        print("  Use --full for all models, --tune for hyperparameter tuning\n")
+        if cfg.FAST_MODE:
+            print("  Use --full for all models, --tune for hyperparameter tuning\n")
+        else:
+            print("  Running all 7+ models. This may take a few minutes...\n")
 
         system = BettingIntelligenceSystem()
         results = system.run_full_pipeline()

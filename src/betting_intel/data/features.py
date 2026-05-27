@@ -156,11 +156,203 @@ class FeatureEngineer:
             .fillna(105)
         )
 
+        # ── v2.1 Advanced Features ──────────────────────────────────────
+        # Opponent-adjusted stats
+        df = self.compute_opponent_adjusted_features(df)
+
+        # Strength of schedule
+        df = self.compute_strength_of_schedule(df)
+
+        # Player-specific / team-style features
+        df = self.compute_player_specific_features(df)
+
         # ── Clean Up ──────────────────────────────────────────────────
         df = df.drop(columns=["rest_home_key", "rest_away_key"], errors="ignore")
 
         # Drop intermediate WL string columns but keep WL_num for feature selection
         df = df.drop(columns=["WL_num_home", "WL_num_away"], errors="ignore")
+
+        return df
+
+    # ── Opponent-Adjusted Features (v2.1) ──────────────────────────────
+
+    def compute_opponent_adjusted_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Compute opponent-adjusted stats: how a team performs relative to
+        their opponent's season averages.
+
+        Key insight: scoring 110 pts against the best defense (allows 105)
+        is more impressive than scoring 115 pts against the worst defense
+        (allows 120). These features adjust raw stats by opponent strength.
+        """
+        df = df.copy()
+
+        for team_prefix, suffix in [("home", "home"), ("away", "away")]:
+            team_id_col = f"TEAM_ID_{suffix}"
+            opp_pts_col = f"team_pts_{team_prefix}"
+            opp_id_col = f"TEAM_ID_{'away' if suffix == 'home' else 'home'}"
+            opp_pts_allowed_col = f"team_pts_{'away' if suffix == 'home' else 'home'}"
+            opp_pm_col = f"team_plus_minus_{'away' if suffix == 'home' else 'home'}"
+
+            # Opponent's average points scored (their offensive strength)
+            df[f"opp_avg_pts_scored_{suffix}"] = (
+                df.groupby(opp_id_col)[opp_pts_col]
+                .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
+            )
+
+            # Opponent's average points allowed (their defensive strength)
+            df[f"opp_avg_pts_allowed_{suffix}"] = (
+                df.groupby(opp_id_col)[opp_pts_allowed_col]
+                .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
+            )
+
+            # Opponent's average plus/minus (overall strength)
+            df[f"opp_avg_pm_{suffix}"] = (
+                df.groupby(opp_id_col)[opp_pm_col]
+                .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
+            )
+
+            # This team's scoring relative to opponent's defense
+            # If team scores X and opponent usually allows Y, then X/Y > 1 means above-expectation
+            team_pts_col = f"avg_pts_10g_{suffix}"
+            if team_pts_col in df.columns:
+                df[f"offense_vs_defense_{suffix}"] = (
+                    df[team_pts_col] / df[f"opp_avg_pts_allowed_{suffix}"].clip(lower=1)
+                )
+
+            # Opponent's offense vs this team's defense
+            opp_off_col = f"opp_avg_pts_scored_{suffix}"
+            team_def_col = f"avg_pts_allowed_{suffix}"
+            if team_def_col in df.columns:
+                df[f"defense_vs_offense_{suffix}"] = (
+                    df[opp_off_col] / df[team_def_col].clip(lower=1)
+                )
+
+        # Opponent quality differential (how much better is opponent than average)
+        for col in ["opp_avg_pm_home", "opp_avg_pm_away"]:
+            if col in df.columns:
+                df[f"adj_{col}"] = df[col]  # Already shifted, no further adjustment needed
+
+        return df
+
+    def compute_strength_of_schedule(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Compute strength of schedule (SOS) features.
+
+        SOS = weighted average of opponent quality over recent games.
+        Higher SOS = tougher schedule = more informative for edge detection.
+        """
+        df = df.copy()
+
+        for team_prefix, suffix in [("home", "home"), ("away", "away")]:
+            team_id_col = f"TEAM_ID_{suffix}"
+            opp_id_col = f"TEAM_ID_{'away' if suffix == 'home' else 'home'}"
+            opp_pm_col = f"team_plus_minus_{'away' if suffix == 'home' else 'home'}"
+
+            # Get opponent's trailing margin (shifted so we don't leak)
+            opp_trailing_margin = (
+                df.groupby(opp_id_col)[opp_pm_col]
+                .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
+            )
+            df[f"opp_trailing_margin_{suffix}"] = opp_trailing_margin
+
+            # For each team, average the quality of their recent opponents
+            # This creates a rolling average of opponent strength
+            df[f"sos_{suffix}"] = (
+                df.groupby(team_id_col)[f"opp_trailing_margin_{suffix}"]
+                .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
+            )
+
+            # Recent SOS trend (last 5 vs last 10)
+            sos_5 = (
+                df.groupby(team_id_col)[f"opp_trailing_margin_{suffix}"]
+                .transform(lambda x: x.rolling(5, min_periods=1).mean().shift(1))
+            )
+            sos_10 = df.get(f"sos_{suffix}", 0)
+            df[f"sos_trend_{suffix}"] = sos_5 - sos_10.fillna(0)
+
+        return df
+
+    def compute_player_specific_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Compute player/position-specific features from team-level data.
+
+        Safely handles missing columns — skips features when source columns
+        aren't available (e.g. in test fixtures with minimal schema).
+
+        Features:
+        - 3-point attempt rate (proxy for spacing / modern offense)
+        - Free throw rate (proxy for aggressive play / foul drawing)
+        - Assist ratio (proxy for ball movement / system offense)
+        - True shooting percentage
+        - Rebound rate
+        """
+        df = df.copy()
+
+        for team_prefix, suffix in [("home", "home"), ("away", "away")]:
+            team_id_col = f"TEAM_ID_{suffix}"
+            fga_col = f"team_fga_{team_prefix}"
+            fg3a_col = f"team_fg3a_{team_prefix}"
+            fta_col = f"team_fta_{team_prefix}"
+            ast_col = f"team_ast_{team_prefix}"
+            pts_col = f"team_pts_{team_prefix}"
+            reb_col = f"team_reb_{team_prefix}"
+            tov_col = f"team_tov_{team_prefix}"
+
+            # Skip if required base columns are missing
+            if fga_col not in df.columns or pts_col not in df.columns:
+                continue
+
+            # ── 3-point attempt rate ────────────────────────────────
+            if fg3a_col in df.columns and fga_col in df.columns:
+                df[f"three_pt_rate_{suffix}"] = (
+                    df[fg3a_col] / df[fga_col].clip(lower=1)
+                )
+                df[f"three_pt_rate_10g_{suffix}"] = (
+                    df.groupby(team_id_col)[f"three_pt_rate_{suffix}"]
+                    .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
+                )
+
+            # ── Free throw rate ─────────────────────────────────────
+            if fta_col in df.columns and fga_col in df.columns:
+                df[f"ft_rate_{suffix}"] = (
+                    df[fta_col] / df[fga_col].clip(lower=1)
+                )
+                df[f"ft_rate_10g_{suffix}"] = (
+                    df.groupby(team_id_col)[f"ft_rate_{suffix}"]
+                    .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
+                )
+
+            # ── Assist ratio ────────────────────────────────────────
+            if all(c in df.columns for c in [ast_col, fga_col, fta_col, tov_col]):
+                df[f"ast_ratio_{suffix}"] = (
+                    df[ast_col] / (df[fga_col] + df[fta_col] + df[tov_col]).clip(lower=1)
+                )
+                df[f"ast_ratio_10g_{suffix}"] = (
+                    df.groupby(team_id_col)[f"ast_ratio_{suffix}"]
+                    .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
+                )
+
+            # ── True shooting percentage ────────────────────────────
+            if all(c in df.columns for c in [pts_col, fga_col, fta_col]):
+                df[f"ts_pct_{suffix}"] = (
+                    df[pts_col] / (2 * (df[fga_col] + 0.44 * df[fta_col])).clip(lower=1)
+                )
+                df[f"ts_pct_10g_{suffix}"] = (
+                    df.groupby(team_id_col)[f"ts_pct_{suffix}"]
+                    .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
+                )
+
+            # ── Rebound rate ────────────────────────────────────────
+            opp_reb_col = f"team_reb_{'away' if team_prefix == 'home' else 'home'}"
+            if reb_col in df.columns and opp_reb_col in df.columns:
+                df[f"reb_pct_{suffix}"] = (
+                    df[reb_col] / (df[reb_col] + df[opp_reb_col]).clip(lower=1)
+                )
+                df[f"reb_pct_10g_{suffix}"] = (
+                    df.groupby(team_id_col)[f"reb_pct_{suffix}"]
+                    .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
+                )
 
         return df
 
@@ -199,5 +391,11 @@ class FeatureEngineer:
             "market_line_baseline",
             "market_line_pace_adj",
             "trailing_avg_total_10g",
+            # Intermediate calculation columns (not features themselves):
+            "three_pt_rate_home", "three_pt_rate_away",
+            "ft_rate_home", "ft_rate_away",
+            "ast_ratio_home", "ast_ratio_away",
+            "ts_pct_home", "ts_pct_away",
+            "reb_pct_home", "reb_pct_away",
         }
         return [c for c in df.columns if c not in exclude and df[c].dtype in ("float64", "int64")]
