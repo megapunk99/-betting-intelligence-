@@ -24,6 +24,7 @@ Data source: https://cdn.nba.com/static/json/liveData/boxscore/boxscore_{game_id
 from __future__ import annotations
 
 import re
+import sys
 import time
 import sqlite3
 import logging
@@ -616,6 +617,13 @@ class PlayerStatsManager:
 
 def main():
     """Run the player stats updater as a CLI."""
+    # ── Windows Console Encoding Fix ──────────────────────────────
+    if sys.stdout.encoding and sys.stdout.encoding.upper() not in ('UTF-8', 'UTF8'):
+        try:
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        except AttributeError:
+            pass
+
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -666,7 +674,7 @@ def main():
     if top:
         print("\nTop scorers found:")
         for name, team, ppg in top:
-            print(f"  {name.encode('ascii', 'replace').decode('ascii'):25s} {team:3s}  {ppg:.1f} PPG")
+            print(f"  {name:25s} {team:3s}  {ppg:.1f} PPG")
 
     return 0
 
