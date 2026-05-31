@@ -145,8 +145,16 @@ def load_and_prepare_data() -> tuple[pd.DataFrame, list[str], pd.DataFrame]:
     # Create home_win target
     feature_df["home_win"] = (feature_df["point_diff"] > 0).astype(int)
 
-    clean_df = feature_df.dropna(subset=feature_cols, thresh=len(feature_cols) // 2).copy()
-    print(f"    Clean:    {len(clean_df):,} rows (dropped {len(feature_df) - len(clean_df)})")
+    # After backfill_features in the FeatureEngineer, all NaN features should
+    # be filled with league-average defaults — no rows should be dropped.
+    clean_df = feature_df.copy()
+    remaining_nas = clean_df[feature_cols].isna().sum().sum()
+    if remaining_nas:
+        print(f"    {YELLOW}Warning: {remaining_nas} NaN values remain after backfill{RESET}")
+        clean_df = feature_df.dropna(subset=feature_cols, thresh=len(feature_cols) // 2).copy()
+        print(f"    Clean:    {len(clean_df):,} rows (dropped {len(feature_df) - len(clean_df)})")
+    else:
+        print(f"    Clean:    {len(clean_df):,} rows (all features backfilled)")
 
     return clean_df, feature_cols, feature_df
 

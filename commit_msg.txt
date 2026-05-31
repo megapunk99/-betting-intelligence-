@@ -1,0 +1,8 @@
+Fix 2024-25 data quality: backfill OREB/DREB/STL/BLK/TOV/PF from ESPN boxscore API
+
+- 2024-25 season had OREB, DREB, STL, BLK, TOV, PF all set to zero
+  (ESPN scoreboard Phase 1 didn't capture advanced stats)
+- Ran boxscore backfill via scripts/fetch_real_nba_data.py --backfill
+- Added tools/update_data.py for scraping current season from NBA CDN API
+- Made SEASON_ID dynamic in scraper, added retry logic for boxscore fetches
+- Both seasons now consistent: TOV~14, STL~8, BLK~5, OREB~11, DREB~33

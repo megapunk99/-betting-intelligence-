@@ -286,6 +286,13 @@ class FeatureEngineer:
         # Drop intermediate WL string columns but keep WL_num for feature selection
         df = df.drop(columns=["WL_num_home", "WL_num_away"], errors="ignore")
 
+        # ── Backfill NAs with league-average defaults ──────────────────
+        # Rolling features (avg_pts_*, avg_pm_*, ema_*, etc.) are NaN for
+        # each team's first game(s) of the season since there's no prior
+        # history to compute from. We fill with sensible defaults so no
+        # training data is dropped.
+        df = self.backfill_features(df)
+
         return df
 
     # ── Opponent-Adjusted Features (v2.1) ──────────────────────────────
@@ -664,6 +671,88 @@ class FeatureEngineer:
         # Interaction features
         df["rest_adv_sq"] = df["rest_advantage"] ** 2
         df["fatigue_rest_interact"] = df["fatigue_diff"] * df["rest_advantage"]
+
+        return df
+
+    def backfill_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Backfill NaN feature values with league-average defaults.
+
+        Rolling features (avg_pts_*, avg_pm_*, ema_*, etc.) are NaN for
+        each team's first game(s) of the season since there's no prior
+        history to compute from. This fills those gaps with sensible
+        league-average estimates, so no training data needs to be dropped.
+
+        Also handles edge cases like eFG being NaN when FGA=0.
+        """
+        df = df.copy()
+
+        # Map column name patterns to sensible league-average defaults
+        # These are derived from typical NBA season averages.
+        _NA_FILL: dict[str, float] = {
+            # Points & scoring averages
+            "avg_pts": 114.5,
+            "pts_zscore": 0.0,
+            "ema_pts": 114.5,
+            "trend_pts": 0.0,
+            # Margin / plus-minus
+            "avg_pm": 0.0,
+            "avg_margin": 0.0,
+            "last_3_margin": 0.0,
+            "margin_volatility": 12.0,
+            "ema_pm": 0.0,
+            "ema_margin": 0.0,
+            "trend_pm": 0.0,
+            # Pace
+            "pace": 100.0,
+            "avg_pace": 100.0,
+            # Efficiency
+            "efg": 0.54,
+            "avg_efg": 0.54,
+            # Win rates & momentum
+            "win_pct": 0.5,
+            "win_streak": 0.0,
+            "weighted_momentum": 0.5,
+            "form_score": 0.5,
+            # Opponent features
+            "opp_avg_pts": 114.5,
+            "opp_avg_pm": 0.0,
+            "opp_trailing_margin": 0.0,
+            "adj_opp_avg_pm": 0.0,
+            "offense_vs_defense": 1.0,
+            "defense_vs_offense": 1.0,
+            # Strength of schedule
+            "sos": 0.0,
+            "sos_trend": 0.0,
+            # Rate stats
+            "three_pt_rate": 0.38,
+            "ft_rate": 0.26,
+            "ast_ratio": 0.18,
+            "ts_pct": 0.57,
+            "reb_pct": 0.50,
+            # Travel / cumulative
+            "cum_travel": 0.0,
+        }
+
+        for col in df.columns:
+            if not df[col].isna().any():
+                continue
+
+            # Find the best-matching key
+            matched = False
+            for pattern, fill_value in _NA_FILL.items():
+                if pattern in col:
+                    df[col] = df[col].fillna(fill_value)
+                    matched = True
+                    break
+
+            if not matched:
+                # Fallback: use median of non-NA values, then 0
+                median_val = df[col].dropna().median()
+                if not pd.isna(median_val):
+                    df[col] = df[col].fillna(median_val)
+                else:
+                    df[col] = df[col].fillna(0.0)
 
         return df
 
