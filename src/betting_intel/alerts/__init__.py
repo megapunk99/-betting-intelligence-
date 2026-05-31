@@ -25,11 +25,13 @@ Usage:
 
 from betting_intel.alerts.telegram import TelegramBot
 from betting_intel.alerts.discord import DiscordWebhook
+from betting_intel.alerts.email import EmailNotifier
 from betting_intel.alerts.dispatcher import AlertDispatcher, AlertConfig, AlertChannel, BetAlert
 
 __all__ = [
     "TelegramBot",
     "DiscordWebhook",
+    "EmailNotifier",
     "AlertDispatcher",
     "AlertConfig",
     "AlertChannel",

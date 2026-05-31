@@ -112,7 +112,12 @@ class BetRecommendation:
     def summary(self) -> str:
         """Human-readable one-liner."""
         side = self.bet_side.upper()
-        odds_str = f"{self.odds_american:+.0f}" if self.odds_american else f"{self.odds_decimal:.2f}"
+        if self.odds_american:
+            odds_str = f"{self.odds_american:+.0f}"
+        elif self.odds_decimal:
+            odds_str = f"{self.odds_decimal:.2f}"
+        else:
+            odds_str = "N/A"
         stake_str = f"${self.stake.recommended_stake:.0f}" if self.stake.is_valid else "no bet"
         return (
             f"{'✅' if self.is_actionable else '⛔'} {self.bet_label} "

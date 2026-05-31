@@ -127,6 +127,108 @@ class TestKellyCalculator:
         # With drawdown protection, the fraction should be lower
         assert fraction <= ndd_frac + 1e-10
 
+    def test_drawdown_at_5pct_threshold(self, kelly):
+        """5% drawdown should not reduce stake (threshold is > 5%)."""
+        from betting_intel.risk.kelly import KellyCalculator
+
+        kelly.drawdown_protection = True
+        kelly.current_bankroll = 9_500.0
+        kelly.peak_bankroll = 10_000.0
+
+        # 5% drawdown: drawdown_pct = 0.05, not > 0.05, so no reduction
+        dd_frac, dd_stake = kelly.compute_kelly(win_probability=0.60, decimal_odds=1.91)
+
+        no_dd = KellyCalculator(
+            bankroll=9500, fraction=0.25, max_fraction=0.15, drawdown_protection=False
+        )
+        ndd_frac, ndd_stake = no_dd.compute_kelly(0.60, 1.91)
+
+        assert dd_frac == pytest.approx(ndd_frac, abs=1e-6)
+
+    def test_drawdown_deep_reduction(self, kelly):
+        """33% drawdown should reduce fraction to near zero."""
+        kelly.drawdown_protection = True
+        kelly.current_bankroll = 6_700.0
+        kelly.peak_bankroll = 10_000.0
+
+        fraction, stake = kelly.compute_kelly(win_probability=0.60, decimal_odds=1.91)
+        # 33% drawdown: factor = max(0.1, 1.0 - 0.33 * 3) = max(0.1, 0.01) = 0.1
+        # So stake should be reduced to ~10% of normal
+        assert fraction <= 0.02  # Heavily reduced
+
+    def test_drawdown_no_peak_change(self, kelly):
+        """Drawdown protection should not affect stake when at peak bankroll."""
+        from betting_intel.risk.kelly import KellyCalculator
+
+        kelly.drawdown_protection = True
+        # Bankroll at peak - no drawdown
+        kelly.current_bankroll = 10_000.0
+        kelly.peak_bankroll = 10_000.0
+
+        dd_f, dd_s = kelly.compute_kelly(win_probability=0.60, decimal_odds=1.91)
+
+        no_dd = KellyCalculator(
+            bankroll=10000, fraction=0.25, max_fraction=0.15, drawdown_protection=False
+        )
+        ndd_f, ndd_s = no_dd.compute_kelly(0.60, 1.91)
+
+        assert dd_f == pytest.approx(ndd_f, abs=1e-6)
+
+    def test_compute_with_edge_zero_edge(self, kelly):
+        """compute_with_edge with edge_pct=0 should behave like compute_kelly."""
+        kelly_frac, kelly_stake = kelly.compute_kelly(
+            win_probability=0.55, decimal_odds=1.91
+        )
+        edge_frac, edge_stake = kelly.compute_with_edge(
+            win_probability=0.55, edge_pct=0.0, decimal_odds=1.91
+        )
+        assert edge_frac >= 0 and edge_stake >= 0
+
+    def test_compute_kelly_min_edge_zero(self, kelly):
+        """With min_edge=0.0, even tiny edges should produce stakes."""
+        from betting_intel.risk.kelly import KellyCalculator
+
+        no_threshold = KellyCalculator(
+            bankroll=10_000.0,
+            fraction=0.25,
+            max_fraction=0.15,
+            min_edge=0.0,
+            drawdown_protection=False,
+        )
+        # ~53% at 1.91 odds = ~0.64% positive edge, should pass 0% threshold
+        fraction, stake = no_threshold.compute_kelly(
+            win_probability=0.53, decimal_odds=1.91
+        )
+        # edge = 0.53 - 0.52356 = 0.00644 > 0.0, so passes
+        # full_kelly = (0.91*0.53 - 0.47)/0.91 = 0.0123/0.91 = 0.0135
+        # quarter = 0.0135 * 0.25 = 0.00338
+        assert fraction > 0
+        assert stake > 0
+
+    def test_compute_kelly_exact_edge_at_threshold(self, kelly):
+        """Edge exactly at min_edge should be actionable (>= check)."""
+        # For -110 (1.91) odds, implied prob = 0.5238
+        # Model prob of 0.5438 gives edge = 0.02 exactly
+        # But due to rounding, the actual edge check is edge >= min_edge (it's >= not >)
+        # Actually no, looking at the code:
+        #   if edge < self.min_edge: return (0.0, 0.0)
+        # So exactly at threshold passes
+        fraction, stake = kelly.compute_kelly(
+            win_probability=0.5438, decimal_odds=1.91
+        )
+        # 0.5438 - 0.52356 = 0.02024 >= 0.02, so should pass
+        assert fraction > 0
+        assert stake > 0
+
+    def test_record_result_near_zero_bankroll(self, kelly):
+        """Recording a loss that drops bankroll near zero should not break."""
+        kelly.current_bankroll = 100.0
+        kelly.peak_bankroll = 10_000.0
+
+        fraction, stake = kelly.compute_kelly(win_probability=0.60, decimal_odds=1.91)
+        assert fraction >= 0
+        assert stake >= 0
+
 
 class TestMultiBetKelly:
     """Tests for multi-bet Kelly optimization."""

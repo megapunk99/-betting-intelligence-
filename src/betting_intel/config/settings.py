@@ -119,6 +119,17 @@ class Settings(BaseSettings):
     telegram_chat_id: str = Field(default="", description="Target Telegram chat ID for alerts")
     enable_discord: bool = Field(default=False, description="Enable Discord webhook alerts")
     discord_webhook_url: str = Field(default="", description="Discord webhook URL for alerts")
+
+    # ── Email Notification Settings ────────────────────────────────────
+    enable_email: bool = Field(default=False, description="Enable email notifications for pipeline events")
+    smtp_server: str = Field(default="smtp.gmail.com", description="SMTP server hostname")
+    smtp_port: int = Field(default=587, ge=1, le=65535, description="SMTP server port")
+    smtp_username: str = Field(default="", description="SMTP login username")
+    smtp_password: str = Field(default="", description="SMTP login password / app password")
+    smtp_from_addr: str = Field(default="", description="From address for outgoing emails")
+    smtp_to_addr: str = Field(default="", description="To address for pipeline notification emails")
+    smtp_use_tls: bool = Field(default=True, description="Use STARTTLS for SMTP")
+
     alert_min_edge_pct: float = Field(default=3.0, ge=0.0, le=100.0, description="Minimum edge % to send alert")
     alert_min_confidence: float = Field(default=0.55, ge=0.0, le=1.0, description="Minimum confidence to send alert")
     alert_min_stake: float = Field(default=50.0, ge=0.0, description="Minimum stake $ to send alert")

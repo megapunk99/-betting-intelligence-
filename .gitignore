@@ -33,6 +33,8 @@ Thumbs.db
 *.sqlite
 *.sqlite3
 data/*.db
+data/*.db-shm
+data/*.db-wal
 data/*.sqlite
 output/
 reports/
