@@ -144,6 +144,61 @@ class BacktestMetrics:
                 edge_outcome_corr if not np.isnan(edge_outcome_corr) else 0
             )
 
+        # ---- Probability Calibration Metrics ----
+        # Brier score and calibration error require predicted probabilities
+        # and actual outcomes (for classification models)
+        if "home_win_prob" in df.columns and "actual_class" in df.columns:
+            prob = df["home_win_prob"].values
+            actual = df["actual_class"].values
+
+            # Brier Score = mean((predicted_prob - actual)^2)
+            metrics["brier_score"] = float(np.mean((prob - actual) ** 2))
+
+            # Brier skill score relative to naive 50/50 baseline
+            baseline_brier = 0.25  # always predicting 0.5 for binary
+            if baseline_brier > 0:
+                metrics["brier_skill_score"] = float(
+                    1.0 - metrics["brier_score"] / baseline_brier
+                )
+
+            # Log loss (cross-entropy)
+            eps = 1e-15
+            prob_clipped = np.clip(prob, eps, 1 - eps)
+            log_loss = -np.mean(
+                actual * np.log(prob_clipped) + (1 - actual) * np.log(1 - prob_clipped)
+            )
+            metrics["log_loss"] = float(log_loss)
+
+            # Expected Calibration Error (ECE)
+            # Bin predictions into 10 equal-width bins
+            n_bins = 10
+            bin_edges = np.linspace(0, 1, n_bins + 1)
+            bin_indices = np.clip(
+                np.digitize(prob, bin_edges[1:-1]), 0, n_bins - 1
+            )
+
+            calibration_errors = []
+            bin_weights = []
+            for bin_i in range(n_bins):
+                mask = bin_indices == bin_i
+                if mask.sum() == 0:
+                    continue
+                bin_prob_mean = float(np.mean(prob[mask]))
+                bin_actual_mean = float(np.mean(actual[mask]))
+                calibration_errors.append(abs(bin_prob_mean - bin_actual_mean))
+                bin_weights.append(mask.sum())
+
+            if sum(bin_weights) > 0:
+                weights = np.array(bin_weights) / sum(bin_weights)
+                metrics["calibration_error_ece"] = float(
+                    np.average(calibration_errors, weights=weights)
+                )
+                metrics["calibration_error_max"] = float(max(calibration_errors))
+
+            # Reliability diagram values (for downstream plotting)
+            if "_reliability_bin_probs" not in metrics:
+                pass  # Could add later if needed
+
         return metrics
 
     @staticmethod
