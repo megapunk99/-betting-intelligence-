@@ -13,8 +13,6 @@ import sys
 import os
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 import sqlite3
 import pandas as pd
 import numpy as np
@@ -23,7 +21,10 @@ import time
 import warnings
 warnings.filterwarnings("ignore")
 
-from config import DB_PATH
+# Add src/ to path so we can import from betting_intel.*
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from betting_intel.config import DB_PATH
 
 # ── Team ID to name mapping (NBA API) ────────────────────────────────────
 TEAMS = {

@@ -29,9 +29,15 @@ from betting_intel.services import logger, setup_logging
 class TaskScheduler:
     """Simple task scheduler for periodic pipeline execution."""
 
-    def __init__(self, interval_minutes: int = 60):
+    def __init__(
+        self,
+        interval_minutes: int = 60,
+        maintenance_interval_mins: int = 180,  # DB cleanup every 3 hours
+    ):
         self.interval = timedelta(minutes=interval_minutes)
+        self.maintenance_interval = timedelta(minutes=maintenance_interval_mins)
         self.last_run: Optional[datetime] = None
+        self._last_maintenance: Optional[datetime] = None
         self._running = False
 
     def run_pipeline(self) -> dict:
@@ -226,10 +232,68 @@ class TaskScheduler:
         except Exception as exc:
             logger.debug(f"Daily summary dispatch skipped: {exc}")
 
+    async def run_maintenance(self):
+        """Run periodic database maintenance to clean up stale/leftover data.
+
+        Evicts old pipeline runs, game records, and bet records that
+        exceed their retention windows. Also prunes settled betting records
+        and reclaims disk space via VACUUM.
+        """
+        now = datetime.now()
+        if (
+            self._last_maintenance is not None
+            and (now - self._last_maintenance) < self.maintenance_interval
+        ):
+            return  # Not time yet
+
+        logger.info("Scheduled database maintenance starting")
+
+        try:
+            from betting_intel.config.settings import get_settings
+            from betting_intel.db.maintenance import DatabaseMaintenance
+
+            settings = get_settings()
+
+            # Determine the betting_intel.db path from settings
+            db_url = settings.database_url  # e.g. "sqlite:///./data/betting_intel.db"
+            db_path = None
+            if db_url.startswith("sqlite"):
+                path_part = db_url.replace("sqlite:///", "")
+                candidate = Path(path_part).resolve()
+                if candidate.exists():
+                    db_path = candidate
+
+            if db_path:
+                maint = DatabaseMaintenance(db_path=db_path)
+                results = maint.cleanup_all(dry_run=False)
+                total = sum(results.values())
+                if total:
+                    logger.info(
+                        f"Database maintenance: cleaned {total} stale records",
+                        details=results,
+                    )
+                else:
+                    logger.debug("Database maintenance: nothing to clean")
+            else:
+                logger.debug("Skipping DB maintenance — not SQLite or path not found")
+
+            # Vacuum the odds snapshots DB if it exists (data eviction is
+            # handled by OddsPoller._evict_stale_db_snapshots on its own TTL)
+            odds_db = Path(settings.odds_snapshots_db).resolve()
+            if odds_db.exists():
+                odds_maint = DatabaseMaintenance(db_path=odds_db)
+                odds_maint.vacuum()
+
+            self._last_maintenance = now
+
+        except Exception as exc:
+            logger.warning(f"Database maintenance failed: {exc}")
+
     async def run_once(self):
         """Run the pipeline once and exit, with health checks and summary dispatch."""
         pipeline_result = self.run_pipeline()
         self.check_league_health()
+        await self.run_maintenance()
         await self.send_daily_summary(pipeline_result)
 
     def run_loop(self):

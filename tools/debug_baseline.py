@@ -5,18 +5,22 @@ This loads data, runs ONE walk-forward window, and prints every step of the pipe
 to find where baseline_prediction gets dropped.
 """
 
-import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import sys
+import os
+import warnings
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import warnings
 warnings.filterwarnings("ignore")
 
-from data.loader import NBADataLoader
-from src.betting_intel.data.features import FeatureEngineer
-from backtesting.engine import WalkForwardEngine, BacktestResult
-from models.predictors import TotalPointsPredictor
+# Add src/ to path so we can import from betting_intel.*
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from betting_intel.data.loader import NBADataLoader
+from betting_intel.data.features import FeatureEngineer
+from betting_intel.backtesting.engine import WalkForwardEngine, BacktestResult
+from betting_intel.models.predictors import TotalPointsPredictor
 
 # ── Load data ───────────────────────────────────────────────────────
 print("=" * 65)

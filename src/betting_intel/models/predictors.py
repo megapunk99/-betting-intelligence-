@@ -10,6 +10,7 @@ from typing import Dict, Tuple, Optional, Any
 from sklearn.linear_model import LinearRegression, Ridge, LogisticRegression
 from sklearn.ensemble import GradientBoostingRegressor, GradientBoostingClassifier
 from sklearn.preprocessing import StandardScaler
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import (
     mean_absolute_error, mean_squared_error, r2_score,
     accuracy_score, log_loss, brier_score_loss
@@ -63,7 +64,7 @@ class TotalPointsPredictor(BasePredictor):
             self.model = XGBRegressor(
                 n_estimators=100, max_depth=4, learning_rate=0.1,
                 subsample=0.8, colsample_bytree=0.8,
-                random_state=42, n_jobs=-1, early_stopping_rounds=20
+                random_state=42, n_jobs=-1
             )
         elif model_type == "xgboost":
             self.model = GradientBoostingRegressor(
@@ -149,20 +150,49 @@ class MomentumModel(BasePredictor):
     Models momentum reversion.
     Edge hypothesis: Teams on streaks are overvalued by the market.
     Bets against extreme streaks should have positive EV.
+
+    When calibrate=True, applies Platt scaling (sigmoid calibration) via
+    CalibratedClassifierCV to correct overconfident probability estimates.
     """
 
-    def __init__(self):
-        super().__init__("Momentum_Logistic")
-        self.model = LogisticRegression(C=0.5, class_weight="balanced", random_state=42)
+    def __init__(self, model_type: str = "logistic", calibrate: bool = False):
+        name = "Momentum_Logistic_Calibrated" if calibrate else "Momentum_Logistic"
+        super().__init__(name)
+        self.calibrate = calibrate
+        self._base_logistic = LogisticRegression(
+            C=0.5, class_weight="balanced", random_state=42
+        )
+        if calibrate:
+            self.model = CalibratedClassifierCV(
+                base_estimator=self._base_logistic,
+                method="sigmoid",   # Platt scaling
+                cv=5,               # 5-fold CV within training set
+            )
+        else:
+            self.model = self._base_logistic
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> "MomentumModel":
         X_scaled = self.scaler.fit_transform(X)
-        # y should be binary: 1 = home team covers / wins
         self.model.fit(X_scaled, y)
         self.is_fitted = True
-        if hasattr(self.model, "coef_"):
-            self.feature_importance = self.model.coef_[0]
+        self._extract_feature_importance()
         return self
+
+    def _extract_feature_importance(self):
+        """Extract coefficients from the underlying logistic regression."""
+        if self.calibrate:
+            # CalibratedClassifierCV stores one calibrated classifier per fold
+            coefs = []
+            for cc in self.model.calibrated_classifiers_:
+                # Access the fitted base estimator (attribute name varies by sklearn version)
+                base = getattr(cc, "base_estimator_", None) or getattr(cc, "base_estimator", None) or getattr(cc, "estimator", None)
+                if base is not None and hasattr(base, "coef_"):
+                    coefs.append(base.coef_[0])
+            if coefs:
+                self.feature_importance = np.mean(coefs, axis=0)
+        else:
+            if hasattr(self.model, "coef_"):
+                self.feature_importance = self.model.coef_[0]
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         if not self.is_fitted:

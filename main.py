@@ -6,22 +6,23 @@ and Monte Carlo risk analysis.
 Run: python main.py  (from the betting-intelligence directory)
 """
 
-import sys
 import os
+import sys
 import warnings
 from typing import Optional, Dict, List
-warnings.filterwarnings("ignore")
-
-import numpy as np
-import pandas as pd
 from pathlib import Path
 from datetime import datetime
 
-# Add project root to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import numpy as np
+import pandas as pd
+warnings.filterwarnings("ignore")
 
-import config as cfg
-from config import (
+# Add src/ to path so we can import from betting_intel.*
+PROJECT_ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+
+from betting_intel import config as cfg
+from betting_intel.config import (
     DB_PATH, OUTPUT_DIR, VERBOSE,
     ENABLE_LINEAR_MODEL, ENABLE_XGBOOST_MODEL, ENABLE_ENSEMBLE,
     STRATEGIES, INITIAL_BANKROLL, UNIT_SIZE,
@@ -29,23 +30,23 @@ from config import (
     ENABLE_MONTE_CARLO, MONTE_CARLO_SIMULATIONS,
     PREFERRED_MODEL,
 )
-from data.loader import NBADataLoader
-from src.betting_intel.data.features import FeatureEngineer
-from data.integrity import DataQualityReport
-from models.predictors import (
+from betting_intel.data.loader import NBADataLoader
+from betting_intel.data.features import FeatureEngineer
+from betting_intel.data.integrity import DataQualityReport
+from betting_intel.models.predictors import (
     TotalPointsPredictor, SpreadPredictor, MomentumModel,
 )
-from backtesting.engine import WalkForwardEngine, BacktestResult
-from backtesting.metrics import BacktestMetrics
-from betting.edge import EdgeDetector
-from betting.bankroll import BankrollManager
-from src.betting_intel.betting.monte_carlo import MonteCarloSimulator
-from src.betting_intel.validation.cross_validation import TimeSeriesCrossValidator
-from src.betting_intel.validation.overfitting import OverfittingDetector
-from src.betting_intel.risk.kelly import MultiBetKelly, KellyCalculator
-from src.betting_intel.risk.exposure import ExposureManager, ActiveBet
-from src.betting_intel.risk.correlation import BetCorrelationTracker
-from src.betting_intel.monitoring.drift import PerformanceTracker, FeatureDriftDetector
+from betting_intel.backtesting.engine import WalkForwardEngine, BacktestResult
+from betting_intel.backtesting.metrics import BacktestMetrics
+from betting_intel.betting.edge import EdgeDetector
+from betting_intel.betting.bankroll import BankrollManager
+from betting_intel.betting.monte_carlo import MonteCarloSimulator
+from betting_intel.validation.cross_validation import TimeSeriesCrossValidator
+from betting_intel.validation.overfitting import OverfittingDetector
+from betting_intel.risk.kelly import MultiBetKelly, KellyCalculator
+from betting_intel.risk.exposure import ExposureManager, ActiveBet
+from betting_intel.risk.correlation import BetCorrelationTracker
+from betting_intel.monitoring.drift import PerformanceTracker, FeatureDriftDetector
 
 
 class BettingIntelligenceSystem:
@@ -830,8 +831,8 @@ Examples:
 
     tuning = not args.no_tune if args.no_tune else args.tune
     if tuning:
-        import config
-        config.ENABLE_HYPERPARAMETER_TUNING = True
+        from betting_intel import config as cfg_inner
+        cfg_inner.ENABLE_HYPERPARAMETER_TUNING = True
 
     if args.live:
         # Run the live prediction engine instead

@@ -1,12 +1,12 @@
 """
 Real NBA data fetcher using ESPN API.
-Fetches ALL completed NBA games from 2022-23, 2023-24, and 2024-25 seasons.
+Fetches ALL completed NBA games from 2022-23 through 2025-26 seasons.
 Two-phase approach:
   Phase 1: Fetch scoreboard data (fast, ~21 API calls) -> writes DB with basic stats
   Phase 2: Backfill detailed boxscore stats (parallel, many calls)
 
 Usage:
-    python scripts/fetch_real_nba_data.py              # fetch all 3 seasons
+    python scripts/fetch_real_nba_data.py              # fetch all 4 seasons
     python scripts/fetch_real_nba_data.py --season 2024  # single season
     python scripts/fetch_real_nba_data.py --fast          # scoreboard only (no boxscore backfill)
     python scripts/fetch_real_nba_data.py --backfill      # only backfill boxscore data (from existing cache/games)
@@ -15,8 +15,6 @@ Usage:
 import sys
 import os
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import sqlite3
 import requests
@@ -30,13 +28,17 @@ from typing import Dict, List, Optional, Tuple
 import warnings
 warnings.filterwarnings("ignore")
 
-from config import DB_PATH
+# Add src/ to path so we can import from betting_intel.*
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from betting_intel.config import DB_PATH
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────
 SEASONS = {
     2022: "2022-23",
     2023: "2023-24",
     2024: "2024-25",
+    2025: "2025-26",
 }
 MONTHS = [10, 11, 12, 1, 2, 3, 4]  # NBA regular season months
 CACHE_DIR = Path("cache/espn_api")
@@ -301,7 +303,7 @@ def phase1_fetch_scoreboards(seasons_to_fetch: List[int]) -> int:
     """Phase 1: Fetch all scoreboard data and write to DB. Returns game count."""
     print("\n" + "="*60)
     print("  PHASE 1: Fetching scoreboard data (basic stats)")
-    print("  Only ~21 API calls needed for all 3 seasons!")
+    print("  Only ~28 API calls needed for all 4 seasons!")
     print("="*60)
 
     all_rows = []
@@ -612,8 +614,8 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Fetch real NBA data from ESPN API")
-    parser.add_argument("--season", type=int, choices=[2022, 2023, 2024],
-                        help="Single season to fetch (default: all 3)")
+    parser.add_argument("--season", type=int, choices=[2022, 2023, 2024, 2025],
+                        help="Single season to fetch (default: all 4)")
     parser.add_argument("--fast", action="store_true",
                         help="Scoreboard only - skip boxscore backfill")
     parser.add_argument("--backfill", action="store_true",

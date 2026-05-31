@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+{% block title %}X Intelligence — Betting Intel{% endblock %}
+
+{% block head_extra %}
+<style>
+  /* Pulse animation for live signals */
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+  .live-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+  .live-dot.off {
+    background: #ef4444;
+    animation: none;
+  }
+
+  /* Signal card styles */
+  .signal-critical {
+    border-left: 3px solid #ef4444;
+  }
+  .signal-high {
+    border-left: 3px solid #f59e0b;
+  }
+  .signal-info {
+    border-left: 3px solid #3b82f6;
+  }
+
+  /* Team alert badge pulse */
+  @keyframes alert-glow {
+    0%, 100% { box-shadow: 0 0 5px rgba(239, 68, 68, 0.5); }
+    50% { box-shadow: 0 0 15px rgba(239, 68, 68, 0.8); }
+  }
+  .alert-badge {
+    animation: alert-glow 2s ease-in-out infinite;
+  }
+
+  .signal-type-badge {
+    font-size: 0.65rem;
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="py-6 space-y-8">
+  <!-- ═══ HEADER ═════════════════════════════════════════════════════ -->
+  <div class="flex items-center justify-between stagger-children">
+    <div>
+      <h1 class="text-3xl font-bold tracking-tight">
+        <span class="text-accent-400">X</span> Intelligence
+      </h1>
+      <p class="text-sm text-gray-400 mt-1">
+        Real-time player signals from NBA reporters on Twitter/X.
+        Parsed and integrated into every prediction.
+      </p>
+    </div>
+    <div class="flex items-center gap-4 text-sm">
+      <div class="flex items-center gap-2">
+        {% if summary.nitter_available %}
+        <span class="live-dot"></span>
+        <span class="text-green-400">Live</span>
+        {% else %}
+        <span class="live-dot off"></span>
+        <span class="text-red-400">Offline</span>
+        {% endif %}
+      </div>
+      <div class="text-gray-500">
+        {{ summary.active_signals }} active · {{ summary.total_collected }} total
+      </div>
+      <span class="text-gray-600 text-xs">{{ generated_at }}</span>
+    </div>
+  </div>
+
+  <!-- ═══ STATS CARDS ═════════════════════════════════════════════════ -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="glass-card rounded-xl p-4 text-center stagger-children" style="animation-delay: 0.05s">
+      <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Accounts Tracked</div>
+      <div class="text-2xl font-bold text-white" data-counter="{{ account_count }}" data-decimals="0">{{ account_count }}</div>
+      <div class="text-xs text-gray-500 mt-1">
+        {{ insider_count }} insiders · {{ beat_count }} beat · {{ tracker_count }} trackers
+      </div>
+    </div>
+    <div class="glass-card rounded-xl p-4 text-center stagger-children" style="animation-delay: 0.1s">
+      <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Active Signals</div>
+      <div class="text-2xl font-bold {% if summary.active_signals > 0 %}text-red-400{% else %}text-white{% endif %}"
+           data-counter="{{ summary.active_signals }}" data-decimals="0">{{ summary.active_signals }}</div>
+      <div class="text-xs text-gray-500 mt-1">
+        {% if summary.by_type %}
+          {% for type, count in summary.by_type.items() %}
+            <span class="inline-block mr-2">{{ type.split('_')[:2]|join(' ') }}: {{ count }}</span>
+          {% endfor %}
+        {% else %}
+          No recent signals
+        {% endif %}
+      </div>
+    </div>
+    <div class="glass-card rounded-xl p-4 text-center stagger-children" style="animation-delay: 0.15s">
+      <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Teams Affected</div>
+      <div class="text-2xl font-bold text-white" data-counter="{{ summary.by_type|length }}" data-decimals="0">{{ summary.by_type|length }}</div>
+      <div class="text-xs text-gray-500 mt-1">Teams with active player news</div>
+    </div>
+    <div class="glass-card rounded-xl p-4 text-center stagger-children" style="animation-delay: 0.2s">
+      <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Data Freshness</div>
+      <div class="text-2xl font-bold {% if summary.freshness_seconds and summary.freshness_seconds < 300 %}text-green-400{% else %}text-yellow-400{% endif %}">
+        {% if summary.freshness_seconds %}
+          {{ (summary.freshness_seconds / 60)|round(0)|int }}m
+        {% else %}
+          —
+        {% endif %}
+      </div>
+      <div class="text-xs text-gray-500 mt-1">Since last collection</div>
+    </div>
+  </div>
+
+  <!-- ═══ MOST IMPACTFUL ═══════════════════════════════════════════════ -->
+  {% if most_impactful %}
+  <div>
+    <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
+      <span class="text-red-400">⚠</span> Most Impactful Signals
+    </h2>
+    <div class="grid gap-3">
+      {% for sig in most_impactful %}
+      <div class="glass-card rounded-xl p-4 signal-critical stagger-children"
+           style="animation-delay: {{ 0.05 * loop.index0 }}s">
+        <div class="flex items-start justify-between">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="font-bold text-white">{{ sig.player_name }}</span>
+              <span class="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-400">{{ sig.team }}</span>
+              <span class="signal-type-badge
+                {% if sig.signal_type in ('injury_out', 'load_mgmt', 'suspension') %}bg-red-900/50 text-red-300
+                {% elif sig.signal_type in ('injury_questionable', 'gtd', 'illness') %}bg-yellow-900/50 text-yellow-300
+                {% else %}bg-blue-900/50 text-blue-300{% endif %}">
+                {{ sig.signal_type.replace('_', ' ') }}
+              </span>
+              <span class="text-xs {% if sig.confidence == 'confirmed' %}text-green-400{% elif sig.confidence == 'high' %}text-blue-400{% else %}text-gray-500{% endif %}">
+                {{ sig.confidence }}
+              </span>
+            </div>
+            {% if sig.tweet_text %}
+            <p class="text-sm text-gray-300 line-clamp-2">"{{ sig.tweet_text }}"</p>
+            {% endif %}
+            {% if sig.injury_detail %}
+            <p class="text-xs text-gray-500 mt-1">Injury: {{ sig.injury_detail }}</p>
+            {% endif %}
+          </div>
+          <div class="text-right ml-4 flex-shrink-0">
+            <div class="text-sm {% if sig.minutes_multiplier == 0 %}text-red-400 font-bold{% elif sig.minutes_multiplier < 0.8 %}text-yellow-400{% else %}text-green-400{% endif %}">
+              {{ (sig.minutes_multiplier * 100)|round(0)|int }}% minutes
+            </div>
+            <div class="text-xs text-gray-500 mt-1">
+              {% if sig.stat_adjustment < 0 %}{{ sig.stat_adjustment|round(0)|int }}pts{% endif %}
+            </div>
+          </div>
+        </div>
+        {% if sig.source_account %}
+        <div class="mt-2 text-xs text-gray-600 flex items-center gap-2">
+          <span>Source: @{{ sig.source_account }}</span>
+          {% if sig.tweet_url and 'unknown' not in sig.tweet_url %}
+          <a href="{{ sig.tweet_url }}" target="_blank" rel="noopener"
+             class="text-accent-400 hover:text-accent-300 transition-colors">View on X →</a>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ═══ TEAM ALERTS ══════════════════════════════════════════════════ -->
+  {% if team_alerts %}
+  <div>
+    <h2 class="text-lg font-semibold mb-3">Team Alerts</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {% for team, sigs in team_alerts.items() %}
+      <div class="glass-card rounded-xl p-4 stagger-children"
+           style="animation-delay: {{ 0.05 * loop.index0 }}s">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="font-bold text-white">{{ team }}</h3>
+          <span class="text-xs text-red-400 alert-badge px-2 py-0.5 rounded-full bg-red-900/30">
+            {{ sigs|length }} alert{% if sigs|length > 1 %}s{% endif %}
+          </span>
+        </div>
+        {% for sig in sigs %}
+        <div class="flex items-center justify-between py-1 {% if not loop.last %}border-b border-gray-800{% endif %}">
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-medium">{{ sig.player_name }}</span>
+            <span class="text-xs text-gray-500">{{ sig.signal_type.replace('_', ' ') }}</span>
+          </div>
+          <span class="text-xs {% if sig.minutes_multiplier == 0 %}text-red-400{% else %}text-yellow-400{% endif %}">
+            {{ (sig.minutes_multiplier * 100)|round(0)|int }}%
+          </span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ═══ FULL SIGNAL TIMELINE ═════════════════════════════════════════ -->
+  <div>
+    <h2 class="text-lg font-semibold mb-3">Full Signal Timeline</h2>
+    <div class="space-y-2">
+      {% for sig in signals %}
+      <div class="glass-card rounded-lg px-4 py-3 stagger-children
+                  {% if sig.signal_type in ('injury_out', 'load_mgmt', 'suspension') %}signal-critical
+                  {% elif sig.signal_type in ('injury_questionable', 'gtd', 'illness') %}signal-high
+                  {% else %}signal-info{% endif %}"
+           style="animation-delay: {{ 0.02 * loop.index0 }}s">
+        <div class="flex items-center gap-3 text-sm">
+          <span class="text-xs text-gray-500 w-16 flex-shrink-0">
+            {{ sig.captured_at[11:16] if sig.captured_at else '--' }}
+          </span>
+          <span class="signal-type-badge w-24 flex-shrink-0 text-center
+            {% if sig.signal_type in ('injury_out', 'load_mgmt', 'suspension') %}bg-red-900/50 text-red-300
+            {% elif sig.signal_type in ('injury_questionable', 'gtd', 'illness') %}bg-yellow-900/50 text-yellow-300
+            {% else %}bg-blue-900/50 text-blue-300{% endif %}">
+            {{ sig.signal_type.replace('_', ' ') }}
+          </span>
+          <span class="font-medium text-white flex-shrink-0">{{ sig.player_name }}</span>
+          <span class="text-xs px-1.5 py-0.5 rounded bg-gray-800 text-gray-400 flex-shrink-0">{{ sig.team }}</span>
+          <span class="text-gray-400 truncate flex-1">
+            {% if sig.tweet_text %}"{{ sig.tweet_text[:100] }}"{% else %}{{ sig.notes }}{% endif %}
+          </span>
+          <span class="text-xs flex-shrink-0
+            {% if sig.confidence == 'confirmed' %}text-green-400
+            {% elif sig.confidence == 'high' %}text-blue-400
+            {% else %}text-gray-500{% endif %}">
+            {{ sig.confidence }}
+          </span>
+        </div>
+      </div>
+      {% else %}
+      <div class="glass-card rounded-xl p-8 text-center text-gray-500">
+        <div class="text-4xl mb-3">📡</div>
+        <p class="text-lg">No signals collected yet</p>
+        <p class="text-sm mt-1">The collector runs automatically every 2 minutes</p>
+        <button onclick="location.reload()"
+                class="mt-4 px-4 py-2 bg-accent-500/20 text-accent-400 rounded-lg hover:bg-accent-500/30 transition-colors text-sm">
+          Refresh Now
+        </button>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ═══ ACCOUNTS BEING MONITORED ═════════════════════════════════════ -->
+  <div>
+    <h2 class="text-lg font-semibold mb-3">Monitored Accounts</h2>
+    <div class="glass-card rounded-xl p-4">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+        <div class="text-gray-400">
+          <span class="font-medium text-accent-400">{{ insider_count }}</span> National Insiders
+        </div>
+        <div class="text-gray-400">
+          <span class="font-medium text-accent-400">{{ beat_count }}</span> Beat Reporters
+        </div>
+        <div class="text-gray-400">
+          <span class="font-medium text-accent-400">{{ tracker_count }}</span> Injury Trackers
+        </div>
+        <div class="text-gray-400">
+          <span class="font-medium text-accent-400">{{ account_count }}</span> Total Accounts
+        </div>
+      </div>
+      <p class="text-xs text-gray-600 mt-3">
+        Accounts are scraped via Nitter (public X/Twitter frontend, no API key required).
+        When Nitter is unavailable, the system falls back to simulated signals based on
+        historical NBA patterns so the betting engine always has signal context.
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}

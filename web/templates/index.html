@@ -1,157 +1,245 @@
 {% extends "base.html" %}
 {% block title %}Dashboard{% endblock %}
 
+{% block head_extra %}
+<style>
+  /* Hero ambient glow */
+  .hero-glow {
+    position: relative;
+  }
+  .hero-glow::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 300px;
+    background: radial-gradient(ellipse, rgba(0,230,94,0.08) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
 <!-- ═══ HERO ═══ -->
-<div class="text-center py-8 fade-in">
-    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent-500/10 border border-accent-500/20 text-accent-400 text-xs mb-4">
-        <span class="w-2 h-2 rounded-full bg-accent-400 animate-pulse"></span>
-        Live — {{ generated_at }}
-    </div>
-    <h1 class="text-4xl sm:text-5xl font-extrabold gradient-text mb-2">EXACT BETS</h1>
-    <p class="text-gray-500 text-sm">Place these bets. No probabilities. No confusion.</p>
+<div class="hero-glow text-center py-10 fade-in">
+  <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-accent-500/10 border border-accent-500/20 text-accent-400 text-xs mb-5 relative z-10">
+    <span class="pulse-dot"></span>
+    Live — {{ generated_at }}
+  </div>
+  <h1 class="text-5xl sm:text-6xl lg:text-7xl font-extrabold gradient-text mb-3 leading-tight relative z-10">
+    EXACT BETS
+  </h1>
+  <p class="text-gray-500 text-sm sm:text-base max-w-xl mx-auto relative z-10">
+    Clear, actionable betting recommendations. <span class="text-white font-semibold">No probabilities.</span> <span class="text-white font-semibold">No confusion.</span> Just what to bet and how much.
+  </p>
 </div>
 
 <!-- ═══ STATS ROW ═══ -->
-<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 fade-in">
-    <div class="glass-card rounded-xl p-5 text-center">
-        <div class="stat-value text-accent-400">{{ summary.clear_picks }}</div>
-        <div class="text-xs text-gray-500 uppercase tracking-wider mt-1">★ Clear Picks</div>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10 stagger-children">
+  <div class="glass-card rounded-2xl p-6 text-center tilt-card">
+    <div class="flex items-center justify-center w-10 h-10 rounded-xl bg-accent-500/10 border border-accent-500/20 mx-auto mb-3">
+      <span class="text-accent-400 text-lg">★</span>
     </div>
-    <div class="glass-card rounded-xl p-5 text-center">
-        <div class="stat-value text-blue-400">{{ summary.games_available }}</div>
-        <div class="text-xs text-gray-500 uppercase tracking-wider mt-1"> Games Available</div>
+    <div class="stat-value text-accent-400"><span data-counter="{{ summary.clear_picks }}" data-decimals="0">{{ summary.clear_picks }}</span></div>
+    <div class="stat-label">Clear Picks</div>
+  </div>
+  <div class="glass-card rounded-2xl p-6 text-center tilt-card">
+    <div class="flex items-center justify-center w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 mx-auto mb-3">
+      <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+      </svg>
     </div>
-    <div class="glass-card rounded-xl p-5 text-center">
-        <div class="stat-value text-purple-400">{{ summary.total_bets }}</div>
-        <div class="text-xs text-gray-500 uppercase tracking-wider mt-1"> Total Bets</div>
+    <div class="stat-value text-blue-400"><span data-counter="{{ summary.games_available }}" data-decimals="0">{{ summary.games_available }}</span></div>
+    <div class="stat-label">Games Available</div>
+  </div>
+  <div class="glass-card rounded-2xl p-6 text-center tilt-card">
+    <div class="flex items-center justify-center w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 mx-auto mb-3">
+      <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+      </svg>
     </div>
-    <div class="glass-card rounded-xl p-5 text-center">
-        <div class="stat-value text-accent-400">${{ "{:,.0f}".format(summary.total_stake|float) }}</div>
-        <div class="text-xs text-gray-500 uppercase tracking-wider mt-1"> Total Stake</div>
+    <div class="stat-value text-purple-400"><span data-counter="{{ summary.total_bets }}" data-decimals="0">{{ summary.total_bets }}</span></div>
+    <div class="stat-label">Total Bets</div>
+  </div>
+  <div class="glass-card rounded-2xl p-6 text-center tilt-card">
+    <div class="flex items-center justify-center w-10 h-10 rounded-xl bg-accent-500/10 border border-accent-500/20 mx-auto mb-3">
+      <svg class="w-5 h-5 text-accent-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
     </div>
+    <div class="stat-value text-accent-400">$<span data-counter="{{ summary.total_stake|float }}" data-decimals="0" data-currency="false">{{ "{:,.0f}".format(summary.total_stake|float) }}</span></div>
+    <div class="stat-label">Total Stake</div>
+  </div>
 </div>
 
 <!-- ═══ CLEAR PICKS ═══ -->
-<div class="fade-in">
-    <div class="flex items-center justify-between mb-4">
-        <h2 class="text-xl font-bold text-white flex items-center gap-2">
-            <span>★</span> High-Confidence Picks
-        </h2>
-        <a href="/clear-picks" class="text-accent-400 text-sm hover:underline" hx-boost="true">
-            View all →
-        </a>
+<div class="mb-10 fade-in-up">
+  <div class="flex items-center justify-between mb-5">
+    <div>
+      <h2 class="text-2xl font-extrabold text-white flex items-center gap-2">
+        <span class="w-1.5 h-6 rounded-full bg-accent-400"></span>
+        High-Confidence Picks
+      </h2>
+      <p class="text-sm text-gray-500 mt-1">Top recommendations with the strongest edge</p>
     </div>
+    <a href="/clear-picks" class="btn-ghost px-4 py-2 rounded-lg text-sm flex items-center gap-1.5" hx-boost="true">
+      View all
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+      </svg>
+    </a>
+  </div>
 
-    {% set top_picks = clear_picks[:6] %}
-    {% if top_picks %}
-    <div class="grid gap-3">
-        {% for cp in top_picks %}
-        {% set bet = cp.bet %}
-        {% set idx = loop.index %}
-        <div class="glass-card highlight rounded-xl p-5 fade-in" style="animation-delay: {{ loop.index * 0.05 }}s">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-2 mb-1.5">
-                        <span class="clear-badge">★ PLACE THIS BET #{{ idx }}</span>
-                        <span class="text-xs text-gray-500">{{ bet.matchup }}</span>
-                        <span class="text-xs px-2 py-0.5 rounded bg-dark-600 text-gray-400">{{ bet.league }}</span>
-                        <span class="text-xs px-2 py-0.5 rounded {% if cp.risk_level == 'CONSERVATIVE' %}bg-green-900/50 text-green-400{% elif cp.risk_level == 'MODERATE' %}bg-yellow-900/50 text-yellow-400{% else %}bg-red-900/50 text-red-400{% endif %}">
-                            {{ cp.risk_level }}
-                        </span>
-                    </div>
-                    <div class="text-xl sm:text-2xl font-extrabold text-white">
-                        $<span class="text-accent-400">{{ bet.stake_dollars|int }}</span>
-                        <span class="text-gray-400 font-normal">on</span>
-                        {{ bet.bet_side }}
-                    </div>
-                    <div class="flex flex-wrap gap-2 mt-2">
-                        {% for reason in cp.reasons[:2] %}
-                        <span class="text-xs text-gray-500">→ {{ reason[:80] }}{% if reason|length > 80 %}...{% endif %}</span>
-                        {% endfor %}
-                    </div>
-                </div>
-                <div class="flex items-center gap-6 sm:text-right">
-                    <div>
-                        <div class="text-lg font-bold text-accent-400">+{{ bet.edge_pct|round(1) }}%</div>
-                        <div class="text-xs text-gray-600">Edge</div>
-                    </div>
-                    <div>
-                        <div class="text-lg font-bold text-blue-400">${{ bet.stake_dollars|int }}</div>
-                        <div class="text-xs text-gray-600">Stake</div>
-                    </div>
-                    <div>
-                        <div class="text-sm font-bold text-gray-300">{{ cp.clear_score|int }}/100</div>
-                        <div class="text-xs text-gray-600">Confidence</div>
-                    </div>
-                </div>
-            </div>
+  {% set top_picks = clear_picks[:8] %}
+  {% if top_picks %}
+  <div class="grid gap-3 stagger-children">
+    {% for cp in top_picks %}
+    {% set bet = cp.bet %}
+    {% set idx = loop.index %}
+    <div class="glass-card highlight rounded-2xl p-5 tilt-card">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-2 flex-wrap">
+            <span class="clear-badge">★ PLACE THIS BET #{{ idx }}</span>
+            <span class="text-xs font-mono text-gray-500">{{ bet.matchup }}</span>
+            <span class="league-badge league-{{ bet.league.lower()[:4] if bet.league.lower()[:4] in ['nba', 'lnb', 'cebl', 'bnxt'] else 'nba' }}">{{ bet.league }}</span>
+            <span class="text-xs px-2 py-0.5 rounded-full risk-{{ cp.risk_level.lower() }}">
+              {{ cp.risk_level }}
+            </span>
+          </div>
+          <div class="text-2xl sm:text-3xl font-extrabold text-white mt-1">
+            $<span class="text-accent-400">{{ bet.stake_dollars|int }}</span>
+            <span class="text-gray-500 font-normal text-xl">on</span>
+            <span class="text-white">{{ bet.bet_side }}</span>
+          </div>
+          <div class="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+            {% for reason in cp.reasons[:2] %}
+            <span class="text-xs text-gray-500 flex items-center gap-1">
+              <svg class="w-3 h-3 text-accent-400 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+              </svg>
+              {{ reason[:100] }}{% if reason|length > 100 %}...{% endif %}
+            </span>
+            {% endfor %}
+          </div>
         </div>
-        {% endfor %}
+        <div class="flex items-center gap-6 sm:text-right shrink-0">
+          <div>              <div class="text-xl font-extrabold neon-text text-accent-400">+{{ (bet.edge_pct * 100)|round(1) }}%</div>
+              <div class="text-[0.6rem] text-gray-600 uppercase tracking-wider mt-0.5">Edge</div>
+          </div>
+          <div>
+            <div class="text-xl font-extrabold text-blue-400">${{ bet.stake_dollars|int }}</div>
+            <div class="text-[0.6rem] text-gray-600 uppercase tracking-wider mt-0.5">Stake</div>
+          </div>
+          <div>
+            <div class="text-base font-bold text-gray-300">{{ cp.clear_score|int }}</div>
+            <div class="text-[0.6rem] text-gray-600 uppercase tracking-wider mt-0.5">Score</div>
+          </div>
+        </div>
+      </div>
+      <!-- Edge bar -->
+      <div class="mt-3 edge-bar">
+        <div class="edge-bar-fill positive" style="width: {{ [(bet.edge_pct * 100) * 10, 100]|min }}%"></div>
+      </div>
     </div>
-    {% else %}
-    <div class="glass-card rounded-xl p-8 text-center">
-        <div class="text-4xl mb-3"></div>
-        <p class="text-gray-500">No clear picks found at this threshold.</p>
-        <p class="text-gray-600 text-sm mt-1">Try lowering the edge threshold or check back after new games are added.</p>
-    </div>
-    {% endif %}
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="glass-card rounded-2xl p-12 text-center">
+    <div class="text-5xl mb-4"></div>
+    <p class="text-gray-500 text-lg">No clear picks found</p>
+    <p class="text-gray-600 text-sm mt-2">Try lowering the edge threshold or check back after new games are added.</p>
+  </div>
+  {% endif %}
 </div>
 
-<!-- ═══ TODAY'S GAMES ═══ -->
-<div class="mt-10 fade-in">
+<!-- ═══ TODAY'S GAMES + MARKET BREAKDOWN ═══ -->
+<div class="grid lg:grid-cols-3 gap-6">
+  <!-- Today's Games -->
+  <div class="lg:col-span-2 fade-in-up">
     <div class="flex items-center justify-between mb-4">
-        <h2 class="text-xl font-bold text-white flex items-center gap-2">
-            <span></span> Today's Games
-        </h2>
-        <a href="/todays-card" class="text-accent-400 text-sm hover:underline" hx-boost="true">
-            Full card →
-        </a>
+      <h2 class="text-xl font-extrabold text-white flex items-center gap-2">
+        <span class="w-1.5 h-5 rounded-full bg-blue-400"></span>
+        Today's Games
+      </h2>
+      <a href="/todays-card" class="text-accent-400 text-sm hover:underline flex items-center gap-1" hx-boost="true">
+        Full card
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+        </svg>
+      </a>
     </div>
 
     {% if games %}
-    <div class="grid md:grid-cols-2 gap-4">
-        {% for matchup, game_info in games.items() %}
-        <div class="glass-card rounded-xl p-4 fade-in">
-            <div class="flex items-center justify-between mb-3">
-                <div class="font-semibold text-white text-sm">{{ matchup }}</div>
-                <span class="text-xs px-2 py-0.5 rounded bg-dark-600 text-gray-400">{{ game_info.league }}</span>
-            </div>
-            {% for bet in game_info.bets[:4] %}
-            <div class="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
-                <div class="flex items-center gap-2 min-w-0">
-                    {% if bet.is_clear_pick %}<span class="clear-badge text-[0.6rem]">★</span>{% endif %}
-                    <span class="text-sm {% if bet.is_clear_pick %}text-white font-medium{% else %}text-gray-400{% endif %} truncate">
-                        {{ bet.action }}
-                    </span>
-                </div>
-                <span class="text-sm font-semibold {% if bet.edge_pct > 0 %}edge-positive{% else %}edge-negative{% endif %} ml-2 shrink-0">
-                    +{{ bet.edge_pct|round(1) }}%
-                </span>
-            </div>
-            {% endfor %}
+    <div class="grid sm:grid-cols-2 gap-3 stagger-children">
+      {% for matchup, game_info in games.items() %}
+      <div class="glass-card rounded-xl p-4 tilt-card">
+        <div class="flex items-center justify-between mb-3">
+          <div class="matchup-vs">
+            <span class="font-semibold text-white text-sm truncate">{{ matchup }}</span>
+          </div>
+          <span class="league-badge league-{{ game_info.league.lower()[:4] if game_info.league.lower()[:4] in ['nba', 'lnb', 'cebl', 'bnxt'] else 'nba' }}">{{ game_info.league }}</span>
+        </div>
+        {% for bet in game_info.bets[:4] %}
+        <div class="flex items-center justify-between py-2 border-b border-white/5 last:border-0 hover:bg-white/[0.02] rounded px-1 -mx-1 transition-colors">
+          <div class="flex items-center gap-2 min-w-0">
+            {% if bet.is_clear_pick %}<span class="clear-badge text-[0.55rem] px-1.5 py-0.5 shrink-0">★</span>{% endif %}
+            <span class="text-sm {% if bet.is_clear_pick %}text-white font-semibold{% else %}text-gray-400{% endif %} truncate">
+              {{ bet.action }}
+            </span>
+          </div>
+          <div class="flex items-center gap-2 shrink-0 ml-2">
+            <span class="text-sm font-bold {% if bet.edge_pct > 0 %}edge-positive{% elif bet.edge_pct < 0 %}edge-negative{% endif %}">
+              +{{ (bet.edge_pct * 100)|round(1) }}%
+            </span>
+            {% if bet.is_clear_pick %}
+            <span class="w-1.5 h-1.5 rounded-full bg-accent-400 animate-pulse"></span>
+            {% endif %}
+          </div>
         </div>
         {% endfor %}
+      </div>
+      {% endfor %}
     </div>
     {% else %}
     <div class="glass-card rounded-xl p-8 text-center">
-        <p class="text-gray-500">No games scheduled for today.</p>
+      <p class="text-gray-500">No games scheduled for today.</p>
     </div>
     {% endif %}
-</div>
+  </div>
 
-<!-- ═══ QUICK BET TYPE BREAKDOWN ═══ -->
-<div class="mt-10 fade-in">
-    <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
-        <span></span> Market Breakdown
+  <!-- Market Breakdown -->
+  <div class="fade-in-up">
+    <h2 class="text-xl font-extrabold text-white mb-4 flex items-center gap-2">
+      <span class="w-1.5 h-5 rounded-full bg-purple-400"></span>
+      Market Breakdown
     </h2>
-    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-        {% for type_key, count in summary.by_type.items() %}
-        <div class="glass-card rounded-xl p-4 text-center">
-            <div class="text-lg font-bold text-white">{{ count }}</div>
-            <div class="text-xs text-gray-500 mt-1 capitalize">{{ type_key.replace('_', ' ') }}</div>
+    <div class="grid grid-cols-2 gap-3">
+      {% set type_icons = {
+        'total_points': '',
+        'moneyline': 'W',
+        'spread': '±',
+        'player_points': 'P',
+        'team_total': 'T',
+        'player_rebounds': 'R',
+        'player_assists': 'A',
+        'player_pra': 'PRA',
+        'first_quarter_winner': '1Q',
+        'first_half_total': '1H',
+      } %}
+      {% for type_key, count in summary.by_type.items() %}
+      <div class="glass-card rounded-xl p-4 text-center tilt-card">
+        <div class="flex items-center justify-center w-8 h-8 rounded-lg bg-accent-500/10 border border-accent-500/20 mx-auto mb-2">
+          <span class="text-accent-400 text-xs font-bold">{{ type_icons.get(type_key, '?') }}</span>
         </div>
-        {% endfor %}
+        <div class="text-xl font-extrabold text-white">{{ count }}</div>
+        <div class="text-[0.6rem] text-gray-500 uppercase tracking-wider mt-0.5">{{ type_key.replace('_', ' ') }}</div>
+      </div>
+      {% endfor %}
     </div>
+  </div>
 </div>
 {% endblock %}

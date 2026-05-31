@@ -686,6 +686,36 @@ class FeatureEngineer:
             "home_team_name", "away_team_name",
             # Post-game stats not available pre-game:
             "MIN_home", "MIN_away",
+            # ═══════════════════════════════════════════════════════════
+            # RAW PER-GAME TEAM STATS — leak the target!
+            # These are the actual points/stats the team scored that game.
+            # Including them lets the model perfectly reconstruct
+            # total_points = team_pts_home + team_pts_away, giving R² ≈ 1.0.
+            # Only their LAGGED rolling averages (avg_pts_*, avg_pm_*, etc.)
+            # should be available to the model (already computed above).
+            # ═══════════════════════════════════════════════════════════
+            "team_pts_home", "team_pts_away",
+            "team_fgm_home", "team_fgm_away",
+            "team_fga_home", "team_fga_away",
+            "team_fg_pct_home", "team_fg_pct_away",
+            "team_fg3m_home", "team_fg3m_away",
+            "team_fg3a_home", "team_fg3a_away",
+            "team_fg3_pct_home", "team_fg3_pct_away",
+            "team_ftm_home", "team_ftm_away",
+            "team_fta_home", "team_fta_away",
+            "team_ft_pct_home", "team_ft_pct_away",
+            "team_oreb_home", "team_oreb_away",
+            "team_dreb_home", "team_dreb_away",
+            "team_reb_home", "team_reb_away",
+            "team_ast_home", "team_ast_away",
+            "team_stl_home", "team_stl_away",
+            "team_blk_home", "team_blk_away",
+            "team_tov_home", "team_tov_away",
+            "team_pf_home", "team_pf_away",
+            "team_plus_minus_home", "team_plus_minus_away",
+            # Home/away indicators from game dataset — not predictive
+            "IS_HOME_home", "IS_HOME_away",
+            "OPPONENT_home", "OPPONENT_away",
             # Market-line proxy columns — NOT features (prevent leakage):
             "market_line_baseline",
             "market_line_pace_adj",

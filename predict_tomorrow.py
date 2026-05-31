@@ -82,113 +82,44 @@ DEMO_MODE = False
 ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
 
 # ──────────────────────────────────────────────────────────────────────
-# 2.  Imports (with graceful degradation for optional modules)
+# 2.  Imports (all from the canonical betting_intel package)
 # ──────────────────────────────────────────────────────────────────────
 
-# --- Core data & models ---
-try:
-    from src.betting_intel.data.features import FeatureEngineer
-    from src.betting_intel.models.predictors import (
-        TotalPointsPredictor,
-        SpreadPredictor,
-        MomentumModel,
-    )
-    HAS_SRC_PREDICTORS = True
-except ImportError:
-    HAS_SRC_PREDICTORS = False
+from betting_intel.data.features import FeatureEngineer
+from betting_intel.models.predictors import (
+    TotalPointsPredictor,
+    SpreadPredictor,
+    MomentumModel,
+    StackingEnsemblePredictor,
+)
+from betting_intel.recommendations.engine import RecommendationEngine
+from betting_intel.recommendations.bet_types import BetType
+from betting_intel.recommendations.ranker import BetRanker
+from betting_intel.recommendations.ev_scanner import PositiveEVScanner
+from betting_intel.recommendations.arbitrage import ArbitrageDetector
+from betting_intel.recommendations.player_props import PlayerPropEngine
+from betting_intel.risk.kelly import KellyCalculator
+from betting_intel.risk.exposure import ExposureManager
+from betting_intel.risk.correlation import BetCorrelationTracker
+from betting_intel.betting.edge import EdgeDetector
+from betting_intel.betting.monte_carlo import MonteCarloSimulator
+from betting_intel.validation.calibration import ProbabilityCalibrator
+from betting_intel.validation.overfitting import OverfittingDetector
+from betting_intel.validation.cross_validation import TimeSeriesCrossValidator
+from betting_intel.monitoring.drift import PerformanceTracker
+from betting_intel.backtesting.metrics import BacktestMetrics
+from betting_intel.services.logging import get_logger
 
-# Fallback: root-level models.predictors has more advanced models
-try:
-    from models.predictors import (  # type: ignore[no-redef]
-        TotalPointsPredictor,
-        SpreadPredictor,
-        MomentumModel,
-        StackingEnsemblePredictor,
-    )
-    HAS_ROOT_PREDICTORS = True
-except ImportError:
-    HAS_ROOT_PREDICTORS = False
+# Module availability flags (for graceful degradation at runtime)
+HAS_RECOMMENDATIONS = True
+HAS_RISK = True
+HAS_BETTING = True
+HAS_VALIDATION = True
+HAS_MONITORING = True
+HAS_BACKTESTING = True
+HAS_ROOT_PREDICTORS = True
 
-
-# --- Config (no stub needed — used inline via ODDS_API_KEY) ---
-# Config values are accessed inline where needed.
-
-# --- Recommendations ---
-try:
-    from src.betting_intel.recommendations.engine import RecommendationEngine
-    from src.betting_intel.recommendations.bet_types import BetType
-    from src.betting_intel.recommendations.ranker import BetRanker
-    from src.betting_intel.recommendations.ev_scanner import PositiveEVScanner
-    from src.betting_intel.recommendations.arbitrage import ArbitrageDetector
-    from src.betting_intel.recommendations.player_props import PlayerPropEngine
-
-    HAS_RECOMMENDATIONS = True
-except ImportError as e:
-    print(f"  ⚠ Recommendations module not fully available: {e}")
-    HAS_RECOMMENDATIONS = False
-
-# --- Risk Management ---
-try:
-    from src.betting_intel.risk.kelly import KellyCalculator
-    from src.betting_intel.risk.exposure import ExposureManager
-    from src.betting_intel.risk.correlation import BetCorrelationTracker
-
-    HAS_RISK = True
-except ImportError as e:
-    print(f"  ⚠ Risk module not fully available: {e}")
-    HAS_RISK = False
-
-# --- Betting ---
-try:
-    from src.betting_intel.betting.edge import EdgeDetector
-    from src.betting_intel.betting.monte_carlo import MonteCarloSimulator
-
-    HAS_BETTING = True
-except ImportError as e:
-    print(f"  ⚠ Betting module not fully available: {e}")
-    HAS_BETTING = False
-
-# --- Validation & Monitoring ---
-try:
-    from src.betting_intel.validation.calibration import ProbabilityCalibrator
-    from src.betting_intel.validation.overfitting import OverfittingDetector
-    from src.betting_intel.validation.cross_validation import TimeSeriesCrossValidator
-
-    HAS_VALIDATION = True
-except ImportError as e:
-    print(f"  ⚠ Validation module not fully available: {e}")
-    HAS_VALIDATION = False
-
-try:
-    from src.betting_intel.monitoring.drift import PerformanceTracker
-
-    HAS_MONITORING = True
-except ImportError as e:
-    print(f"  ⚠ Monitoring module not fully available: {e}")
-    HAS_MONITORING = False
-
-# --- Backtesting ---
-try:
-    from src.betting_intel.backtesting.metrics import BacktestMetrics
-
-    HAS_BACKTESTING = True
-except ImportError as e:
-    print(f"  ⚠ Backtesting module not fully available: {e}")
-    HAS_BACKTESTING = False
-
-# --- Services ---
-try:
-    from src.betting_intel.services.logging import get_logger
-
-    logger = get_logger(__name__)
-except ImportError:
-
-    def get_logger(_name=None):
-        import logging
-
-        return logging.getLogger(_name)
-
-    logger = get_logger(__name__)
+logger = get_logger(__name__)
 
 # ──────────────────────────────────────────────────────────────────────
 # 3.  CLI Argument Parser
@@ -404,45 +335,9 @@ class PredictionPipeline:
 
     def _load_live_data(self) -> Optional[pd.DataFrame]:
         """Fetch live upcoming games via TheOddsAPI."""
+        # Try LiveDataGateway (the canonical odds integration module)
         try:
-            from data.odds_fetcher import OddsAPIClient
-            from config import ODDS_CACHE_TTL_MINUTES
-
-            client = OddsAPIClient(api_key=ODDS_API_KEY, cache_ttl_minutes=5)
-            games = client.get_upcoming_games_with_odds()
-            if games:
-                rows = []
-                for g in games:
-                    row = {
-                        "game_id": g.id,
-                        "game_date": g.commence_time[:10] if g.commence_time else (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"),
-                        "home_team": g.home_team_short,
-                        "away_team": g.away_team_short,
-                        "home_score": None,
-                        "away_score": None,
-                        "total_points": g.market_total or 220.0,
-                        "spread": g.home_spread or -3.5,
-                        "market_total": g.market_total or 220.0,
-                        "market_spread": g.home_spread or -3.5,
-                        "home_ml_odds": g.home_moneyline or -110,
-                        "away_ml_odds": g.away_moneyline or -110,
-                        "over_odds": g.total_over_odds or -110,
-                        "under_odds": g.total_under_odds or -110,
-                    }
-                    rows.append(row)
-                df = pd.DataFrame(rows)
-                print(f"  ✅  Fetched {len(df)} upcoming live games")
-                print(f"  📅  Game dates: {df['game_date'].unique()}")
-                self.results["metadata"]["data_source"] = "theoddsapi"
-                return df
-        except ImportError:
-            print("  ℹ  OddsAPIClient not importable, trying LiveDataGateway...")
-        except Exception as e:
-            print(f"  ⚠  Live odds fetch failed: {e}")
-
-        # Fallback: try the src-level LiveDataGateway
-        try:
-            from src.betting_intel.data.live_gateway import LiveDataGateway
+            from betting_intel.data.live_gateway import LiveDataGateway
             gateway = LiveDataGateway(odds_api_key=ODDS_API_KEY)
             odds_data = gateway.get_live_odds(force_refresh=True)
             if odds_data and len(odds_data) > 0:
@@ -468,12 +363,9 @@ class PredictionPipeline:
                 self.results["metadata"]["data_source"] = "csv"
                 return df
 
-        # Try NBADataLoader (lazy import to avoid top-level failures)
+        # Try NBADataLoader
         try:
-            try:
-                from src.betting_intel.data.loader import NBADataLoader
-            except ImportError:
-                from data.loader import NBADataLoader  # type: ignore[no-redef]
+            from betting_intel.data.loader import NBADataLoader
             loader = NBADataLoader()
             raw_df = loader.load_game_logs()
             if raw_df is not None and not raw_df.empty:
@@ -481,9 +373,15 @@ class PredictionPipeline:
                 cutoff = pd.Timestamp.now() - pd.Timedelta(days=days)
                 raw_df["GAME_DATE"] = pd.to_datetime(raw_df["GAME_DATE"])
                 recent = raw_df[raw_df["GAME_DATE"] >= cutoff]
-                df = loader.build_game_dataset(recent)
+                if recent.empty:
+                    # No recent data within the window — use all available data
+                    print(f"  ⚠  No games found in the last {days} days (data may be from an older season)")
+                    print(f"  ℹ  Falling back to all {len(raw_df)} available historical games")
+                    df = loader.build_game_dataset(raw_df)
+                else:
+                    df = loader.build_game_dataset(recent)
                 if df is not None and not df.empty:
-                    print(f"  ✅  Loaded {len(df)} games (last {days} days) from NBADataLoader")
+                    print(f"  ✅  Loaded {len(df)} games from NBADataLoader")
                     self.results["metadata"]["data_source"] = "nba_dataloader"
                     return df
         except Exception as e:
@@ -986,7 +884,7 @@ class PredictionPipeline:
                             "bet_type": str(getattr(b, 'bet_type', getattr(b, 'suggestion_type', ''))),
                             "edge": float(getattr(b, 'edge', 0)),
                             "confidence": str(getattr(b, 'confidence', '')),
-                            "odds": getattr(b, 'odds', 0),
+                            "odds": getattr(b, 'odds', -110) or -110,
                             "stake": getattr(b, 'stake', 0),
                             "expected_value": float(getattr(b, 'expected_value', 0)),
                         }
@@ -1189,8 +1087,10 @@ class PredictionPipeline:
                     # Convert American odds to decimal
                     if odds > 0:
                         decimal_odds = 1 + odds / 100
-                    else:
+                    elif odds < 0:
                         decimal_odds = 1 + 100 / abs(odds)
+                    else:
+                        decimal_odds = 1.91  # default -110 equivalent
 
                     # Use compute_kelly instead of calculate
                     kelly_pct, _ = kelly.compute_kelly(
@@ -1204,7 +1104,7 @@ class PredictionPipeline:
                         bet["kelly_pct"] = kelly_pct
                         bet["stake"] = round(kelly_pct * self.args.bankroll, 2)
                         sized_bets.append(bet)
-                        exposure_mgr.add_bet(team, bet["stake"])
+                        exposure_mgr.track_bet(team, bet["stake"])
 
                 print(f"  ✅  Sized {len(sized_bets)} bets with Kelly criterion")
                 for bet in sized_bets[:5]:

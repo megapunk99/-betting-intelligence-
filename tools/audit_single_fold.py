@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 """Deep dive: manually run ONE walk-forward fold and inspect every prediction."""
 
-import sys, os, warnings
-warnings.filterwarnings("ignore")
-os.environ["PYTHONIOENCODING"] = "utf-8"
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import sys
+import os
+import warnings
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from data.loader import NBADataLoader
-from src.betting_intel.data.features import FeatureEngineer
-from models.predictors import TotalPointsPredictor
 from sklearn.linear_model import Ridge
-import config as cfg
+warnings.filterwarnings("ignore")
+os.environ["PYTHONIOENCODING"] = "utf-8"
+
+# Add src/ to path so we can import from betting_intel.*
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from betting_intel.data.loader import NBADataLoader
+from betting_intel.data.features import FeatureEngineer
+from betting_intel.models.predictors import TotalPointsPredictor
+from betting_intel import config as cfg
 
 print("Loading data...")
 loader = NBADataLoader()

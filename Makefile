@@ -1,4 +1,4 @@
-.PHONY: install dev test lint clean run-api run-pipeline run-dashboard docker-build docker-up db-init db-migrate
+.PHONY: install dev test lint clean run-api run-pipeline run-dashboard docker-build docker-up db-init db-migrate refresh-data refresh-data-fast refresh-data-backfill verify-data
 
 # ── Installation ──────────────────────────────────────────────────────────
 install:
@@ -71,6 +71,19 @@ clean:
 clean-output:
 	rm -f output/*.csv output/*.json output/*.txt
 
+# ── Real NBA Data ────────────────────────────────────────────────────────
+refresh-data:
+	python scripts/fetch_real_nba_data.py
+
+refresh-data-fast:
+	python scripts/fetch_real_nba_data.py --fast
+
+refresh-data-backfill:
+	python scripts/fetch_real_nba_data.py --backfill
+
+verify-data:
+	python scripts/fetch_real_nba_data.py --verify
+
 # ── Help ──────────────────────────────────────────────────────────────────
 help:
 	@echo "Betting Intelligence System - Makefile"
@@ -86,6 +99,11 @@ help:
 	@echo "  make run-pipeline   Execute full data pipeline"
 	@echo "  make run-api        Start FastAPI server"
 	@echo "  make run-dashboard  Start Streamlit dashboard"
+	@echo ""
+	@echo "Data:"
+	@echo "  make refresh-data        Fetch all NBA seasons from ESPN (full)"
+	@echo "  make refresh-data-fast   Scoreboard only (no boxscore backfill)"
+	@echo "  make verify-data         Verify database contents"
 	@echo ""
 	@echo "Docker:"
 	@echo "  make docker-build   Build Docker images"

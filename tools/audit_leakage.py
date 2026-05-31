@@ -20,24 +20,24 @@ Usage:
 import sys
 import os
 import warnings
-warnings.filterwarnings("ignore")
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-import numpy as np
-import pandas as pd
 from pathlib import Path
 from datetime import datetime
 
-from data.loader import NBADataLoader
-from src.betting_intel.data.features import FeatureEngineer
-from data.integrity import DataQualityReport
-from models.predictors import TotalPointsPredictor
-from backtesting.engine import WalkForwardEngine, BacktestResult
+import numpy as np
+import pandas as pd
 from sklearn.linear_model import Ridge, LinearRegression
 from sklearn.metrics import mean_absolute_error, r2_score
+warnings.filterwarnings("ignore")
 
-import config as cfg
+# Add src/ to path so we can import from betting_intel.*
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from betting_intel.data.loader import NBADataLoader
+from betting_intel.data.features import FeatureEngineer
+from betting_intel.data.integrity import DataQualityReport
+from betting_intel.models.predictors import TotalPointsPredictor
+from betting_intel.backtesting.engine import WalkForwardEngine, BacktestResult
+from betting_intel import config as cfg
 
 # ── Results accumulator ─────────────────────────────────────────────────────
 findings = []

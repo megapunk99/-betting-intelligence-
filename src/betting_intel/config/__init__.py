@@ -59,6 +59,22 @@ STRATEGIES = {
     "quarter_scoring": "Quarter Scoring Pattern",
 }
 
+# ── Pipeline Control ──────────────────────────────────────────────────
+FAST_MODE = True                                  # Skip non-essential models
+ENABLE_HYPERPARAMETER_TUNING = False               # Optuna tuning (slow)
+ENABLE_STACKING_ENSEMBLE = True                    # Stacking ensemble
+ENABLE_MONTE_CARLO = True                          # Monte Carlo simulation
+MONTE_CARLO_SIMULATIONS = 10000                    # Number of MC simulations
+
+# ── Model Selection ───────────────────────────────────────────────────
+PREFERRED_MODEL = "lightgbm"                       # Default model strategy
+
+# ── API / External Services ───────────────────────────────────────────
+ODDS_API_KEY = ""                                   # TheOddsAPI key
+ODDS_API_BASE_URL = "https://api.the-odds-api.com"   # TheOddsAPI v4 base URL
+ODDS_CACHE_TTL_MINUTES = 5                          # Cache TTL for odds data
+CACHE_DIR = PROJECT_ROOT / "cache"                   # Cache directory for API responses
+
 __all__ = [
     "Settings", "get_settings", "settings",
     # Constants
@@ -68,4 +84,8 @@ __all__ = [
     "INITIAL_BANKROLL", "UNIT_SIZE", "MAX_KELLY_FRACTION", "MIN_EDGE_THRESHOLD",
     "ENABLE_LINEAR_MODEL", "ENABLE_XGBOOST_MODEL", "ENABLE_ENSEMBLE",
     "VERBOSE", "STRATEGIES",
+    "FAST_MODE", "ENABLE_HYPERPARAMETER_TUNING",
+    "ENABLE_STACKING_ENSEMBLE", "ENABLE_MONTE_CARLO", "MONTE_CARLO_SIMULATIONS",
+    "PREFERRED_MODEL",
+    "ODDS_API_KEY", "ODDS_API_BASE_URL", "ODDS_CACHE_TTL_MINUTES", "CACHE_DIR",
 ]

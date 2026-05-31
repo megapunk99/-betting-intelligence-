@@ -294,8 +294,10 @@ class OddsPoller:
             await asyncio.sleep(1800)  # 30 min
 
     async def _evict_stale_snapshots(self):
-        """Remove snapshots older than TTL from the in-memory dict."""
+        """Remove snapshots older than TTL from the in-memory dict and SQLite DB."""
         cutoff = time.time() - (self._ttl_hours * 3600)
+
+        # In-memory eviction
         stale = [
             key for key, snap in self._last_snapshots.items()
             if snap.captured_at < cutoff
@@ -304,6 +306,32 @@ class OddsPoller:
             del self._last_snapshots[key]
         if stale:
             logger.info(f"Evicted {len(stale)} stale snapshots from memory")
+
+        # SQLite eviction — keep the DB lean too
+        await self._evict_stale_db_snapshots(cutoff)
+
+    async def _evict_stale_db_snapshots(self, cutoff: float):
+        """Delete odds snapshots older than the cutoff from the SQLite DB."""
+        if not self.db_path:
+            return
+
+        def _sync_evict():
+            try:
+                conn = sqlite3.connect(str(self.db_path))
+                cursor = conn.execute(
+                    "DELETE FROM odds_snapshots WHERE captured_at < ?",
+                    (cutoff,),
+                )
+                deleted = cursor.rowcount
+                conn.commit()
+                conn.close()
+                if deleted:
+                    logger.info(f"Evicted {deleted} stale odds snapshots from SQLite DB")
+            except Exception as exc:
+                logger.debug(f"Failed to evict stale snapshots from DB: {exc}")
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _sync_evict)
 
     async def _fetch_theoddsapi(self) -> list[OddsSnapshot]:
         """Fetch odds from TheOddsAPI v4 — all sports in parallel.

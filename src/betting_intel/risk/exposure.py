@@ -295,6 +295,55 @@ class ExposureManager:
         lines.append("=" * 60)
         return "\n".join(lines)
 
+    def check_exposure(self, team: str, stake: float) -> bool:
+        """
+        Simple exposure check: verify that adding this stake wouldn't exceed the total limit.
+
+        Args:
+            team: Team name (used for future per-team limits).
+            stake: Proposed stake amount in dollars.
+
+        Returns:
+            True if the bet fits within limits, False otherwise.
+        """
+        return self._check_limit("total", "all", stake)
+
+    def track_bet(self, team: str, stake: float) -> None:
+        """
+        Simple bet tracking: records a bet's stake in the limit system.
+
+        Updates the total exposure limit counter so subsequent ``check_exposure``
+        calls reflect the new running total. This is a lightweight alternative
+        to ``add_bet()`` when you don't have a full ``ActiveBet`` object.
+
+        Args:
+            team: Team name being bet on.
+            stake: Stake amount in dollars.
+        """
+        self._update_limit("total", "all", stake)
+
+    def prune_settled_bets(self, max_kept: int = 500) -> int:
+        """
+        Prune old settled bets to prevent unbounded memory growth.
+
+        Keeps only the ``max_kept`` most recently settled bets. Older entries
+        are discarded. Useful as a periodic maintenance call.
+
+        Args:
+            max_kept: Maximum number of settled bet records to retain.
+
+        Returns:
+            Number of pruned (removed) settled bets.
+        """
+        if len(self.settled_bets) <= max_kept:
+            return 0
+
+        # Settled bets are appended in chronological order, so the first
+        # entries are the oldest.
+        n_pruned = len(self.settled_bets) - max_kept
+        self.settled_bets = self.settled_bets[n_pruned:]
+        return n_pruned
+
     def get_available_capacity(self, limit_type: str = "total", entity: str = "all") -> float:
         """Get remaining capacity for a given limit."""
         key = f"{limit_type}:{entity}"

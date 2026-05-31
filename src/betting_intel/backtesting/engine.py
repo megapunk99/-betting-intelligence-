@@ -175,6 +175,14 @@ class WalkForwardEngine:
                 y_pred = model.predict(X_test.values)
                 y_actual = test_df.loc[test_indices, target_col].values
 
+                # Get prediction probabilities for classification (when available)
+                y_prob = None
+                if prediction_type == "classification" and hasattr(model, 'predict_proba'):
+                    try:
+                        y_prob = model.predict_proba(X_test.values)
+                    except Exception:
+                        y_prob = None
+
                 # Baseline predictions for the test set (aligned by index)
                 baseline_pred_map = {}  # pd.Index -> float
                 if baseline_model is not None:
@@ -198,6 +206,11 @@ class WalkForwardEngine:
                         pred = y_pred[i]
                         actual = y_actual[i]
 
+                        # Get the prediction probability for this row
+                        prob = None
+                        if y_prob is not None and i < len(y_prob):
+                            prob = float(y_prob[i][1])  # Probability of class 1 (home win)
+
                         # Get baseline prediction for this row (aligned by index)
                         baseline_pred = baseline_pred_map.get(idx)
 
@@ -206,6 +219,7 @@ class WalkForwardEngine:
                             strategy_name, model_name,
                             feature_cols,
                             baseline_prediction=baseline_pred,
+                            prediction_probability=prob,
                         )
                         if bet:
                             bet_records.append(bet)
@@ -267,16 +281,25 @@ class WalkForwardEngine:
         model_name: str,
         feature_cols: List[str],
         baseline_prediction: Optional[float] = None,
+        prediction_probability: Optional[float] = None,
     ) -> Optional[Dict]:
         """Create a bet record from a prediction.
 
-        Edge is calculated against the best available market proxy, in priority order:
-        1. baseline_prediction (in-fold baseline model — most robust vs leakage)
-        2. market_line_baseline column (pre-computed column in df)
-        3. trailing_avg_total_10g column (naive trailing average)
+        Edge is calculated against a market line proxy, in priority order:
+        1. market_line_baseline column (pre-computed column in df — trailing avg of team scoring)
+        2. trailing_avg_total_10g column (naive trailing average)
+        3. baseline_prediction (in-fold baseline model — used as diagnostic only)
 
-        Using an in-fold baseline model prevents the inflated win rates that occur
-        when comparing against a naive pre-computed column that may be biased low.
+        IMPORTANT: The pre-computed market_line_baseline (simple trailing average of
+        home + away scoring) is preferred over the baseline model's prediction.
+        Using an in-fold model as the "market line" introduces systematic bias
+        because both the main model and baseline model learn from the same data
+        distribution. The baseline model tends to systematically under-predict,
+        which inflates win rates at the cost of scientific validity.
+
+        The market_line_baseline column, being a simple rolling average of actual
+        observed scoring, closely matches the true distribution (mean 228.0 vs
+        actual mean 228.5) and serves as a fairer, more realistic market proxy.
         """
         try:
             if prediction_type == "regression":
@@ -284,15 +307,15 @@ class WalkForwardEngine:
                 actual_total = row.get("total_points", actual)
                 predicted_total = prediction
 
-                # Determine market line: prefer baseline model prediction (in-fold)
-                if baseline_prediction is not None:
-                    market_line = baseline_prediction
-                else:
-                    # Fall back to column-based market proxies
-                    market_line = row.get(
-                        "market_line_baseline",
-                        row.get("trailing_avg_total_10g", predicted_total)
+                # Determine market line: prefer pre-computed column-based proxies
+                # over the baseline model prediction to avoid systematic model bias.
+                market_line = row.get(
+                    "market_line_baseline",
+                    row.get(
+                        "trailing_avg_total_10g",
+                        baseline_prediction if baseline_prediction is not None else predicted_total
                     )
+                )
 
                 # Edge = our prediction vs market (as percentage of market)
                 if market_line > 0:
@@ -306,17 +329,15 @@ class WalkForwardEngine:
                 # Determine bet side and win/loss
                 if edge_pct > 0:
                     bet_side = "OVER"
-                    predicted_market = market_line
                 else:
                     bet_side = "UNDER"
-                    predicted_market = market_line
 
                 # Win/loss
-                if (bet_side == "OVER" and actual_total > predicted_market) or \
-                   (bet_side == "UNDER" and actual_total < predicted_market):
+                if (bet_side == "OVER" and actual_total > market_line) or \
+                   (bet_side == "UNDER" and actual_total < market_line):
                     outcome = "WIN"
                     profit = 1.0  # 1 unit profit at -110 odds
-                elif actual_total == predicted_market:
+                elif actual_total == market_line:
                     outcome = "PUSH"
                     profit = 0.0
                 else:
@@ -336,7 +357,7 @@ class WalkForwardEngine:
                     "edge_pct": float(edge_pct),
                     "outcome": outcome,
                     "profit_units": profit,
-                    "_used_baseline": baseline_prediction is not None,
+                    "_used_baseline": False,  # Always false now — column-based proxy is primary
                 }
 
             elif prediction_type == "classification":
@@ -360,6 +381,7 @@ class WalkForwardEngine:
                     "bet_type": "SPREAD",
                     "predicted_class": int(pred_class),
                     "actual_class": int(actual_class),
+                    "home_win_prob": prediction_probability if prediction_probability is not None else 0.5,
                     "outcome": outcome,
                     "profit_units": profit,
                 }

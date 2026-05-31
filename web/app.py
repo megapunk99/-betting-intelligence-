@@ -11,6 +11,7 @@ Run:
 from __future__ import annotations
 
 import logging
+import sys
 from datetime import datetime, date, timedelta
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,9 @@ logger = logging.getLogger(__name__)
 
 HERE = Path(__file__).resolve().parent
 PROJECT_ROOT = HERE.parent
+
+# Add src/ to path so betting_intel.* imports work when running as script
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 app = FastAPI(
     title="Betting Intelligence",
@@ -351,6 +355,60 @@ async def api_bets(
         bets = [b for b in bets if b.edge_pct >= min_edge]
     bets.sort(key=lambda b: b.edge_pct, reverse=True)
     return JSONResponse(content=[bet_to_dict(b) for b in bets[:limit]])
+
+
+@app.get("/signals", response_class=HTMLResponse)
+async def signals_page(request: Request):
+    """X/Twitter intelligence signals page."""
+    from betting_intel.data.x_signals import TwitterSignalCollector
+
+    collector = TwitterSignalCollector()
+    collector.collect_all()
+    signals = collector.get_recent_signals(limit=40)
+    summary = collector.get_summary_stats()
+    team_alerts = collector.get_team_alerts()
+    most_impactful = [s.to_dict() for s in collector.get_most_impactful_signals(limit=10)]
+
+    # Get account counts
+    from betting_intel.data.nba_accounts import (
+        get_all_accounts, get_accounts_by_role, AccountRole
+    )
+    all_accounts = get_all_accounts()
+    insider_count = len(get_accounts_by_role(AccountRole.INSIDER))
+    beat_count = len(get_accounts_by_role(AccountRole.BEAT_REPORTER))
+    tracker_count = len(get_accounts_by_role(AccountRole.INJURY_TRACKER))
+
+    return templates.TemplateResponse(
+        "signals.html",
+        {
+            "request": request,
+            "signals": signals,
+            "summary": summary,
+            "team_alerts": team_alerts,
+            "most_impactful": most_impactful,
+            "account_count": len(all_accounts),
+            "insider_count": insider_count,
+            "beat_count": beat_count,
+            "tracker_count": tracker_count,
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        },
+    )
+
+
+@app.get("/api/signals")
+async def api_signals():
+    """JSON API for X/Twitter signals."""
+    from betting_intel.data.x_signals import TwitterSignalCollector
+    collector = TwitterSignalCollector()
+    collector.collect_all()
+    return JSONResponse(content={
+        "signals": collector.get_recent_signals(limit=20),
+        "summary": collector.get_summary_stats(),
+        "team_alerts": {
+            team: [s.to_dict() for s in sigs]
+            for team, sigs in collector.get_team_alerts().items()
+        },
+    })
 
 
 @app.get("/api/clear-picks")

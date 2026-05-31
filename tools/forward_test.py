@@ -64,6 +64,13 @@ try:
 except ImportError:
     ODDS_AVAILABLE = False
 
+# Player injury impact module
+try:
+    from betting_intel.data.player_injury import PlayerInjuryFetcher, GameInjuryData
+    INJURY_AVAILABLE = True
+except ImportError:
+    INJURY_AVAILABLE = False
+
 # ---- ANSI Colors ----
 GREEN = "\033[92m"
 RED = "\033[91m"
@@ -974,6 +981,67 @@ def predict_and_compare(
 #  Display
 # ============================================================================
 
+def print_injury_impact(injury_data: dict[str, GameInjuryData]):
+    """
+    Print injury impact summary for upcoming games.
+
+    Shows which star players are missing, weighted PPG impact,
+    and total player prop points per team.
+    """
+    if not injury_data:
+        return
+
+    has_any = any(d.has_injuries for d in injury_data.values())
+    if not has_any:
+        return
+
+    print(f"\n  {BOLD}INJURY IMPACT — Missing Players Detected{RESET}")
+    print(f"  {'-' * 75}")
+
+    total_missing = 0.0
+    for game_id, gd in sorted(injury_data.items()):
+        if not gd.has_injuries:
+            continue
+
+        lines = []
+
+        if gd.home_impact and gd.home_impact.missing_stars:
+            missing = "; ".join(gd.home_impact.missing_stars)
+            lines.append(f"    Home ({gd.home_impact.team_short}): {missing}")
+
+        if gd.away_impact and gd.away_impact.missing_stars:
+            missing = "; ".join(gd.away_impact.missing_stars)
+            lines.append(f"    Away ({gd.away_impact.team_short}): {missing}")
+
+        if gd.total_missing_ppg > 0:
+            lines.append(f"    Weighted impact: ~{gd.total_missing_ppg:.1f} PPG")
+            total_missing += gd.total_missing_ppg
+
+        # Show team prop point totals
+        if gd.home_impact and gd.away_impact:
+            h_pts = gd.home_impact.total_player_props_pts
+            a_pts = gd.away_impact.total_player_props_pts
+            if h_pts > 0 or a_pts > 0:
+                lines.append(f"    Player points props: {gd.home_impact.team_short} {h_pts:.0f}, "
+                            f"{gd.away_impact.team_short} {a_pts:.0f} (total: {gd.total_prop_pts:.0f})")
+
+        if lines:
+            # Extract game info for the header
+            short_matchup = gd.away_team.split()[-1] if gd.away_team else "?"
+            short_matchup += " @ "
+            short_matchup += gd.home_team.split()[-1] if gd.home_team else "?"
+            print(f"  {YELLOW}  {short_matchup}:{RESET}")
+            for line in lines:
+                print(line)
+            print()
+
+    if total_missing > 0:
+        print(f"  {YELLOW}[!]{RESET} Total weighted missing PPG across all games: {total_missing:.1f}")
+        print(f"  This represents roughly {total_missing * 0.8:.0f} potential points (unadjusted) "
+              f"missing from the model's feature set.")
+        print(f"  {'-' * 75}")
+
+
 def print_header():
     print()
     print(f"{CYAN}{BOLD}{'=' * 75}{RESET}")
@@ -1199,8 +1267,27 @@ Examples:
     if len(odds_games) > 10:
         print(f"  ... and {len(odds_games) - 10} more")
 
-    # Phase 3: Predict and compare
-    print(f"\n  {CYAN}{BOLD}[Phase 3/3] Model vs Market Comparison{RESET}")
+    # Phase 3: Fetch injury data (player props) for upcoming games
+    print(f"\n  {CYAN}{BOLD}[Phase 3/4] Injury Impact Assessment{RESET}")
+    injury_data: dict[str, GameInjuryData] = {}
+
+    if not args.demo:
+        api_key = os.environ.get("ODDS_API_KEY", "")
+        if api_key and INJURY_AVAILABLE:
+            try:
+                fetcher = PlayerInjuryFetcher(api_key=api_key)
+                results = fetcher.fetch_injury_impact_for_upcoming_games()
+                for gd in results:
+                    injury_data[gd.game_id] = gd
+            except Exception as e:
+                print(f"  {YELLOW}[!] Injury fetch failed: {e}{RESET}")
+        else:
+            print(f"  {YELLOW}[!] Skipping (no API key or module unavailable){RESET}")
+    else:
+        print(f"  {YELLOW}[!] Skipping (demo mode or disabled){RESET}")
+
+    # Phase 4: Predict and compare
+    print(f"\n  {CYAN}{BOLD}[Phase 4/4] Model vs Market Comparison{RESET}")
 
     feature_map = build_prediction_features(odds_games, feature_df, feature_cols)
 
@@ -1216,6 +1303,7 @@ Examples:
     # Display results
     print_comparison_table(predictions)
     print_explanations(predictions)
+    print_injury_impact(injury_data)
     print_opportunity_summary(predictions)
 
     print(f"\n  {GREEN}{BOLD}Done.{RESET} Set up cron to run daily: python tools/forward_test.py")
