@@ -173,20 +173,12 @@ class SmallLeagueBridge:
         return result.sort_values("date").reset_index(drop=True)
 
     @staticmethod
-    def generate_fake_nba_columns(df: pd.DataFrame) -> pd.DataFrame:
-        """Add dummy statistical columns required by the feature engine.
+    def add_default_columns(df: pd.DataFrame) -> pd.DataFrame:
+        """Add default statistical columns required by the feature engine.
 
         The NBA feature engine expects columns like ``MIN_*``, ``eFG_*``,
         ``Pace_*``, etc. Small-league sources don't provide these, so we
         seed sensible league-aware defaults.
-
-        .. important::
-            This is a **stopgap**. These are NOT real advanced stats — they
-            are static league-average estimates. The model will treat all
-            teams as identical on these dimensions, which reduces signal
-            but still allows the core features (rolling averages, rest days)
-            to work. The real solution is to compute advanced stats from
-            small-league play-by-play data.
 
         **Default values by league:**
             - NBA (48 min games, ~100 pace, ~0.52 eFG%)

@@ -11,12 +11,10 @@ Usage:
     python tools/forward_test.py                          # Full run
     python tools/forward_test.py --model totals           # Totals only
     python tools/forward_test.py --model moneyline        # Moneyline only
-    python tools/forward_test.py --demo                   # Demo mode (no API key needed)
 
 Key difference from backtest: This uses REAL MARKET LINES from sportsbooks
 instead of a trailing-average baseline. The win rate you see here is what
-actually matters for profitability.
-"""
+actually matters for profitability."""
 
 import sys
 import os
@@ -216,17 +214,11 @@ def train_models(df: pd.DataFrame, feature_cols: list[str], calibrated: bool = F
     return models
 
 
-def fetch_upcoming_games(api_key: str = "", demo: bool = False) -> list:
+def fetch_upcoming_games(api_key: str = "") -> list:
     """Fetch upcoming NBA games with real odds from TheOddsAPI."""
-    if demo:
-        print("  Running in DEMO mode (simulated odds)")
-        return _demo_games()
-
     if not api_key:
-        api_key = os.environ.get("ODDS_API_KEY", "")
-        if not api_key:
-            print(f"  {YELLOW}[!] No ODDS_API_KEY found. Set it in your environment or use --demo{RESET}")
-            return []
+        print(f"  {YELLOW}[!] No ODDS_API_KEY found. Set it in your environment{RESET}")
+        return []
 
     if not ODDS_AVAILABLE:
         print(f"  {YELLOW}[!] OddsAPIClient not available (data/odds_fetcher.py not found){RESET}")
@@ -249,96 +241,6 @@ def fetch_upcoming_games(api_key: str = "", demo: bool = False) -> list:
     except Exception as e:
         print(f"  {RED}[!] OddsAPI error: {e}{RESET}")
         return []
-
-
-def _demo_games() -> list:
-    """Generate demo games for testing without an API key.
-    Fully self-contained — no dependency on data/odds_fetcher module.
-    """
-    from datetime import timedelta, timezone
-    from dataclasses import dataclass
-
-    @dataclass
-    class _DemoGame:
-        id: str
-        sport_key: str
-        sport_title: str
-        commence_time: str
-        home_team: str
-        away_team: str
-        home_team_short: str
-        away_team_short: str
-        home_moneyline: float
-        away_moneyline: float
-        home_spread: float
-        home_spread_odds: float
-        away_spread: float
-        away_spread_odds: float
-        total_over: float
-        total_under: float
-        total_over_odds: float
-        total_under_odds: float
-        market_total: float = 0.0
-        market_spread_line: float = 0.0
-        market_spread_home_odds: float = 0.0
-        market_spread_away_odds: float = 0.0
-
-        def compute_implied_probs(self):
-            def ml_to_prob(odds):
-                if odds > 0:
-                    return 100.0 / (odds + 100.0)
-                return abs(odds) / (abs(odds) + 100.0)
-            home_p = ml_to_prob(self.home_moneyline)
-            away_p = ml_to_prob(self.away_moneyline)
-            total = home_p + away_p
-            if total > 0:
-                self.market_home_implied = home_p / total
-                self.market_away_implied = away_p / total
-            else:
-                self.market_home_implied = 0.5
-                self.market_away_implied = 0.5
-
-    demo_matchups = [
-        ("Boston Celtics", "New York Knicks", -280, +230, -8.5, 215.5),
-        ("Los Angeles Lakers", "Golden State Warriors", -175, +150, -4.5, 225.5),
-        ("Milwaukee Bucks", "Philadelphia 76ers", -210, +175, -6.5, 220.5),
-        ("Denver Nuggets", "Oklahoma City Thunder", -160, +135, -3.5, 228.5),
-        ("Miami Heat", "Orlando Magic", -190, +160, -5.5, 208.5),
-        ("Phoenix Suns", "Dallas Mavericks", -155, +130, -3.0, 235.5),
-        ("LA Clippers", "Sacramento Kings", -145, +125, -2.5, 224.5),
-    ]
-
-    games = []
-    today = datetime.now(timezone.utc)
-
-    for i, (home, away, home_ml, away_ml, spread, total) in enumerate(demo_matchups):
-        kickoff = today + timedelta(days=1, hours=19)
-
-        game = _DemoGame(
-            id=f"demo_{i}",
-            sport_key="basketball_nba",
-            sport_title="NBA",
-            commence_time=kickoff.isoformat(),
-            home_team=home,
-            away_team=away,
-            home_team_short=home.split()[-1],
-            away_team_short=away.split()[-1],
-            home_moneyline=home_ml,
-            away_moneyline=away_ml,
-            home_spread=spread if spread < 0 else -spread,
-            home_spread_odds=-110,
-            away_spread=abs(spread),
-            away_spread_odds=-110,
-            total_over=total,
-            total_under=total,
-            total_over_odds=-110,
-            total_under_odds=-110,
-            market_total=total,
-        )
-        game.compute_implied_probs()
-        games.append(game)
-
-    return games
 
 
 def _haversine(loc1, loc2) -> float:
@@ -1300,7 +1202,6 @@ def main():
 Examples:
   export ODDS_API_KEY="your_key_here"
   python tools/forward_test.py                   # Full run
-  python tools/forward_test.py --demo            # Demo mode (no API key)
   python tools/forward_test.py --model totals    # Totals only
   python tools/forward_test.py --model moneyline # Moneyline only
         """,
@@ -1308,8 +1209,6 @@ Examples:
     parser.add_argument("--model", type=str, default=None,
                         choices=["totals", "moneyline"],
                         help="Run only one model type")
-    parser.add_argument("--demo", action="store_true",
-                        help="Use demo games instead of TheOddsAPI")
     parser.add_argument("--min-edge", type=float, default=MIN_EDGE_THRESHOLD,
                         help=f"Minimum edge threshold (default: {MIN_EDGE_THRESHOLD:.0%})")
     parser.add_argument("--calibrated", action="store_true",
@@ -1329,11 +1228,11 @@ Examples:
 
     # Phase 2: Fetch upcoming games with real odds
     print(f"\n  {CYAN}{BOLD}[Phase 2/4] Fetching Upcoming Games{RESET}")
-    odds_games = fetch_upcoming_games(demo=args.demo)
+    odds_games = fetch_upcoming_games()
 
     if not odds_games:
         print(f"\n  {RED}[!] No upcoming games. Nothing to predict.{RESET}")
-        print(f"  Set ODDS_API_KEY in your environment or use --demo for demo mode.\n")
+        print(f"   Set ODDS_API_KEY in your environment and try again.\n")
         return 1
 
     game_list_str = "\n  ".join(
@@ -1350,50 +1249,47 @@ Examples:
     injury_data: dict[str, GameInjuryData] = {}
     merged_injury_data: dict[str, MergedGameInjuryData] = {}
 
-    if not args.demo:
-        api_key = os.environ.get("ODDS_API_KEY", "")
-        if api_key and INJURY_AVAILABLE:
-            try:
-                # Source 1: Prop-based detection (TheOddsAPI)
-                fetcher = PlayerInjuryFetcher(api_key=api_key)
-                results = fetcher.fetch_injury_impact_for_upcoming_games()
-                for gd in results:
-                    injury_data[gd.game_id] = gd
+    api_key = os.environ.get("ODDS_API_KEY", "")
+    if api_key and INJURY_AVAILABLE:
+        try:
+            # Source 1: Prop-based detection (TheOddsAPI)
+            fetcher = PlayerInjuryFetcher(api_key=api_key)
+            results = fetcher.fetch_injury_impact_for_upcoming_games()
+            for gd in results:
+                injury_data[gd.game_id] = gd
 
-                # Source 2: ESPN official injury status (roster API)
-                if ESPN_INTEGRATOR_AVAILABLE:
-                    print()
-                    print(f"  ESPN Injury Status:")
-                    try:
-                        integrator = ESPNInjuryIntegrator()
-                        merged_injury_data = integrator.merge(injury_data)
-                        for game_id, merged in sorted(merged_injury_data.items()):
-                            lines = integrator.get_display_lines(merged)
-                            for line in lines:
-                                # Safely encode for Windows console
-                                try:
-                                    print(line)
-                                except UnicodeEncodeError:
-                                    safe = line.encode('ascii', 'replace').decode('ascii')
-                                    print(safe)
-                        if not merged_injury_data:
-                            print(f"    No injury data from either source")
-                        else:
-                            any_injuries = any(m.has_any_injuries for m in merged_injury_data.values())
-                            if not any_injuries:
-                                print(f"    No significant injuries detected")
-                    except Exception as e:
-                        print(f"    [!] ESPN integration failed: {e}")
-                        print(f"    (Prop-based injury detection still works)")
-                else:
-                    print(f"  ESPN integrator not available")
+            # Source 2: ESPN official injury status (roster API)
+            if ESPN_INTEGRATOR_AVAILABLE:
+                print()
+                print(f"  ESPN Injury Status:")
+                try:
+                    integrator = ESPNInjuryIntegrator()
+                    merged_injury_data = integrator.merge(injury_data)
+                    for game_id, merged in sorted(merged_injury_data.items()):
+                        lines = integrator.get_display_lines(merged)
+                        for line in lines:
+                            # Safely encode for Windows console
+                            try:
+                                print(line)
+                            except UnicodeEncodeError:
+                                safe = line.encode('ascii', 'replace').decode('ascii')
+                                print(safe)
+                    if not merged_injury_data:
+                        print(f"    No injury data from either source")
+                    else:
+                        any_injuries = any(m.has_any_injuries for m in merged_injury_data.values())
+                        if not any_injuries:
+                            print(f"    No significant injuries detected")
+                except Exception as e:
+                    print(f"    [!] ESPN integration failed: {e}")
+                    print(f"    (Prop-based injury detection still works)")
+            else:
+                print(f"  ESPN integrator not available")
 
-            except Exception as e:
-                print(f"  {YELLOW}[!] Injury fetch failed: {e}{RESET}")
-        else:
-            print(f"  {YELLOW}[!] Skipping (no API key or module unavailable){RESET}")
+        except Exception as e:
+            print(f"  {YELLOW}[!] Injury fetch failed: {e}{RESET}")
     else:
-        print(f"  {YELLOW}[!] Skipping (demo mode or disabled){RESET}")
+        print(f"  {YELLOW}[!] Skipping (no API key or module unavailable){RESET}")
 
     # Phase 4: Predict and compare
     print(f"\n  {CYAN}{BOLD}[Phase 4/4] Model vs Market Comparison{RESET}")

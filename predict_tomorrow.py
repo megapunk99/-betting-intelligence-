@@ -14,9 +14,6 @@ Usage:
     # Historical predictions for already-played games:
     python predict_tomorrow.py
 
-    # Demo mode — synthetic data, no API key needed:
-    python predict_tomorrow.py --live --demo
-
     # Skip hyperparameter tuning (much faster):
     python predict_tomorrow.py --live --no-tune
 
@@ -78,7 +75,6 @@ try:
 except ImportError:
     pass
 
-DEMO_MODE = False
 ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
 
 # ──────────────────────────────────────────────────────────────────────
@@ -134,7 +130,6 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
             "Examples:\n"
             "  python predict_tomorrow.py                           # Historical mode\n"
             "  python predict_tomorrow.py --live                    # Live predictions\n"
-            "  python predict_tomorrow.py --live --demo             # Demo mode\n"
             "  python predict_tomorrow.py --live --no-tune          # Skip tuning\n"
             "  python predict_tomorrow.py --full                    # Full pipeline\n"
         ),
@@ -143,7 +138,6 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     # Mode
     mode = parser.add_argument_group("Mode")
     mode.add_argument("--live", action="store_true", help="Fetch live upcoming games from TheOddsAPI")
-    mode.add_argument("--demo", action="store_true", help="Use synthetic/demo data (no API key needed)")
     mode.add_argument("--full", action="store_true", help="Run full pipeline: predictions → recommendations → risk → simulation")
     mode.add_argument("--recommend-only", action="store_true", help="Generate recommendations from existing predictions only")
     mode.add_argument("--simulate", action="store_true", help="Run Monte Carlo simulation on results")
@@ -152,7 +146,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     # Data
     data_grp = parser.add_argument_group("Data Options")
     data_grp.add_argument("--days-history", type=int, default=90, help="Days of historical data to load")
-    data_grp.add_argument("--data-source", choices=["synthetic", "csv", "sqlite", "api"], default=None, help="Force data source")
+    data_grp.add_argument("--data-source", choices=["csv", "sqlite", "api"], default=None, help="Force data source")
     data_grp.add_argument("--csv-path", type=str, help="Path to CSV data file")
 
     # Model
@@ -180,80 +174,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
 
 # ──────────────────────────────────────────────────────────────────────
-# 4.  Demo / Synthetic Data Generator
-# ──────────────────────────────────────────────────────────────────────
-
-
-def generate_demo_data(num_games: int = 10) -> pd.DataFrame:
-    """Generate realistic synthetic NBA game data set to TOMORROW's date.
-
-    Uses real NBA team names so the recommendation engine, player props,
-    and risk modules all produce coherent output for tomorrow's slate.
-    """
-    np.random.seed(42)
-    # Real NBA team short names — matches RecommendationEngine._get_hypothetical_games()
-    teams = [
-        "Celtics", "Nets", "Knicks", "76ers", "Raptors",
-        "Bulls", "Cavaliers", "Pistons", "Pacers", "Bucks",
-        "Hawks", "Hornets", "Heat", "Magic", "Wizards",
-        "Nuggets", "Timberwolves", "Thunder", "Trail Blazers", "Jazz",
-        "Warriors", "Clippers", "Lakers", "Suns", "Kings",
-        "Mavericks", "Rockets", "Grizzlies", "Pelicans", "Spurs",
-    ]
-    rows: List[Dict[str, Any]] = []
-    tomorrow = (datetime.now() + timedelta(days=1)).date()
-
-    for i in range(num_games):
-        home = np.random.choice(teams)
-        away = np.random.choice([t for t in teams if t != home])
-        game_date = tomorrow
-
-        home_pts = np.random.normal(112, 10)
-        away_pts = np.random.normal(110, 10)
-        total = home_pts + away_pts
-        spread = home_pts - away_pts
-
-        market_total = total + np.random.normal(0, 3)
-        market_spread = spread + np.random.normal(0, 2.5)
-
-        row = {
-            "game_id": f"demo_{i:04d}",
-            "game_date": game_date.strftime("%Y-%m-%d"),
-            "home_team": home,
-            "away_team": away,
-            "home_score": round(home_pts, 1),
-            "away_score": round(away_pts, 1),
-            "total_points": round(total, 1),
-            "spread": round(spread, 1),
-            "market_total": round(market_total, 1),
-            "market_spread": round(market_spread, 1),
-            "home_ml_odds": int(np.random.choice([-200, -150, -110, 110, 150, 200])),
-            "away_ml_odds": int(np.random.choice([-200, -150, -110, 110, 150, 200])),
-            "over_odds": -110,
-            "under_odds": -110,
-            "home_fg_pct": round(np.random.uniform(0.42, 0.52), 3),
-            "away_fg_pct": round(np.random.uniform(0.42, 0.52), 3),
-            "home_3p_pct": round(np.random.uniform(0.32, 0.42), 3),
-            "away_3p_pct": round(np.random.uniform(0.32, 0.42), 3),
-            "home_rebounds": int(np.random.normal(44, 5)),
-            "away_rebounds": int(np.random.normal(43, 5)),
-            "home_assists": int(np.random.normal(25, 4)),
-            "away_assists": int(np.random.normal(24, 4)),
-            "home_turnovers": int(np.random.normal(13, 3)),
-            "away_turnovers": int(np.random.normal(13, 3)),
-            "home_pace": round(np.random.uniform(95, 105), 1),
-            "away_pace": round(np.random.uniform(95, 105), 1),
-            "home_elo": round(np.random.normal(1500, 100)),
-            "away_elo": round(np.random.normal(1500, 100)),
-            "is_demo": True,
-        }
-        rows.append(row)
-
-    return pd.DataFrame(rows)
-
-
-# ──────────────────────────────────────────────────────────────────────
-# 5.  Core Prediction Pipeline
+# 4.  Core Prediction Pipeline
 # ──────────────────────────────────────────────────────────────────────
 
 
@@ -269,7 +190,7 @@ class PredictionPipeline:
     EXCLUDE_COLS = {
         "game_id", "game_date", "home_team", "away_team",
         "total_points", "spread", "label", "home_win",
-        "home_score", "away_score", "is_demo",
+        "home_score", "away_score",
     }
 
     def __init__(self, args: argparse.Namespace):
@@ -279,7 +200,6 @@ class PredictionPipeline:
             "pipeline_version": "3.0",
             "timestamp": datetime.now().isoformat(),
             "mode": "live" if args.live else "historical",
-            "demo": args.demo,
             "games": [],
             "predictions": [],
             "recommendations": [],
@@ -309,13 +229,6 @@ class PredictionPipeline:
         print("  📊  STAGE 1: DATA LOADING")
         print("=" * 70)
 
-        if self.args.demo:
-            print("  ℹ  DEMO MODE: Generating synthetic data...")
-            df = generate_demo_data(12)
-            print(f"  ✅  Generated {len(df)} demo games ({df['game_date'].min()} to {df['game_date'].max()})")
-            self.results["metadata"]["data_source"] = "demo"
-            return df
-
         if self.args.live:
             print("  🌐  Attempting live odds fetch from TheOddsAPI...")
             df = self._load_live_data()
@@ -326,11 +239,6 @@ class PredictionPipeline:
 
         # Historical loading
         df = self._load_historical_data()
-        if df is None or df.empty:
-            print("  ℹ  No real data found. Falling back to demo data.")
-            print()
-            df = generate_demo_data(10)
-            self.results["metadata"]["data_source"] = "demo_fallback"
         return df
 
     def _load_live_data(self) -> Optional[pd.DataFrame]:
@@ -415,7 +323,6 @@ class PredictionPipeline:
         try:
             engineer = FeatureEngineer()
             # FeatureEngineer.build_all_features needs two DataFrames (games_df, raw_df)
-            # In demo mode we only have a single synthetic df, so try it but expect fallback
             if hasattr(engineer, 'build_all_features'):
                 features_df = engineer.build_all_features(df, df)
             elif hasattr(engineer, 'create_features'):
@@ -728,7 +635,7 @@ class PredictionPipeline:
     def predict_tomorrow_games(self) -> List[Dict[str, Any]]:
         """Predict tomorrow's games using the full-data model + market odds.
 
-        Only produces results in live/demo mode where self.df contains
+        Only produces results in live mode where self.df contains
         the upcoming schedule with market prices. For each game:
           - Builds a feature vector from each team's recent history
           - Runs the full-data model to predict total points
@@ -1357,7 +1264,7 @@ class PredictionPipeline:
 
     def run_backtest(self, features_df: pd.DataFrame) -> Optional[Dict[str, Any]]:
         """Run a full backtest on historical predictions."""
-        if self.args.live and not self.args.demo:
+        if self.args.live:
             print("\n  ⏩  Backtesting skipped in live mode")
             return None
 
@@ -1412,7 +1319,7 @@ class PredictionPipeline:
         print("=" * 70)
         print(f"  ⏱  Pipeline completed in {elapsed:.1f}s")
         print(f"  📊  Data source: {self.results.get('metadata', {}).get('data_source', 'N/A')}")
-        print(f"  📅  Mode: {'LIVE' if self.args.live else 'HISTORICAL'}{' (DEMO)' if self.args.demo else ''}")
+        print(f"  📅  Mode: {'LIVE' if self.args.live else 'HISTORICAL'}")
 
         # Summary stats
         n_games = len(self.results.get("predictions", []))
@@ -1615,8 +1522,7 @@ class PredictionPipeline:
 </head>
 <body>
 <div class="container">
-  <h1>🏀 Betting Intelligence Report</h1>
-  <p class="meta">Generated {datetime.now():%B %d, %Y at %H:%M:%S} · {'LIVE' if self.args.live else 'HISTORICAL'}{' (DEMO)' if self.args.demo else ''}</p>
+  <h1>🏀 Betting Intelligence Report</h1>        <p class="meta">Generated {datetime.now():%B %d, %Y at %H:%M:%S} · {'LIVE' if self.args.live else 'HISTORICAL'}</p>
 
   <div class="stats">
     <div class="stat-card"><div class="num">{len(recs)}</div><div class="label">Recommendations</div></div>
@@ -1733,7 +1639,7 @@ class PredictionPipeline:
             self.run_simulation(risked_bets.get("bets", recommendations))
 
         # 12. Backtesting (if historical)
-        if not self.args.live or self.args.demo:
+        if not self.args.live:
             self.run_backtest(self.features_df)
 
         # 13. Report
@@ -1746,34 +1652,24 @@ class PredictionPipeline:
 # 6.  Entry Point
 # ──────────────────────────────────────────────────────────────────────
 
-
 def main(argv: Optional[List[str]] = None):
     args = parse_args(argv)
 
-    global DEMO_MODE
-    DEMO_MODE = args.demo
-
-    if args.demo:
-        print("  ℹ  DEMO MODE: All data is synthetic. No API keys needed.")
-        if not args.live:
-            print("  ℹ  Adding --live for live-style demo predictions.")
-            args.live = True
-
-    if args.live and not args.demo and not ODDS_API_KEY:
+    if args.live and not ODDS_API_KEY:
         print("  ⚠  --live mode requires ODDS_API_KEY env var or .env file.")
-        print("  ℹ  Falling back to historical. Use --demo for synthetic data.")
+        print("  ℹ  Falling back to historical.")
         args.live = False
 
     # Scheduled mode: force live+no-tune, auto-save results, JSON to stdout
     if args.scheduled:
+        if not ODDS_API_KEY:
+            print("  ⚠  --scheduled mode requires ODDS_API_KEY env var or .env file.")
+            return 1
         args.live = True
         args.no_tune = True
         args.html = False
         if not args.output:
             args.output = str(PROJECT_ROOT / "reports" / "latest.json")
-        if not args.demo and not ODDS_API_KEY:
-            print("  ℹ  --scheduled mode but no ODDS_API_KEY, using --demo")
-            args.demo = True
 
     pipeline = PredictionPipeline(args)
     results = pipeline.run()

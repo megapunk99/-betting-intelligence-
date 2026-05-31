@@ -810,13 +810,11 @@ Examples:
   python main.py --full                    # Full pipeline: all 7+ models
   python main.py --tune                    # Enable hyperparameter tuning (Optuna)
   python main.py --live                    # Live predictions for upcoming games
-  python main.py --live --demo             # Live predictions in demo mode (no API key)
+  python main.py --live                    # Live predictions for upcoming games
         """
     )
     parser.add_argument("--live", action="store_true",
                         help="Run live prediction mode: fetch upcoming games from TheOddsAPI")
-    parser.add_argument("--demo", action="store_true",
-                        help="Run with demo data (no API key needed)")
     parser.add_argument("--full", action="store_true",
                         help="Run full pipeline with all models (default is fast mode)")
     parser.add_argument("--tune", action="store_true",
@@ -841,7 +839,6 @@ Examples:
         engine = AdvancedPredictionEngine(
             tune_hyperparams=tuning,
             live_mode=True,
-            demo_mode=args.demo,
         )
         results = engine.run()
     else:

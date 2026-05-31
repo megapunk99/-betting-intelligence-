@@ -247,7 +247,7 @@ class OddsAPIClient:
             List of OddsGame objects with parsed odds
         """
         if not self._configured:
-            return self._demo_games()
+            return []
 
         # Check cache first
         cache_key = f"odds_{sport}_{markets.replace(',', '_')}"
@@ -287,8 +287,7 @@ class OddsAPIClient:
 
         except ImportError:
             print("  [OddsAPI] 'requests' library not installed. Install with: pip install requests")
-            print("  [OddsAPI] Falling back to demo mode.\n")
-            return self._demo_games()
+            return []
         except requests.exceptions.RequestException as e:
             print(f"  [OddsAPI] API request failed: {e}")
             # Try loading stale cache
@@ -296,8 +295,7 @@ class OddsAPIClient:
             if stale:
                 print(f"  [OddsAPI] Using stale cache ({len(stale)} games)")
                 return stale
-            print("  [OddsAPI] Falling back to demo games.\n")
-            return self._demo_games()
+            return []
 
     def get_upcoming_games(self, sport: str = "basketball_nba", **kwargs) -> List[OddsGame]:
         """Alias for get_upcoming_games_with_odds."""
@@ -486,57 +484,6 @@ class OddsAPIClient:
                 json.dump([g.to_dict() for g in games], f, indent=2, default=str)
         except Exception as e:
             print(f"  [OddsAPI] Cache write failed: {e}")
-
-    # ═══════════════════════════════════════════════════════════════════
-    #  DEMO / OFFLINE MODE
-    # ═══════════════════════════════════════════════════════════════════
-
-    def _demo_games(self) -> List[OddsGame]:
-        """Return demo games when API key is not configured or API is unavailable."""
-        today = datetime.now(timezone.utc)
-
-        demo_schedule = [
-            ("Boston Celtics", "New York Knicks", 1),
-            ("Los Angeles Lakers", "Golden State Warriors", 1),
-            ("Milwaukee Bucks", "Philadelphia 76ers", 1),
-            ("Denver Nuggets", "Oklahoma City Thunder", 1),
-            ("Miami Heat", "Orlando Magic", 1),
-            ("Phoenix Suns", "Dallas Mavericks", 2),
-            ("LA Clippers", "Sacramento Kings", 2),
-        ]
-
-        games = []
-        for home, away, day_offset in demo_schedule:
-            kickoff = today + timedelta(days=day_offset, hours=19)  # 7pm ET
-            home_short = ODDS_TO_SHORT_NAME.get(home, home.split()[-1])
-            away_short = ODDS_TO_SHORT_NAME.get(away, away.split()[-1])
-
-            # Demo odds (representative market prices)
-            game = OddsGame(
-                id=f"demo_{home_short}_vs_{away_short}",
-                sport_key="basketball_nba",
-                sport_title="NBA",
-                commence_time=kickoff.isoformat(),
-                home_team=home,
-                away_team=away,
-                home_team_short=home_short,
-                away_team_short=away_short,
-                home_moneyline=-200,
-                away_moneyline=+170,
-                home_spread=-4.5,
-                home_spread_odds=-110,
-                away_spread=4.5,
-                away_spread_odds=-110,
-                total_over=221.5,
-                total_under=221.5,
-                total_over_odds=-110,
-                total_under_odds=-110,
-            )
-            game.compute_implied_probs()
-            games.append(game)
-
-        self._save_cache("demo_games", games)
-        return games
 
     # ═══════════════════════════════════════════════════════════════════
     #  UTILITY: Team mapping for feature engineering
