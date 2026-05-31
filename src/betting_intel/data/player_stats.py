@@ -666,7 +666,7 @@ def main():
     if top:
         print("\nTop scorers found:")
         for name, team, ppg in top:
-            print(f"  {name:25s} {team:3s}  {ppg:.1f} PPG")
+            print(f"  {name.encode('ascii', 'replace').decode('ascii'):25s} {team:3s}  {ppg:.1f} PPG")
 
     return 0
 
