@@ -1,8 +1,11 @@
-Fix 2024-25 data quality: backfill OREB/DREB/STL/BLK/TOV/PF from ESPN boxscore API
+Set up daily automated NBA pipeline (Windows Task Scheduler)
 
-- 2024-25 season had OREB, DREB, STL, BLK, TOV, PF all set to zero
-  (ESPN scoreboard Phase 1 didn't capture advanced stats)
-- Ran boxscore backfill via scripts/fetch_real_nba_data.py --backfill
-- Added tools/update_data.py for scraping current season from NBA CDN API
-- Made SEASON_ID dynamic in scraper, added retry logic for boxscore fetches
-- Both seasons now consistent: TOV~14, STL~8, BLK~5, OREB~11, DREB~33
+- Add tools/daily_run.py — wrapper that scrapes new games via
+  update_data.py, runs forward_test.py --calibrated, and logs
+  results to logs/daily_YYYY-MM-DD_HHMMSS.log
+- Add run_daily.bat — batch entry point for the scheduled task
+- Add logs/.gitkeep — keeps log directory in git
+- Add ODDS_API_KEY to .env for automated access
+- Fix forward_test.py: stop dropping rows with NaN features
+  (backfill handles this now)
+- Schedule: NBA\DailyPipeline runs daily at 09:00 via schtasks

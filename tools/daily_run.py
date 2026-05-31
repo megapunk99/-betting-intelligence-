@@ -4,13 +4,15 @@ Daily NBA Pipeline — Updates data and runs the forward test.
 
 Runs on a daily schedule (Windows Task Scheduler) to:
   1. Scrape new completed games from the NBA CDN API
-  2. Retrain models on all historical data
-  3. Compare model predictions vs real sportsbook odds
-  4. Log everything to a timestamped file in logs/
+  2. Update player stats from boxscore data
+  3. Retrain models on all historical data
+  4. Compare model predictions vs real sportsbook odds
+  5. Log everything to a timestamped file in logs/
 
 Usage:
     python tools/daily_run.py                          # Full pipeline
     python tools/daily_run.py --skip-update            # Skip data scrape
+    python tools/daily_run.py --skip-player-stats      # Skip player stats update
     python tools/daily_run.py --skip-odds              # Skip forward test
 """
 
@@ -34,6 +36,7 @@ PYTHON = sys.executable or "python"
 LOGS_DIR = PROJECT_ROOT / "logs"
 UPDATE_SCRIPT = PROJECT_ROOT / "tools" / "update_data.py"
 FORWARD_SCRIPT = PROJECT_ROOT / "tools" / "forward_test.py"
+PLAYER_STATS_MODULE = "betting_intel.data.player_stats"
 ENV_FILE = PROJECT_ROOT / ".env"
 
 # ── ANSI Colors ────────────────────────────────────────────────────────────
@@ -113,6 +116,8 @@ def main():
     )
     parser.add_argument("--skip-update", action="store_true",
                         help="Skip the data update step")
+    parser.add_argument("--skip-player-stats", action="store_true",
+                        help="Skip the player stats update step")
     parser.add_argument("--skip-odds", action="store_true",
                         help="Skip the odds/prediction step")
     args = parser.parse_args()
@@ -131,26 +136,38 @@ def main():
     sections: list[tuple[str, str]] = []
 
     if not args.skip_update:
-        log(f"\n  {BOLD}[Step 1/2] Scraping new NBA games...{RESET}")
+        log(f"\n  {BOLD}[Step 1/3] Scraping new NBA games...{RESET}")
         cmd = [str(PYTHON), "-B", str(UPDATE_SCRIPT)]
         success, output = run_step("Data update", cmd, timeout=600)
         sections.append(("DATA UPDATE", output))
         if not success:
             log(f"\n  {RED}[!] Data update failed. Continuing anyway...{RESET}")
     else:
-        log(f"\n  {YELLOW}[Step 1/2] Skipped (--skip-update){RESET}")
+        log(f"\n  {YELLOW}[Step 1/3] Skipped (--skip-update){RESET}")
         sections.append(("DATA UPDATE", "[SKIPPED]"))
 
-    # ── Step 2: Forward test ────────────────────────────────────────────
+    # ── Step 2: Player stats update ─────────────────────────────────────
+    if not args.skip_player_stats:
+        log(f"\n  {BOLD}[Step 2/3] Updating player stats from boxscore data...{RESET}")
+        cmd = [str(PYTHON), "-B", "-m", PLAYER_STATS_MODULE, "--recent", "20"]
+        success, output = run_step("Player stats", cmd, timeout=600)
+        sections.append(("PLAYER STATS", output))
+        if not success:
+            log(f"\n  {RED}[!] Player stats update had errors.{RESET}")
+    else:
+        log(f"\n  {YELLOW}[Step 2/3] Skipped (--skip-player-stats){RESET}")
+        sections.append(("PLAYER STATS", "[SKIPPED]"))
+
+    # ── Step 3: Forward test ────────────────────────────────────────────
     if not args.skip_odds:
-        log(f"\n  {BOLD}[Step 2/2] Running forward test with real odds...{RESET}")
+        log(f"\n  {BOLD}[Step 3/3] Running forward test with real odds...{RESET}")
         cmd = [str(PYTHON), "-B", str(FORWARD_SCRIPT), "--calibrated"]
         success, output = run_step("Forward test", cmd, timeout=600)
         sections.append(("FORWARD TEST", output))
         if not success:
             log(f"\n  {RED}[!] Forward test had errors.{RESET}")
     else:
-        log(f"\n  {YELLOW}[Step 2/2] Skipped (--skip-odds){RESET}")
+        log(f"\n  {YELLOW}[Step 3/3] Skipped (--skip-odds){RESET}")
         sections.append(("FORWARD TEST", "[SKIPPED]"))
 
     # ── Write log file ──────────────────────────────────────────────────
@@ -165,18 +182,18 @@ def main():
     print(f"  Log: {log_path}")
     if not args.skip_update:
         print(f"  Tip: Check the log for new games scraped today.")
+    if not args.skip_player_stats:
+        print(f"  Tip: Player stats updated for the forward test's injury adjustments.")
     if not args.skip_odds:
         print(f"  Tip: The forward test output shows +EV opportunities (if any).")
     print(f"{CYAN}{BOLD}{'=' * 70}{RESET}\n")
 
-    # Track failures: return non-zero if any step failed
-    # (sections with non-skipped content that contain error keywords)
-    any_failure = any(
-        "FAILED" in content or "TIMEOUT" in content
-        for _, content in sections
-        if content not in ("[SKIPPED]", "")
-    )
-    return 1 if any_failure else 0
+    return_code = 0
+    for _, content in sections:
+        if content not in ("[SKIPPED]", "") and ("FAILED" in content or "TIMEOUT" in content):
+            return_code = 1
+            break
+    return return_code
 
 
 if __name__ == "__main__":

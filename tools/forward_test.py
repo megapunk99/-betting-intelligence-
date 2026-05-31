@@ -71,6 +71,20 @@ try:
 except ImportError:
     INJURY_AVAILABLE = False
 
+# ESPN injury integrator — merges official status with prop-based detection
+try:
+    from betting_intel.data.espn_injury_integrator import ESPNInjuryIntegrator, MergedGameInjuryData
+    ESPN_INTEGRATOR_AVAILABLE = True
+except ImportError:
+    ESPN_INTEGRATOR_AVAILABLE = False
+
+# Injury adjuster — adjusts features for missing players
+try:
+    from betting_intel.data.injury_adjuster import InjuryAdjuster
+    INJURY_ADJUSTER_AVAILABLE = True
+except ImportError:
+    INJURY_ADJUSTER_AVAILABLE = False
+
 # ---- ANSI Colors ----
 GREEN = "\033[92m"
 RED = "\033[91m"
@@ -881,17 +895,137 @@ def compute_kelly(win_prob: float, decimal_odds: float, fraction: float = 0.25) 
     return (frac, frac * 10000.0)
 
 
+# ── Adjustment Column Construction ─────────────────────────────────────
+# For each base_col from InjuryAdjuster, which window suffix to use when
+# constructing the exact feature column name to adjust.
+#
+# MUST stay in sync with FEATURE_ADJUSTMENT in injury_adjuster.py.
+# We intentionally keep this minimal: only avg_pts (primary scoring) and
+# avg_pts_allowed (defensive leakage). All other correlated features
+# (ema_pts, trend_pts, margin, pace, form_score, etc.) are excluded
+# to prevent over-compounding the same signal across 10+ columns.
+#
+# Key: base_col from adjuster. Value: window suffix ("10g") or "" for
+# single-instance features.
+_ADJUSTMENT_WINDOWS: dict[str, str] = {
+    "avg_pts": "10g",           # avg_pts_10g_home / _away
+    "avg_pts_allowed": "10g",    # avg_pts_allowed_10g_home / _away
+}
+
+
+def adjust_features_for_injuries(
+    feature_map: dict[str, dict],
+    injury_data: dict[str, GameInjuryData],
+    odds_games: list,
+) -> dict[str, dict]:
+    """
+    Apply injury adjustments to feature vectors.
+
+    Creates a copy of the feature map with adjusted features for games
+    where injuries were detected. Uses InjuryAdjuster to compute the
+    per-team scoring loss and translates it to feature-level overrides.
+
+    Unlike the old substring-matching approach (which compounded the same
+    adjustment across 13+ correlated columns), this constructs exact
+    column names targeting a single mid-range window per base pattern.
+    E.g., avg_pts → avg_pts_10g_home (not avg_pts_3g_home, _5g_home,
+    _20g_home, or incorrectly avg_pts_allowed_home / opp_avg_pts_scored_home).
+
+    Args:
+        feature_map: Original feature map from build_prediction_features()
+        injury_data: Dict of game_id -> GameInjuryData from PlayerInjuryFetcher
+        odds_games: List of OddsGame objects
+
+    Returns:
+        Adjusted copy of feature_map with injury-modified features.
+        Returns None if no injuries or no games were actually adjusted.
+    """
+    if not injury_data or not INJURY_ADJUSTER_AVAILABLE:
+        return None
+
+    print("  Applying injury adjustments to features...")
+    adjuster = InjuryAdjuster()
+
+    adjusted_map: dict[str, dict] = {}
+    games_adjusted = 0
+    total_adjustment = 0.0
+
+    for key, entry in feature_map.items():
+        game = entry["game"]
+        features = dict(entry["features"])  # Copy
+
+        # Match this game to injury data using team names
+        game_id = getattr(game, "id", "")
+        if not game_id:
+            # Try matching by team names
+            game_id = None
+            for gid, gd in injury_data.items():
+                home_short = gd.home_team.split()[-1] if gd.home_team else ""
+                away_short = gd.away_team.split()[-1] if gd.away_team else ""
+                if (home_short == game.home_team_short and
+                        away_short == game.away_team_short):
+                    game_id = gid
+                    break
+                # Try reverse (home/away might be swapped)
+                if (home_short == game.away_team_short and
+                        away_short == game.home_team_short):
+                    game_id = gid
+                    break
+
+        if game_id and game_id in injury_data:
+            gd = injury_data[game_id]
+            if gd.has_injuries:
+                adjustment = adjuster.compute_game_adjustment_from_injury_data(gd)
+
+                # Apply adjustments using exact column name construction.
+                # Each base_col targets ONE specific window to avoid
+                # over-compounding the same signal across correlated features.
+                for side, adj_dict in adjustment.items():
+                    suffix = f"_{side}"
+                    for base_col, adj_value in adj_dict.items():
+                        window = _ADJUSTMENT_WINDOWS.get(base_col, "")
+                        if window:
+                            # Multi-window feature: avg_pts + _10g + _home
+                            target = f"{base_col}_{window}{suffix}"
+                        else:
+                            # Single-instance feature: pace + _home
+                            target = f"{base_col}{suffix}"
+                        if target in features:
+                            features[target] += adj_value
+
+                games_adjusted += 1
+                total_adjustment += abs(gd.total_missing_ppg)
+
+        adjusted_map[key] = {
+            "features": features,
+            "game": game,
+        }
+
+    if games_adjusted > 0:
+        print(f"    Adjusted {games_adjusted} game(s) for injuries "
+              f"({total_adjustment:.0f} total weighted PPG impact)")
+        return adjusted_map
+    else:
+        print(f"    No injury adjustments applied (0 games matched)")
+        return None
+
+
 def predict_and_compare(
     models: dict,
     feature_map: dict[str, dict],
     feature_cols: list[str],
     min_edge: float = MIN_EDGE_THRESHOLD,
     verbose: bool = False,
+    label: str = "",
 ) -> list[ForwardPrediction]:
     """
     For each upcoming game, run model predictions and compare vs real market lines.
+
+    Args:
+        label: Optional label for logging (e.g., "(Adjusted)")
     """
-    print("\n  Running predictions vs market lines...")
+    label_str = f" {label}" if label else ""
+    print(f"  Running predictions{label_str} vs market lines...")
     predictions = []
 
     for key, entry in feature_map.items():
@@ -929,9 +1063,7 @@ def predict_and_compare(
                     pred.total_verdict = "OVER" if edge > 0 else "UNDER"
 
                     # Kelly stake calculation for totals
-                    # Model predicts total will be above/below market line
-                    # Simplified: treat as 50/50 market with -110 pricing
-                    model_win_prob = 0.55 + abs(edge)  # Rough calibration
+                    model_win_prob = 0.55 + abs(edge)
                     model_win_prob = min(model_win_prob, 0.85)
                     kelly, stake = compute_kelly(model_win_prob, 1.91)
                     pred.kelly_fraction = kelly
@@ -956,7 +1088,6 @@ def predict_and_compare(
                 pred.market_home_implied = round(market_home, 3)
                 pred.market_away_implied = round(market_away, 3)
 
-                # Edge calculation
                 home_edge = home_prob - market_home
                 away_edge = away_prob - market_away
                 pred.home_ml_edge = round(home_edge, 3)
@@ -988,67 +1119,6 @@ def predict_and_compare(
 # ============================================================================
 #  Display
 # ============================================================================
-
-def print_injury_impact(injury_data: dict[str, GameInjuryData]):
-    """
-    Print injury impact summary for upcoming games.
-
-    Shows which star players are missing, weighted PPG impact,
-    and total player prop points per team.
-    """
-    if not injury_data:
-        return
-
-    has_any = any(d.has_injuries for d in injury_data.values())
-    if not has_any:
-        return
-
-    print(f"\n  {BOLD}INJURY IMPACT — Missing Players Detected{RESET}")
-    print(f"  {'-' * 75}")
-
-    total_missing = 0.0
-    for game_id, gd in sorted(injury_data.items()):
-        if not gd.has_injuries:
-            continue
-
-        lines = []
-
-        if gd.home_impact and gd.home_impact.missing_stars:
-            missing = "; ".join(gd.home_impact.missing_stars)
-            lines.append(f"    Home ({gd.home_impact.team_short}): {missing}")
-
-        if gd.away_impact and gd.away_impact.missing_stars:
-            missing = "; ".join(gd.away_impact.missing_stars)
-            lines.append(f"    Away ({gd.away_impact.team_short}): {missing}")
-
-        if gd.total_missing_ppg > 0:
-            lines.append(f"    Weighted impact: ~{gd.total_missing_ppg:.1f} PPG")
-            total_missing += gd.total_missing_ppg
-
-        # Show team prop point totals
-        if gd.home_impact and gd.away_impact:
-            h_pts = gd.home_impact.total_player_props_pts
-            a_pts = gd.away_impact.total_player_props_pts
-            if h_pts > 0 or a_pts > 0:
-                lines.append(f"    Player points props: {gd.home_impact.team_short} {h_pts:.0f}, "
-                            f"{gd.away_impact.team_short} {a_pts:.0f} (total: {gd.total_prop_pts:.0f})")
-
-        if lines:
-            # Extract game info for the header
-            short_matchup = gd.away_team.split()[-1] if gd.away_team else "?"
-            short_matchup += " @ "
-            short_matchup += gd.home_team.split()[-1] if gd.home_team else "?"
-            print(f"  {YELLOW}  {short_matchup}:{RESET}")
-            for line in lines:
-                print(line)
-            print()
-
-    if total_missing > 0:
-        print(f"  {YELLOW}[!]{RESET} Total weighted missing PPG across all games: {total_missing:.1f}")
-        print(f"  This represents roughly {total_missing * 0.8:.0f} potential points (unadjusted) "
-              f"missing from the model's feature set.")
-        print(f"  {'-' * 75}")
-
 
 def print_header():
     print()
@@ -1253,12 +1323,12 @@ Examples:
     print_header()
 
     # Phase 1: Load data and train models
-    print(f"\n  {CYAN}{BOLD}[Phase 1/3] Training on Historical Data{RESET}")
+    print(f"\n  {CYAN}{BOLD}[Phase 1/4] Training on Historical Data{RESET}")
     df, feature_cols, feature_df = load_and_prepare_data()
     models = train_models(df, feature_cols, calibrated=args.calibrated)
 
     # Phase 2: Fetch upcoming games with real odds
-    print(f"\n  {CYAN}{BOLD}[Phase 2/3] Fetching Upcoming Games{RESET}")
+    print(f"\n  {CYAN}{BOLD}[Phase 2/4] Fetching Upcoming Games{RESET}")
     odds_games = fetch_upcoming_games(demo=args.demo)
 
     if not odds_games:
@@ -1275,18 +1345,49 @@ Examples:
     if len(odds_games) > 10:
         print(f"  ... and {len(odds_games) - 10} more")
 
-    # Phase 3: Fetch injury data (player props) for upcoming games
-    print(f"\n  {CYAN}{BOLD}[Phase 3/4] Injury Impact Assessment{RESET}")
+    # Phase 3: Fetch injury data (player props + ESPN status) for upcoming games
+    print(f"\n  {CYAN}{BOLD}[Phase 3/4] Injury Impact Assessment & Feature Adjustment{RESET}")
     injury_data: dict[str, GameInjuryData] = {}
+    merged_injury_data: dict[str, MergedGameInjuryData] = {}
 
     if not args.demo:
         api_key = os.environ.get("ODDS_API_KEY", "")
         if api_key and INJURY_AVAILABLE:
             try:
+                # Source 1: Prop-based detection (TheOddsAPI)
                 fetcher = PlayerInjuryFetcher(api_key=api_key)
                 results = fetcher.fetch_injury_impact_for_upcoming_games()
                 for gd in results:
                     injury_data[gd.game_id] = gd
+
+                # Source 2: ESPN official injury status (roster API)
+                if ESPN_INTEGRATOR_AVAILABLE:
+                    print()
+                    print(f"  ESPN Injury Status:")
+                    try:
+                        integrator = ESPNInjuryIntegrator()
+                        merged_injury_data = integrator.merge(injury_data)
+                        for game_id, merged in sorted(merged_injury_data.items()):
+                            lines = integrator.get_display_lines(merged)
+                            for line in lines:
+                                # Safely encode for Windows console
+                                try:
+                                    print(line)
+                                except UnicodeEncodeError:
+                                    safe = line.encode('ascii', 'replace').decode('ascii')
+                                    print(safe)
+                        if not merged_injury_data:
+                            print(f"    No injury data from either source")
+                        else:
+                            any_injuries = any(m.has_any_injuries for m in merged_injury_data.values())
+                            if not any_injuries:
+                                print(f"    No significant injuries detected")
+                    except Exception as e:
+                        print(f"    [!] ESPN integration failed: {e}")
+                        print(f"    (Prop-based injury detection still works)")
+                else:
+                    print(f"  ESPN integrator not available")
+
             except Exception as e:
                 print(f"  {YELLOW}[!] Injury fetch failed: {e}{RESET}")
         else:
@@ -1305,14 +1406,49 @@ Examples:
         print(f"     enough history in the database to compute features.")
         return 1
 
+    # Run predictions WITHOUT injury adjustments
     predictions = predict_and_compare(models, feature_map, feature_cols, min_edge,
                                          verbose=args.verbose)
 
+    # Run predictions WITH injury adjustments (if injury data available)
+    adjusted_predictions = None
+    if injury_data and INJURY_ADJUSTER_AVAILABLE:
+        adjusted_map = adjust_features_for_injuries(feature_map, injury_data, odds_games)
+        if adjusted_map:
+            adjusted_predictions = predict_and_compare(
+                models, adjusted_map, feature_cols, min_edge,
+                verbose=args.verbose, label="(Adjusted)"
+            )
+
     # Display results
+    print(f"\n  {CYAN}[Unadjusted Predictions]{RESET}")
     print_comparison_table(predictions)
     print_explanations(predictions)
-    print_injury_impact(injury_data)
-    print_opportunity_summary(predictions)
+
+    if adjusted_predictions:
+        print(f"\n  {CYAN}[Injury-Adjusted Predictions]{RESET}")
+        print_comparison_table(adjusted_predictions)
+        print_explanations(adjusted_predictions)
+
+        # Show comparison summary
+        print(f"\n  {BOLD}INJURY ADJUSTMENT IMPACT{RESET}")
+        print(f"  {'-' * 60}")
+        for orig, adj in zip(predictions, adjusted_predictions):
+            if orig.matchup == adj.matchup:
+                shifts = []
+                if orig.model_total is not None and adj.model_total is not None:
+                    diff = adj.model_total - orig.model_total
+                    shifts.append(f"Total shift: {diff:+.1f} pts")
+                if orig.home_win_prob is not None and adj.home_win_prob is not None:
+                    diff = (adj.home_win_prob - orig.home_win_prob) * 100
+                    shifts.append(f"Home win prob shift: {diff:+.1f}%")
+                if shifts:
+                    print(f"  {orig.matchup}:")
+                    for s in shifts:
+                        print(f"    {s}")
+
+    # Injury impact already shown in Phase 3 with both ESPN + prop data
+    print_opportunity_summary(adjusted_predictions or predictions)
 
     print(f"\n  {GREEN}{BOLD}Done.{RESET} Set up cron to run daily: python tools/forward_test.py")
     print()
