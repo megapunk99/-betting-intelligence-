@@ -74,9 +74,12 @@ class TotalPointsPredictor(BasePredictor):
         else:
             self.model = Ridge(alpha=1.0)
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "TotalPointsPredictor":
+    def fit(self, X: np.ndarray, y: np.ndarray, sample_weight: Optional[np.ndarray] = None) -> "TotalPointsPredictor":
         X_scaled = self.scaler.fit_transform(X)
-        self.model.fit(X_scaled, y)
+        if sample_weight is not None:
+            self.model.fit(X_scaled, y, sample_weight=sample_weight)
+        else:
+            self.model.fit(X_scaled, y)
         self.is_fitted = True
 
         # Extract feature importance if available
@@ -171,9 +174,12 @@ class MomentumModel(BasePredictor):
         else:
             self.model = self._base_logistic
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "MomentumModel":
+    def fit(self, X: np.ndarray, y: np.ndarray, sample_weight: Optional[np.ndarray] = None) -> "MomentumModel":
         X_scaled = self.scaler.fit_transform(X)
-        self.model.fit(X_scaled, y)
+        if sample_weight is not None:
+            self.model.fit(X_scaled, y, sample_weight=sample_weight)
+        else:
+            self.model.fit(X_scaled, y)
         self.is_fitted = True
         self._extract_feature_importance()
         return self
@@ -214,4 +220,80 @@ class MomentumModel(BasePredictor):
             "log_loss": log_loss(y, proba),
             "brier": brier_score_loss(y, proba[:, 1]),
             "class_balance": float(np.mean(preds)),
+        }
+
+
+class StackingEnsemblePredictor:
+    """
+    Stacking ensemble that combines multiple base predictors via a meta-model.
+
+    Usage:
+        ensemble = StackingEnsemblePredictor(prediction_type="regression")
+        ensemble.add_base_model(TotalPointsPredictor("ridge"))
+        ensemble.add_base_model(TotalPointsPredictor("lightgbm"))
+        ensemble.fit(X_train, y_train)
+        preds = ensemble.predict(X_test)
+    """
+
+    def __init__(self, prediction_type: str = "regression"):
+        self.prediction_type = prediction_type
+        self.base_models: list[BasePredictor] = []
+        self.meta_model = None
+        self.is_fitted = False
+
+    def add_base_model(self, model: BasePredictor) -> "StackingEnsemblePredictor":
+        """Add a base model to the ensemble."""
+        self.base_models.append(model)
+        return self
+
+    def fit(self, X: np.ndarray, y: np.ndarray) -> "StackingEnsemblePredictor":
+        """Fit all base models and the meta-model."""
+        if not self.base_models:
+            raise ValueError("At least one base model must be added before fitting")
+
+        # Split data for meta-training (simple holdout)
+        n = len(X)
+        split = max(1, int(n * 0.8))
+        X_base, X_meta = X[:split], X[split:]
+        y_base, y_meta = y[:split], y[split:]
+
+        # Train base models
+        for model in self.base_models:
+            model.fit(X_base, y_base)
+
+        # Generate meta-features from base models on held-out data
+        meta_features = np.column_stack([
+            model.predict(X_meta) for model in self.base_models
+        ])
+
+        # Train meta-model
+        if self.prediction_type == "regression":
+            from sklearn.linear_model import LinearRegression
+            self.meta_model = LinearRegression()
+        else:
+            from sklearn.linear_model import LogisticRegression
+            self.meta_model = LogisticRegression(C=1.0, max_iter=1000)
+
+        self.meta_model.fit(meta_features, y_meta)
+        self.is_fitted = True
+        return self
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Predict using the stacked ensemble."""
+        if not self.is_fitted:
+            raise ValueError("Model not fitted yet")
+
+        # Generate predictions from all base models
+        meta_features = np.column_stack([
+            model.predict(X) for model in self.base_models
+        ])
+
+        # Meta-model final prediction
+        return self.meta_model.predict(meta_features)
+
+    def get_params(self) -> Dict[str, Any]:
+        return {
+            "prediction_type": self.prediction_type,
+            "n_base_models": len(self.base_models),
+            "meta_model": type(self.meta_model).__name__ if self.meta_model else None,
         }

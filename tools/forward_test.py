@@ -20,9 +20,10 @@ import sys
 import os
 import warnings
 import argparse
+import json
 from pathlib import Path
-from datetime import datetime
-from dataclasses import dataclass, field
+from datetime import datetime, date
+from dataclasses import dataclass, field, asdict
 import numpy as np
 import pandas as pd
 
@@ -126,6 +127,17 @@ class ForwardPrediction:
     over_odds_raw: float | None = None
     under_odds_raw: float | None = None
 
+    # ── Multi-book consensus context ─────────────────────────────────
+    n_books_ml: int = 0
+    n_books_total: int = 0
+    n_books_spread: int = 0
+    ml_range_home: tuple[float, float] | None = None   # (low, high)
+    ml_range_away: tuple[float, float] | None = None
+    total_range: tuple[float, float] | None = None
+    ml_std: float | None = None                        # cross-book std
+    total_std: float | None = None
+    edge_confidence: str = "unknown"                   # "high", "medium", "low", "unknown"
+
     # Explanations
     explanation: list[str] = field(default_factory=list)
 
@@ -171,20 +183,36 @@ def load_and_prepare_data() -> tuple[pd.DataFrame, list[str], pd.DataFrame]:
     return clean_df, feature_cols, feature_df
 
 
-def train_models(df: pd.DataFrame, feature_cols: list[str], calibrated: bool = False) -> dict:
-    """Train all models on the FULL historical dataset."""
-    print("\n  Training models on full dataset...")
+def train_models(df: pd.DataFrame, feature_cols: list[str], calibrated: bool = False,
+                 season_weight_2425: float = 1.0) -> dict:
+    """Train all models on the FULL historical dataset.
+
+    Args:
+        season_weight_2425: Sample weight multiplier for 2024-25 games.
+                            Uses 1.0 for 2025-26 games. Set < 1.0 to
+                            downweight the older, incomplete season.
+    """
+    weight_str = f" (2024-25 weight={season_weight_2425:.2f})" if season_weight_2425 != 1.0 else ""
+    print(f"\n  Training models on full dataset{weight_str}...")
 
     models = {}
     X = df[feature_cols].dropna()
     y_total = df.loc[X.index, "total_points"]
     y_win = df.loc[X.index, "home_win"]
 
+    # Compute sample weights by season
+    sample_weight = None
+    if season_weight_2425 != 1.0:
+        is_2425 = (df.loc[X.index, "SEASON_home"] == "2024-25")
+        sample_weight = np.where(is_2425, season_weight_2425, 1.0)
+        print(f"    Sample weights: 2024-25={season_weight_2425:.2f}, 2025-26=1.00")
+        print(f"      (weighted count: {sample_weight.sum():.0f} / {len(sample_weight):,} rows)")
+
     print(f"    Training samples: {len(X):,}")
 
     # Ridge for totals
     ridge = TotalPointsPredictor("ridge")
-    ridge.fit(X.values, y_total.values)
+    ridge.fit(X.values, y_total.values, sample_weight=sample_weight)
     train_preds = ridge.predict(X.values)
     train_mae = float(np.mean(np.abs(train_preds - y_total.values)))
     train_bias = float(np.mean(train_preds - y_total.values))
@@ -194,7 +222,7 @@ def train_models(df: pd.DataFrame, feature_cols: list[str], calibrated: bool = F
     # XGBoost for totals (if available)
     try:
         xgb = TotalPointsPredictor("xgboost")
-        xgb.fit(X.values, y_total.values)
+        xgb.fit(X.values, y_total.values, sample_weight=sample_weight)
         xgb_preds = xgb.predict(X.values)
         xgb_mae = float(np.mean(np.abs(xgb_preds - y_total.values)))
         xgb_bias = float(np.mean(xgb_preds - y_total.values))
@@ -206,12 +234,183 @@ def train_models(df: pd.DataFrame, feature_cols: list[str], calibrated: bool = F
     # Momentum (LogisticRegression) for moneyline
     label = "Platt Calibrated" if calibrated else "Uncalibrated"
     momentum = MomentumModel("logistic", calibrate=calibrated)
-    momentum.fit(X.values, y_win.values)
+    momentum.fit(X.values, y_win.values, sample_weight=sample_weight)
     win_acc = float(np.mean(momentum.predict(X.values) == y_win.values))
     print(f"    [ML]     Momentum ({label}): Train Acc={win_acc:.1%}")
     models["ml_momentum"] = momentum
 
     return models
+
+
+def compute_cv_errors(df: pd.DataFrame, feature_cols: list[str],
+                    n_splits: int = 5,
+                    calibrated: bool = True) -> dict:
+    """
+    Time-series cross-validation to estimate model prediction uncertainty.
+
+    Splits the historical data into `n_splits` sequential folds, trains on
+    earlier data and tests on later data. Returns aggregate error metrics
+    that are used as confidence bounds in predict_and_compare().
+
+    Returns:
+        dict with keys:
+          - totals_mae: float — mean absolute error across folds
+          - totals_mae_std: float — std of MAE across folds (fold stability)
+          - totals_rmse: float — root mean squared error
+          - totals_bias: float — average bias (model - actual)
+          - totals_r2: float — R-squared
+          - ml_brier: float — Brier score
+          - ml_logloss: float — log loss
+          - ml_accuracy: float — raw accuracy
+          - ml_calibration_error: float — expected calibration error (ECE)
+          - n_folds: int — how many folds actually ran
+          - fold_results: list[dict] — per-fold metrics for debugging
+    """
+    print(f"\n  Estimating model uncertainty via {n_splits}-fold time-series CV...")
+
+    sorted_df = df.sort_values("GAME_DATE").reset_index(drop=True)
+    X = sorted_df[feature_cols].dropna()
+    y_total = sorted_df.loc[X.index, "total_points"]
+    y_win = sorted_df.loc[X.index, "home_win"]
+
+    fold_size = len(X) // n_splits
+    if fold_size < 50:
+        print(f"    Warning: only {len(X)} rows, reducing folds")
+        n_splits = max(3, len(X) // 100)
+        fold_size = len(X) // n_splits
+
+    print(f"    Data: {len(X):,} rows | {n_splits} folds of ~{fold_size} each")
+
+    fold_results = []
+
+    for i in range(1, n_splits):
+        train_end = i * fold_size
+        if train_end >= len(X):
+            break
+        test_start = train_end
+        test_end = min(test_start + fold_size, len(X))
+
+        X_train = X.iloc[:train_end]
+        y_train_total = y_total.iloc[:train_end]
+        y_train_win = y_win.iloc[:train_end]
+        X_test = X.iloc[test_start:test_end]
+        y_test_total = y_total.iloc[test_start:test_end]
+        y_test_win = y_win.iloc[test_start:test_end]
+
+        # ── Ridge totals ──
+        ridge = TotalPointsPredictor("ridge")
+        ridge.fit(X_train.values, y_train_total.values)
+        total_preds = ridge.predict(X_test.values)
+        total_mae = float(np.mean(np.abs(total_preds - y_test_total.values)))
+        total_bias = float(np.mean(total_preds - y_test_total.values))
+        total_rmse = float(np.sqrt(np.mean((total_preds - y_test_total.values) ** 2)))
+        ss_res = np.sum((y_test_total.values - total_preds) ** 2)
+        ss_tot = np.sum((y_test_total.values - np.mean(y_test_total.values)) ** 2)
+        total_r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+
+        # ── XGBoost totals (if available) ──
+        try:
+            xgb = TotalPointsPredictor("xgboost")
+            xgb.fit(X_train.values, y_train_total.values)
+            xgb_preds = xgb.predict(X_test.values)
+            xgb_mae = float(np.mean(np.abs(xgb_preds - y_test_total.values)))
+            # Use XGBoost if better than Ridge
+            if xgb_mae < total_mae:
+                total_preds = xgb_preds
+                total_mae = xgb_mae
+        except Exception:
+            pass
+
+        # ── Logistic Regression for ML ──
+        momentum = MomentumModel("logistic", calibrate=calibrated)
+        try:
+            momentum.fit(X_train.values, y_train_win.values)
+            probs = momentum.predict_proba(X_test.values)
+            if len(probs.shape) > 1 and probs.shape[1] == 2:
+                win_probs = probs[:, 1]
+            else:
+                win_probs = probs.flatten()
+
+            # Brier score
+            ml_brier = float(np.mean((win_probs - y_test_win.values) ** 2))
+
+            # Log loss (avoid log(0))
+            eps = 1e-15
+            clipped = np.clip(win_probs, eps, 1 - eps)
+            ml_logloss = float(-np.mean(
+                y_test_win.values * np.log(clipped) +
+                (1 - y_test_win.values) * np.log(1 - clipped)
+            ))
+
+            # Accuracy
+            ml_acc = float(np.mean((win_probs > 0.5).astype(int) == y_test_win.values))
+
+            # Calibration error (ECE): bin predicted probs into 10 buckets
+            n_bins = 10
+            bin_edges = np.linspace(0, 1, n_bins + 1)
+            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+            ece = 0.0
+            for b in range(n_bins):
+                in_bin = (win_probs >= bin_edges[b]) & (win_probs <= bin_edges[b + 1])
+                if in_bin.sum() > 0:
+                    bin_acc = y_test_win.values[in_bin].mean()
+                    bin_conf = win_probs[in_bin].mean()
+                    ece += (in_bin.sum() / len(win_probs)) * abs(bin_acc - bin_conf)
+        except Exception:
+            ml_brier = 0.25
+            ml_logloss = 0.7
+            ml_acc = 0.5
+            ece = 0.0
+
+        fold_results.append({
+            "fold": i,
+            "train_size": len(X_train),
+            "test_size": len(X_test),
+            "total_mae": total_mae,
+            "total_bias": total_bias,
+            "total_rmse": total_rmse,
+            "total_r2": total_r2,
+            "ml_brier": ml_brier,
+            "ml_logloss": ml_logloss,
+            "ml_accuracy": ml_acc,
+            "ml_ece": ece,
+        })
+
+    if not fold_results:
+        print(f"    {YELLOW}Warning: CV produced no folds{RESET}")
+        return {"n_folds": 0}
+
+    # Aggregate
+    totals_maes = [f["total_mae"] for f in fold_results]
+    totals_r2s = [f["total_r2"] for f in fold_results]
+    ml_briers = [f["ml_brier"] for f in fold_results]
+    ml_accs = [f["ml_accuracy"] for f in fold_results]
+    ml_eces = [f["ml_ece"] for f in fold_results]
+
+    cv_stats = {
+        "totals_mae": float(np.mean(totals_maes)),
+        "totals_mae_std": float(np.std(totals_maes, ddof=1)) if len(totals_maes) > 1 else float(np.std(totals_maes)),
+        "totals_rmse": float(np.mean([f["total_rmse"] for f in fold_results])),
+        "totals_bias": float(np.mean([f["total_bias"] for f in fold_results])),
+        "totals_r2": float(np.mean(totals_r2s)),
+        "ml_brier": float(np.mean(ml_briers)),
+        "ml_logloss": float(np.mean([f["ml_logloss"] for f in fold_results])),
+        "ml_accuracy": float(np.mean(ml_accs)),
+        "ml_calibration_error": float(np.mean(ml_eces)),
+        "n_folds": len(fold_results),
+        "fold_results": fold_results,
+    }
+
+    # Print summary
+    print(f"    CV Totals:  MAE={cv_stats['totals_mae']:.1f}"
+          f" \u00b1 {cv_stats['totals_mae_std']:.1f}"
+          f" | Bias={cv_stats['totals_bias']:+.2f}"
+          f" | R\u00b2={cv_stats['totals_r2']:.3f}")
+    print(f"    CV ML:      Brier={cv_stats['ml_brier']:.3f}"
+          f" | Acc={cv_stats['ml_accuracy']:.1%}"
+          f" | ECE={cv_stats['ml_calibration_error']:.3f}")
+
+    return cv_stats
 
 
 def fetch_upcoming_games(api_key: str = "") -> list:
@@ -371,6 +570,104 @@ def build_feature_row_for_game(
         else:
             # Game-level feature — compute fresh or use from home team's last game
             feature_row[col] = home_last.get(col, 0.0)
+
+    # ═══════════════════════════════════════════════════════════════════
+    #  FIX opp_* features: these represent the OPPONENT's stats, so
+    #  they must come from the opposite team's data, not the current
+    #  team's last-game row.
+    #
+    #  Example: opp_avg_pts_scored_home = away team's trailing avg pts
+    #  scored. Current code extracts from home_last (wrong — gets
+    #  whoever home last played). Must extract from away_last.
+    #
+    #  Mapping: opp_<stat>_home → away team's <stat>
+    #           opp_<stat>_away → home team's <stat>
+    # ═══════════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════════
+    #  OPP_FEATURE → TEAM_STAT MAPPING
+    #
+    #  FeatureEngineer.compute_opponent_adjusted_features() computes:
+    #    opp_avg_pts_scored_{suffix} = groupby(opp_id)[team_pts_{team}].roll(10).shift(1)
+    #      = "what teams score against this opponent" → opponent's DEFENSE
+    #      → maps to opponent's avg_pts_allowed
+    #
+    #    opp_avg_pts_allowed_{suffix} = groupby(opp_id)[team_pts_{opp}].roll(10).shift(1)
+    #      = "the opponent's own points scored" → opponent's OFFENSE
+    #      → maps to opponent's avg_pts_10g (their own scoring)
+    # ═══════════════════════════════════════════════════════════════════
+    OPP_TO_TEAM_STAT: dict[str, str] = {
+        "opp_avg_pts_scored": "avg_pts_allowed",    # opp's defensive strength (pts scored against them)
+        "opp_avg_pts_allowed": "avg_pts_10g",        # opp's offensive strength (their own scoring)
+        "opp_avg_pm": "avg_pm_10g",                  # opp's trailing plus/minus
+        "opp_trailing_margin": "avg_pm_10g",         # opp's trailing margin
+    }
+    # Sort by length descending so longer prefixes match first (e.g.
+    # opp_avg_pts_scored before opp_avg_pts)
+    opp_prefixes = sorted(OPP_TO_TEAM_STAT.keys(), key=len, reverse=True)
+
+    for col in feature_cols:
+        # Skip non-opp features
+        if not col.startswith("opp_"):
+            continue
+        # Skip adj_opp_* features (handled below)
+        if col.startswith("adj_opp_"):
+            continue
+
+        # Match the longest known opp_ prefix
+        matched_prefix = None
+        for prefix in opp_prefixes:
+            if col.startswith(prefix):
+                matched_prefix = prefix
+                break
+
+        if matched_prefix is None:
+            continue
+
+        team_stat = OPP_TO_TEAM_STAT[matched_prefix]
+        suffix = col[len(matched_prefix):]  # e.g. "_home" or "_away"
+
+        if suffix == "_home":
+            # Opponent for home team = away team → extract from away_last
+            # Build the target column: team_stat + _home (swap happens inside _team_feature_value)
+            feature_row[col] = _team_feature_value(away_last, f"{team_stat}_home", away_was_home)
+        elif suffix == "_away":
+            # Opponent for away team = home team → extract from home_last
+            feature_row[col] = _team_feature_value(home_last, f"{team_stat}_home", home_was_home)
+
+    # ═══════════════════════════════════════════════════════════════════
+    #  FIX derived opp features (offense_vs_defense, defense_vs_offense)
+    #  These are computed AFTER the base opp_* features in
+    #  FeatureEngineer.compute_opponent_adjusted_features().
+    # ═══════════════════════════════════════════════════════════════════
+    for col in feature_cols:
+        if col == "offense_vs_defense_home":
+            # = home team's avg_pts_10g / opponent's (away team's) avg_pts_allowed
+            home_pts = _team_feature_value(home_last, "avg_pts_10g_home", home_was_home)
+            opp_def = feature_row.get("opp_avg_pts_allowed_home", 1.0)
+            feature_row[col] = home_pts / max(opp_def, 1.0)
+        elif col == "offense_vs_defense_away":
+            # = away team's avg_pts_10g / opponent's (home team's) avg_pts_allowed
+            away_pts = _team_feature_value(away_last, "avg_pts_10g_home", away_was_home)
+            opp_def = feature_row.get("opp_avg_pts_allowed_away", 1.0)
+            feature_row[col] = away_pts / max(opp_def, 1.0)
+        elif col == "defense_vs_offense_home":
+            # = opponent's (away team's) avg_pts_10g / home team's avg_pts_allowed
+            opp_off = feature_row.get("opp_avg_pts_scored_home", 1.0)
+            home_def = _team_feature_value(home_last, "avg_pts_allowed_home", home_was_home)
+            feature_row[col] = opp_off / max(home_def, 1.0)
+        elif col == "defense_vs_offense_away":
+            # = opponent's (home team's) avg_pts_10g / away team's avg_pts_allowed
+            opp_off = feature_row.get("opp_avg_pts_scored_away", 1.0)
+            away_def = _team_feature_value(away_last, "avg_pts_allowed_home", away_was_home)
+            feature_row[col] = opp_off / max(away_def, 1.0)
+
+    # Handle adj_opp_avg_pm_* — these are copies of opp_avg_pm made in
+    # compute_opponent_adjusted_features(). Set them to the already-fixed
+    # opp_avg_pm values.
+    if "adj_opp_avg_pm_home" in feature_cols:
+        feature_row["adj_opp_avg_pm_home"] = feature_row.get("opp_avg_pm_home", 0.0)
+    if "adj_opp_avg_pm_away" in feature_cols:
+        feature_row["adj_opp_avg_pm_away"] = feature_row.get("opp_avg_pm_away", 0.0)
 
     # ── Override game-level features with fresh upcoming-game values ──
 
@@ -917,18 +1214,33 @@ def predict_and_compare(
     feature_map: dict[str, dict],
     feature_cols: list[str],
     min_edge: float = MIN_EDGE_THRESHOLD,
+    cv_stats: dict | None = None,
     verbose: bool = False,
     label: str = "",
 ) -> list[ForwardPrediction]:
     """
     For each upcoming game, run model predictions and compare vs real market lines.
 
+    KEY IMPROVEMENTS over v1:
+      1. Uses consensus lines across ALL sportsbooks (not just first book)
+      2. Dynamic edge thresholds from cross-validation error (CV MAE/Brier)
+      3. Market disagreement penalty — high book std = harder to flag edge
+      4. Low book count penalty — fewer books = less reliable consensus
+      5. Edge confidence rating (high/medium/low) based on uncertainty stack
+
     Args:
+        cv_stats: Output from compute_cv_errors() — provides model uncertainty bounds
         label: Optional label for logging (e.g., "(Adjusted)")
     """
     label_str = f" {label}" if label else ""
     print(f"  Running predictions{label_str} vs market lines...")
     predictions = []
+
+    # Unpack CV stats for dynamic thresholds
+    totals_mae = cv_stats.get("totals_mae") if cv_stats else None
+    totals_mae_std = cv_stats.get("totals_mae_std") if cv_stats else None
+    ml_brier = cv_stats.get("ml_brier") if cv_stats else None
+    ml_ece = cv_stats.get("ml_calibration_error") if cv_stats else None
 
     for key, entry in feature_map.items():
         game = entry["game"]
@@ -937,6 +1249,30 @@ def predict_and_compare(
         # Build feature vector in the correct column order
         X = np.array([feat_dict.get(c, 0.0) for c in feature_cols]).reshape(1, -1)
 
+        # ── Populate multi-book consensus context ────────────────────────
+        n_books_ml = 0
+        n_books_total = 0
+        n_books_spread = 0
+        ml_range_home = None
+        ml_range_away = None
+        total_range = None
+        ml_std = None
+        total_std = None
+
+        if game.consensus:
+            c = game.consensus
+            n_books_ml = c.home_ml_n_books
+            n_books_total = c.total_n_books
+            n_books_spread = c.spread_n_books
+            if c.home_ml_low is not None and c.home_ml_high is not None:
+                ml_range_home = (c.home_ml_low, c.home_ml_high)
+            if c.away_ml_low is not None and c.away_ml_high is not None:
+                ml_range_away = (c.away_ml_low, c.away_ml_high)
+            if c.total_low is not None and c.total_high is not None:
+                total_range = (c.total_low, c.total_high)
+            ml_std = c.home_ml_std or c.away_ml_std
+            total_std = c.total_std
+
         pred = ForwardPrediction(
             game_date=game.commence_time[:10] if game.commence_time else "TBD",
             matchup=f"{game.away_team_short} @ {game.home_team_short}",
@@ -944,9 +1280,19 @@ def predict_and_compare(
             away_team=game.away_team_short,
             home_ml_raw=game.home_moneyline,
             away_ml_raw=game.away_moneyline,
+            n_books_ml=n_books_ml,
+            n_books_total=n_books_total,
+            n_books_spread=n_books_spread,
+            ml_range_home=ml_range_home,
+            ml_range_away=ml_range_away,
+            total_range=total_range,
+            ml_std=ml_std,
+            total_std=total_std,
         )
 
-        # ---- Totals Prediction ----
+        # ═══════════════════════════════════════════════════════════════════
+        #  TOTALS EDGE — Confidence-Bounded
+        # ═══════════════════════════════════════════════════════════════════
         if "totals_ridge" in models:
             ridge_pred = float(models["totals_ridge"].predict(X)[0])
             pred.model_total = round(ridge_pred, 1)
@@ -955,23 +1301,80 @@ def predict_and_compare(
             xgb_pred = float(models["totals_xgboost"].predict(X)[0])
             pred.model_total = round(xgb_pred, 1)
 
-        # Market total line
         if game.market_total is not None:
             pred.market_total = game.market_total
-            if pred.model_total is not None and game.market_total > 0:
-                edge = (pred.model_total - game.market_total) / game.market_total
-                pred.total_edge_pct = edge
-                if abs(edge) >= min_edge:
-                    pred.total_verdict = "OVER" if edge > 0 else "UNDER"
 
-                    # Kelly stake calculation for totals
-                    model_win_prob = 0.55 + abs(edge)
-                    model_win_prob = min(model_win_prob, 0.85)
-                    kelly, stake = compute_kelly(model_win_prob, 1.91)
+            if pred.model_total is not None and game.market_total > 0:
+                raw_edge_pct = (pred.model_total - game.market_total) / game.market_total
+                pred.total_edge_pct = raw_edge_pct
+
+                # ── Compute dynamic edge threshold ─────────────────────
+                # 1. Base: user-specified min_edge
+                effective_min = abs(min_edge)
+
+                # 2. Model uncertainty: require edge > CV MAE / market
+                if totals_mae and totals_mae > 0:
+                    # Require edge to be at least 1.5x the CV MAE (as % of market)
+                    model_uncertainty = (1.5 * totals_mae) / game.market_total
+                    effective_min = max(effective_min, model_uncertainty)
+
+                # 3. Market disagreement: if books disagree, require more edge
+                if total_std and total_std > 0:
+                    market_noise = total_std / game.market_total
+                    effective_min = max(effective_min, market_noise * 1.5)
+
+                # 4. Low book count penalty: fewer than 3 books = suspect
+                if n_books_total < 3 and n_books_total > 0:
+                    effective_min *= (4 - n_books_total)  # 2 books=2x, 1 book=3x
+
+                # Check if edge exceeds the confidence bound
+                if abs(raw_edge_pct) >= effective_min:
+                    pred.total_verdict = "OVER" if raw_edge_pct > 0 else "UNDER"
+
+                    # Compute edge confidence
+                    margin_ratio = abs(raw_edge_pct) / effective_min if effective_min > 0 else 10
+                    if margin_ratio >= 3.0:
+                        pred.edge_confidence = "high"
+                    elif margin_ratio >= 1.5:
+                        pred.edge_confidence = "medium"
+                    else:
+                        pred.edge_confidence = "low"
+
+                    # Kelly: use model win prob but cap by confidence
+                    # For a TOTAL bet: model says it'll go over/under, market probability ~50%
+                    # Edge confidence determines how aggressive the stake is
+                    base_kelly_prob = 0.50 + abs(raw_edge_pct)
+                    base_kelly_prob = min(base_kelly_prob, 0.85)
+
+                    if pred.edge_confidence == "low":
+                        kelly_frac = 0.10  # 10% of quarter-Kelly
+                    elif pred.edge_confidence == "medium":
+                        kelly_frac = 0.25  # normal quarter-Kelly
+                    else:
+                        kelly_frac = 0.50  # half-Kelly (for high confidence)
+
+                    kelly, stake = compute_kelly(base_kelly_prob, 1.91, fraction=kelly_frac)
                     pred.kelly_fraction = kelly
                     pred.recommended_stake = stake
+                else:
+                    pred.edge_confidence = "low"
+                    # Too uncertain to bet
+                    if abs(raw_edge_pct) >= abs(min_edge):
+                        # Would have been flagged under old system — note why it's not
+                        reasons = []
+                        if totals_mae:
+                            reasons.append(f"CV MAE={totals_mae:.1f} (needs {1.5*totals_mae:.1f} pts)")
+                        if total_std:
+                            reasons.append(f"book std={total_std:.1f}")
+                        if n_books_total < 3 and n_books_total > 0:
+                            reasons.append(f"only {n_books_total} books")
+                        pred.explanation.append(
+                            f"  [FILTERED] edge={raw_edge_pct:+.1%} but below uncertainty threshold: {', '.join(reasons)}"
+                        )
 
-        # ---- Moneyline Prediction ----
+        # ═══════════════════════════════════════════════════════════════════
+        #  MONEYLINE EDGE — Confidence-Bounded
+        # ═══════════════════════════════════════════════════════════════════
         if "ml_momentum" in models:
             win_probs = models["ml_momentum"].predict_proba(X)[0]
             if len(win_probs) == 2:
@@ -984,9 +1387,15 @@ def predict_and_compare(
             pred.away_win_prob = round(away_prob, 3)
 
             if game.home_moneyline and game.away_moneyline:
-                market_home, market_away = compute_no_vig_probs(
-                    game.home_moneyline, game.away_moneyline
-                )
+                # Use CONSENSUS no-vig probabilities (not first-book lines)
+                if game.consensus and game.consensus.consensus_home_win_prob is not None:
+                    market_home = game.consensus.consensus_home_win_prob
+                    market_away = game.consensus.consensus_away_win_prob
+                else:
+                    market_home, market_away = compute_no_vig_probs(
+                        game.home_moneyline, game.away_moneyline
+                    )
+
                 pred.market_home_implied = round(market_home, 3)
                 pred.market_away_implied = round(market_away, 3)
 
@@ -995,19 +1404,64 @@ def predict_and_compare(
                 pred.home_ml_edge = round(home_edge, 3)
                 pred.away_ml_edge = round(away_edge, 3)
 
-                if home_edge >= min_edge or away_edge >= min_edge:
+                # ── Compute dynamic ML edge threshold ───────────────────
+                effective_ml_min = abs(min_edge)
+
+                # 1. Calibration error: if model is poorly calibrated, require more edge
+                if ml_ece is not None and ml_ece > 0:
+                    effective_ml_min = max(effective_ml_min, ml_ece * 1.5)
+
+                # 2. Brier score uncertainty
+                if ml_brier is not None and ml_brier > 0:
+                    # Brier of 0.25 = random. 1/3 of Brier above 0.12 as uncertainty
+                    brier_uncertainty = max(0, ml_brier - 0.12) * 2
+                    effective_ml_min = max(effective_ml_min, brier_uncertainty)
+
+                # 3. Low book count penalty
+                if n_books_ml < 3 and n_books_ml > 0:
+                    effective_ml_min *= (4 - n_books_ml)
+
+                # Determine which side has the larger positive edge
+                max_ml_edge = max(home_edge, away_edge)
+                if max_ml_edge <= 0:
+                    pass  # No positive edge
+                elif max_ml_edge >= effective_ml_min:
                     if home_edge > away_edge:
                         pred.ml_verdict = game.home_team_short
                         dec_odds = american_to_decimal(game.home_moneyline)
-                        kelly, stake = compute_kelly(home_prob, dec_odds)
-                        pred.kelly_fraction = kelly
-                        pred.recommended_stake = stake
                     else:
                         pred.ml_verdict = game.away_team_short
                         dec_odds = american_to_decimal(game.away_moneyline)
-                        kelly, stake = compute_kelly(away_prob, dec_odds)
-                        pred.kelly_fraction = kelly
-                        pred.recommended_stake = stake
+
+                    # Compute edge confidence
+                    margin_ratio = max_ml_edge / effective_ml_min if effective_ml_min > 0 else 10
+                    if margin_ratio >= 3.0:
+                        pred.edge_confidence = "high"
+                        kelly_frac = 0.50
+                    elif margin_ratio >= 1.5:
+                        pred.edge_confidence = "medium"
+                        kelly_frac = 0.25
+                    else:
+                        pred.edge_confidence = "low"
+                        kelly_frac = 0.10
+
+                    win_prob = home_prob if home_edge > away_edge else away_prob
+                    kelly, stake = compute_kelly(win_prob, dec_odds, fraction=kelly_frac)
+                    pred.kelly_fraction = kelly
+                    pred.recommended_stake = stake
+                else:
+                    pred.edge_confidence = "low"
+                    if max_ml_edge >= abs(min_edge):
+                        reasons = []
+                        if ml_ece:
+                            reasons.append(f"ECE={ml_ece:.3f}")
+                        if ml_brier:
+                            reasons.append(f"Brier={ml_brier:.3f}")
+                        if n_books_ml < 3 and n_books_ml > 0:
+                            reasons.append(f"only {n_books_ml} books")
+                        pred.explanation.append(
+                            f"  [FILTERED] max ML edge={max_ml_edge:+.1%} but below confidence bound: {', '.join(reasons)}"
+                        )
 
         # Generate plain-English explanations
         pred.explanation = _explain_prediction(pred, models, feat_dict, feature_cols, X,
@@ -1030,8 +1484,19 @@ def print_header():
     print(f"{CYAN}{BOLD}{'=' * 75}{RESET}")
 
 
+def _confidence_color(conf: str) -> str:
+    if conf == "high":
+        return f"{GREEN}{BOLD}"
+    elif conf == "medium":
+        return f"{YELLOW}"
+    elif conf == "low":
+        return f"{RED}"
+    return ""
+
+
 def print_comparison_table(predictions: list[ForwardPrediction]):
-    """Print the main comparison table showing model vs market for each game."""
+    """Print the main comparison table showing model vs market for each game.
+    Now includes multi-book consensus info and edge confidence ratings."""
     if not predictions:
         print(f"\n  {YELLOW}No predictions to display.{RESET}")
         return
@@ -1042,13 +1507,21 @@ def print_comparison_table(predictions: list[ForwardPrediction]):
         print(f"\n  {YELLOW}Could not build features for any upcoming game.{RESET}")
         return
 
+    # ---- Multi-Book Summary Header ----
+    if valid[0].n_books_ml > 0 or valid[0].n_books_total > 0:
+        max_ml_books = max(p.n_books_ml for p in valid)
+        max_total_books = max(p.n_books_total for p in valid)
+        print(f"\n  {BOLD}Market Consensus:{RESET} Odds aggregated from up to "
+              f"{max(max_ml_books, max_total_books)} sportsbooks across US/EU/UK/AU regions")
+
     # ---- Totals Comparison ----
     has_totals = any(p.market_total is not None for p in valid)
     if has_totals:
-        print(f"\n  {BOLD}TOTALS — Model vs Market Line{RESET}")
-        print(f"  {'-' * 88}")
-        print(f"  {'Date':<12s} {'Matchup':<28s} {'Model':>7s} {'Market':>7s} {'Edge':>7s} {'Verdict':>10s} {'Stake':>8s}")
-        print(f"  {'-' * 88}")
+        print(f"\n  {BOLD}TOTALS — Model vs Consensus Market Line{RESET}")
+        print(f"  {'-' * 110}")
+        print(f"  {'Date':<10s} {'Matchup':<28s} {'Model':>7s} {'Consensus':>9s} {'Range':>14s} "
+              f"{'Books':>5s} {'Edge':>7s} {'Verdict':>10s} {'Stake':>8s}")
+        print(f"  {'-' * 110}")
 
         total_stake = 0.0
         for p in valid:
@@ -1058,35 +1531,39 @@ def print_comparison_table(predictions: list[ForwardPrediction]):
             date_str = p.game_date[:10]
             model_str = f"{p.model_total:.1f}" if p.model_total else "N/A"
             market_str = f"{p.market_total:.1f}"
+            range_str = f"{p.total_range[0]:.0f}-{p.total_range[1]:.0f}" if p.total_range else "—"
+            books_str = str(p.n_books_total) if p.n_books_total > 0 else "?"
             edge_str = f"{p.total_edge_pct:+.1%}" if p.total_edge_pct is not None else "N/A"
             verdict_str = p.total_verdict if p.total_verdict else "—"
             stake_str = f"${p.recommended_stake:.0f}" if p.recommended_stake > 0 else "—"
 
             if p.total_verdict:
-                verdict_display = f"{GREEN}{verdict_str:>10s}{RESET}"
-                stake_display = f"{GREEN}{stake_str:>8s}{RESET}"
+                conf_color = _confidence_color(p.edge_confidence)
+                conf_label = f"({p.edge_confidence[0].upper()})"  # H/M/L
+                verdict_display = f"{conf_color}{verdict_str:>5s}{RESET}{conf_label:>5s}"
+                stake_display = f"{conf_color}{stake_str:>8s}{RESET}"
                 total_stake += p.recommended_stake
             else:
                 verdict_display = f"{verdict_str:>10s}"
                 stake_display = f"{stake_str:>8s}"
 
-            print(f"  {date_str:<12s} {p.matchup:<28s} {model_str:>7s} {market_str:>7s} {edge_str:>7s} "
-                  f"{verdict_display} {stake_display}")
+            print(f"  {date_str:<10s} {p.matchup:<28s} {model_str:>7s} {market_str:>9s} {range_str:>14s} "
+                  f"{books_str:>5s} {edge_str:>7s} {verdict_display} {stake_display}")
 
         if total_stake > 0:
-            print(f"  {'-' * 88}")
-            print(f"  {'':<12s} {'':<28s} {'':>7s} {'':>7s} {'':>7s} {'TOTAL':>10s} "
+            print(f"  {'-' * 110}")
+            print(f"  {'':<10s} {'':<28s} {'':>7s} {'':>9s} {'':>14s} {'':>5s} {'':>7s} {'TOTAL':>10s} "
                   f"{GREEN}${total_stake:.0f}{RESET}")
-        print(f"  {'-' * 88}")
+        print(f"  {'-' * 110}")
 
     # ---- Moneyline Comparison ----
     has_ml = any(p.market_home_implied is not None for p in valid)
     if has_ml:
-        print(f"\n  {BOLD}MONEYLINE — Model vs Market (No-Vig){RESET}")
-        print(f"  {'-' * 98}")
-        print(f"  {'Date':<12s} {'Matchup':<28s} {'Model H':>7s} {'Market H':>7s} {'Edge H':>7s} "
-              f"{'Model A':>7s} {'Market A':>7s} {'Edge A':>7s}")
-        print(f"  {'-' * 98}")
+        print(f"\n  {BOLD}MONEYLINE — Model vs Consensus Market (No-Vig){RESET}")
+        print(f"  {'-' * 110}")
+        print(f"  {'Date':<10s} {'Matchup':<28s} {'Model H':>7s} {'Market H':>7s} {'Edge H':>7s} "
+              f"{'Book':>4s} {'Model A':>7s} {'Market A':>7s} {'Edge A':>7s}")
+        print(f"  {'-' * 110}")
 
         for p in valid:
             if p.market_home_implied is None:
@@ -1099,28 +1576,31 @@ def print_comparison_table(predictions: list[ForwardPrediction]):
             ml_a = f"{p.away_win_prob:.1%}" if p.away_win_prob else "N/A"
             mk_a = f"{p.market_away_implied:.1%}"
             ed_a = f"{p.away_ml_edge:+.1%}" if p.away_ml_edge is not None else "N/A"
+            books_str = str(p.n_books_ml) if p.n_books_ml > 0 else "?"
 
-            print(f"  {date_str:<12s} {p.matchup:<28s} {ml_h:>7s} {mk_h:>7s} {ed_h:>7s} "
-                  f"{ml_a:>7s} {mk_a:>7s} {ed_a:>7s}")
+            print(f"  {date_str:<10s} {p.matchup:<28s} {ml_h:>7s} {mk_h:>7s} {ed_h:>7s} "
+                  f"{books_str:>4s} {ml_a:>7s} {mk_a:>7s} {ed_a:>7s}")
 
-        # Print ML verdicts
+        # Print ML verdicts with confidence
         print(f"\n  {BOLD}ML Bets to Consider:{RESET}")
-        print(f"  {'-' * 68}")
-        print(f"  {'Date':<12s} {'Matchup':<28s} {'Side':>8s} {'Edge':>7s} {'Stake':>8s}")
-        print(f"  {'-' * 68}")
+        print(f"  {'-' * 78}")
+        print(f"  {'Date':<10s} {'Matchup':<28s} {'Side':>8s} {'Conf':>5s} {'Edge':>7s} {'Stake':>8s}")
+        print(f"  {'-' * 78}")
 
         ml_stake = 0.0
         for p in valid:
             if p.ml_verdict and p.recommended_stake > 0:
                 edge = p.home_ml_edge if p.ml_verdict == p.home_team else p.away_ml_edge
-                print(f"  {p.game_date[:10]:<12s} {p.matchup:<28s} {GREEN}{p.ml_verdict:>8s}{RESET} "
-                      f"{edge:+.1%}  ${p.recommended_stake:.0f}")
+                conf_color = _confidence_color(p.edge_confidence)
+                conf_label = f"{p.edge_confidence[0].upper()}"
+                print(f"  {p.game_date[:10]:<10s} {p.matchup:<28s} {conf_color}{p.ml_verdict:>8s}{RESET} "
+                      f"{conf_color}{conf_label:>5s}{RESET} {edge:+.1%}  ${p.recommended_stake:.0f}")
                 ml_stake += p.recommended_stake
 
         if ml_stake > 0:
-            print(f"  {'-' * 68}")
-            print(f"  {'':<12s} {'':<28s} {'':>8s} {'TOTAL':>7s} {GREEN}${ml_stake:.0f}{RESET}")
-            print(f"  {'-' * 68}")
+            print(f"  {'-' * 78}")
+            print(f"  {'':<10s} {'':<28s} {'':>8s} {'':>5s} {'TOTAL':>7s} {GREEN}${ml_stake:.0f}{RESET}")
+            print(f"  {'-' * 78}")
 
 
 def print_opportunity_summary(predictions: list[ForwardPrediction]):
@@ -1195,6 +1675,13 @@ def print_explanations(predictions: list[ForwardPrediction]):
 # ============================================================================
 
 def main():
+    # Load .env for direct execution (daily_run.py also loads it before subprocess)
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
     parser = argparse.ArgumentParser(
         description="Forward Test — Validate model against real market odds",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1213,8 +1700,14 @@ Examples:
                         help=f"Minimum edge threshold (default: {MIN_EDGE_THRESHOLD:.0%})")
     parser.add_argument("--calibrated", action="store_true",
                         help="Apply Platt scaling to probability estimates")
+    parser.add_argument("--season-weight", type=float, default=1.0,
+                        help="Sample weight multiplier for 2024-25 games (e.g., 0.5 to downweight). "
+                             "2025-26 games always have weight=1.0")
     parser.add_argument("--verbose", "-v", action="store_true",
                         help="Show ALL feature contributions instead of top 5")
+    parser.add_argument("--save-json", type=str, default=None, nargs="?",
+                        const="data/forward_test_results.json",
+                        help="Save predictions to JSON file (default: data/forward_test_results.json)")
 
     args = parser.parse_args()
     min_edge = args.min_edge
@@ -1222,13 +1715,23 @@ Examples:
     print_header()
 
     # Phase 1: Load data and train models
-    print(f"\n  {CYAN}{BOLD}[Phase 1/4] Training on Historical Data{RESET}")
+    print(f"\n  {CYAN}{BOLD}[Phase 1/5] Loading Data & Training Models{RESET}")
     df, feature_cols, feature_df = load_and_prepare_data()
-    models = train_models(df, feature_cols, calibrated=args.calibrated)
+    models = train_models(df, feature_cols, calibrated=args.calibrated,
+                           season_weight_2425=args.season_weight)
+
+    # Phase 1b: Cross-validation to estimate model uncertainty
+    print(f"\n  {CYAN}{BOLD}[Phase 1b/5] Cross-Validation Uncertainty Estimation{RESET}")
+    cv_stats = compute_cv_errors(df, feature_cols, calibrated=args.calibrated)
+    if cv_stats.get("n_folds", 0) > 0:
+        print(f"    Using CV errors for confidence-bounded edge detection")
+    else:
+        print(f"    {YELLOW}CV failed — falling back to static edge threshold{RESET}")
 
     # Phase 2: Fetch upcoming games with real odds
-    print(f"\n  {CYAN}{BOLD}[Phase 2/4] Fetching Upcoming Games{RESET}")
-    odds_games = fetch_upcoming_games()
+    print(f"\n  {CYAN}{BOLD}[Phase 2/5] Fetching Upcoming Games{RESET}")
+    api_key = os.environ.get("ODDS_API_KEY", "")
+    odds_games = fetch_upcoming_games(api_key=api_key)
 
     if not odds_games:
         print(f"\n  {RED}[!] No upcoming games. Nothing to predict.{RESET}")
@@ -1245,7 +1748,7 @@ Examples:
         print(f"  ... and {len(odds_games) - 10} more")
 
     # Phase 3: Fetch injury data (player props + ESPN status) for upcoming games
-    print(f"\n  {CYAN}{BOLD}[Phase 3/4] Injury Impact Assessment & Feature Adjustment{RESET}")
+    print(f"\n  {CYAN}{BOLD}[Phase 3/5] Injury Impact Assessment & Feature Adjustment{RESET}")
     injury_data: dict[str, GameInjuryData] = {}
     merged_injury_data: dict[str, MergedGameInjuryData] = {}
 
@@ -1292,7 +1795,7 @@ Examples:
         print(f"  {YELLOW}[!] Skipping (no API key or module unavailable){RESET}")
 
     # Phase 4: Predict and compare
-    print(f"\n  {CYAN}{BOLD}[Phase 4/4] Model vs Market Comparison{RESET}")
+    print(f"\n  {CYAN}{BOLD}[Phase 4/5] Model vs Market Comparison (Confidence-Bounded){RESET}")
 
     feature_map = build_prediction_features(odds_games, feature_df, feature_cols)
 
@@ -1302,9 +1805,9 @@ Examples:
         print(f"     enough history in the database to compute features.")
         return 1
 
-    # Run predictions WITHOUT injury adjustments
+    # Run predictions WITH confidence-bounded edge detection (uses cv_stats)
     predictions = predict_and_compare(models, feature_map, feature_cols, min_edge,
-                                         verbose=args.verbose)
+                                         cv_stats=cv_stats, verbose=args.verbose)
 
     # Run predictions WITH injury adjustments (if injury data available)
     adjusted_predictions = None
@@ -1313,7 +1816,7 @@ Examples:
         if adjusted_map:
             adjusted_predictions = predict_and_compare(
                 models, adjusted_map, feature_cols, min_edge,
-                verbose=args.verbose, label="(Adjusted)"
+                cv_stats=cv_stats, verbose=args.verbose, label="(Adjusted)"
             )
 
     # Display results
@@ -1346,10 +1849,158 @@ Examples:
     # Injury impact already shown in Phase 3 with both ESPN + prop data
     print_opportunity_summary(adjusted_predictions or predictions)
 
+    # ── Phase 5: Log predictions for later validation ─────────────────
+    print(f"\n  {CYAN}{BOLD}[Phase 5/5] Logging Predictions for Validation{RESET}")
+    from tools.prediction_logger import PredictionLogger
+    logger = PredictionLogger()
+    logger.log_predictions(adjusted_predictions or predictions, source="forward_test")
+    print(f"    Run ID: {logger.run_id}")
+    print(f"    Later: python tools/prediction_logger.py --resolve --report")
+
+    # ── Save to JSON if requested ────────────────────────────────────
+    if args.save_json:
+        json_path = Path(PROJECT_ROOT / args.save_json)
+        json_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Convert predictions to serializable dict
+        output_data = _predictions_to_dict(predictions, adjusted_predictions, args.calibrated, cv_stats)
+
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(output_data, f, indent=2, default=str)
+        print(f"  {GREEN}Predictions saved to {json_path}{RESET}")
+        print(f"  Spawn the dashboard: streamlit run dashboard/app.py")
+
     print(f"\n  {GREEN}{BOLD}Done.{RESET} Set up cron to run daily: python tools/forward_test.py")
     print()
 
     return 0
+
+
+def _predictions_to_dict(
+    predictions: list[ForwardPrediction],
+    adjusted_predictions: list[ForwardPrediction] | None,
+    calibrated: bool = False,
+    cv_stats: dict | None = None,
+) -> dict:
+    """
+    Convert forward test predictions to a JSON-serializable dict
+    that the dashboard can consume.
+
+    Each bet opportunity is flattened into a dict with:
+      - game_date, matchup, home_team, away_team, league
+      - bet_type ("total" or "moneyline")
+      - bet_side, market_line, model_line
+      - edge_pct, stake_dollars, kelly_fraction, edge_confidence
+      - n_books, total_range, total_std
+      - explanation (list of strings)
+      - is_clear_pick: True if confidence is at least medium AND stake > 0
+    """
+    bets = []
+
+    def add_pred(p: ForwardPrediction, adjusted: bool = False):
+        # Total bet
+        if p.total_verdict and p.market_total is not None and p.model_total is not None:
+            edge = p.total_edge_pct or 0.0
+            bets.append({
+                "game_date": p.game_date,
+                "matchup": p.matchup,
+                "home_team": p.home_team,
+                "away_team": p.away_team,
+                "league": "NBA",
+                "bet_type": "total",
+                "bet_side": f"Total {p.total_verdict} {p.market_total:.0f}",
+                "market_line": p.market_total,
+                "model_line": p.model_total,
+                "edge_pct": round(edge, 4),
+                "edge_confidence": p.edge_confidence,
+                "stake_dollars": round(p.recommended_stake, 2),
+                "kelly_fraction": round(p.kelly_fraction, 4),
+                "n_books": p.n_books_total,
+                "total_range": f"{p.total_range[0]:.0f}-{p.total_range[1]:.0f}" if p.total_range else None,
+                "total_std": round(p.total_std, 2) if p.total_std else None,
+                "is_clear_pick": p.edge_confidence in ("high", "medium") and p.recommended_stake >= 10,
+                "reasoning": f"Model: {p.model_total:.1f} vs Market: {p.market_total:.0f} ({p.total_verdict} by {abs(edge)*p.market_total:.0f} pts, conf={p.edge_confidence})",
+                "explanation": p.explanation,
+                "adjusted": adjusted,
+            })
+
+        # Moneyline bet (only one side with edge)
+        if p.ml_verdict and p.recommended_stake > 0:
+            is_home = p.ml_verdict == p.home_team
+            edge = p.home_ml_edge if is_home else p.away_ml_edge
+            edge = edge or 0.0
+            win_prob = p.home_win_prob if is_home else p.away_win_prob
+            ml_raw = p.home_ml_raw if is_home else p.away_ml_raw
+            bets.append({
+                "game_date": p.game_date,
+                "matchup": p.matchup,
+                "home_team": p.home_team,
+                "away_team": p.away_team,
+                "league": "NBA",
+                "bet_type": "moneyline",
+                "bet_side": f"ML {p.ml_verdict}",
+                "market_line": ml_raw,
+                "model_line": win_prob,
+                "edge_pct": round(edge, 4),
+                "edge_confidence": p.edge_confidence,
+                "stake_dollars": round(p.recommended_stake, 2),
+                "kelly_fraction": round(p.kelly_fraction, 4),
+                "n_books": p.n_books_ml,
+                "ml_range_home": f"{p.ml_range_home[0]:.0f}-{p.ml_range_home[1]:.0f}" if p.ml_range_home else None,
+                "ml_range_away": f"{p.ml_range_away[0]:.0f}-{p.ml_range_away[1]:.0f}" if p.ml_range_away else None,
+                "ml_std": round(p.ml_std, 2) if p.ml_std else None,
+                "is_clear_pick": p.edge_confidence in ("high", "medium") and p.recommended_stake >= 10,
+                "reasoning": f"{p.ml_verdict} win prob: {win_prob:.1%} vs market: {(p.market_home_implied if is_home else p.market_away_implied) or 0:.1%}",
+                "explanation": p.explanation,
+                "adjusted": adjusted,
+            })
+
+    for p in predictions:
+        add_pred(p, adjusted=False)
+
+    if adjusted_predictions:
+        for p in adjusted_predictions:
+            add_pred(p, adjusted=True)
+
+    # Sort by edge descending
+    bets.sort(key=lambda b: b["edge_pct"], reverse=True)
+
+    # Summary stats
+    clear_picks = [b for b in bets if b["is_clear_pick"]]
+    total_stake = sum(b["stake_dollars"] for b in bets)
+
+    result = {
+        "generated_at": datetime.now().isoformat(),
+        "n_games": len(set(b["matchup"] for b in bets)),
+        "n_bets": len(bets),
+        "n_clear_picks": len(clear_picks),
+        "total_stake": round(total_stake, 2),
+        "calibrated": calibrated,
+        "clear_picks": clear_picks,
+        "all_bets": bets,
+        "summary": {
+            "clear_picks": len(clear_picks),
+            "total_bets": len(bets),
+            "total_stake": round(total_stake, 2),
+            "avg_edge": round(float(np.mean([b["edge_pct"] for b in bets])), 4) if bets else 0,
+            "games_available": len(set(b["matchup"] for b in bets)),
+        },
+    }
+
+    # Include CV stats in output for dashboard
+    if cv_stats:
+        result["cv_stats"] = {
+            "totals_mae": round(cv_stats.get("totals_mae", 0), 2),
+            "totals_mae_std": round(cv_stats.get("totals_mae_std", 0), 2),
+            "totals_r2": round(cv_stats.get("totals_r2", 0), 4),
+            "totals_bias": round(cv_stats.get("totals_bias", 0), 2),
+            "ml_brier": round(cv_stats.get("ml_brier", 0), 4),
+            "ml_accuracy": round(cv_stats.get("ml_accuracy", 0), 4),
+            "ml_calibration_error": round(cv_stats.get("ml_calibration_error", 0), 4),
+            "n_folds": cv_stats.get("n_folds", 0),
+        }
+
+    return result
 
 
 if __name__ == "__main__":

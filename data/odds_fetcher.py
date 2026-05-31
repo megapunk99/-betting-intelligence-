@@ -2,11 +2,17 @@
 Live odds integration: fetches upcoming NBA games and market odds from TheOddsAPI.
 Provides team name normalization and game-level data for the prediction engine.
 
+KEY IMPROVEMENT: Stores odds from ALL sportsbooks, computes consensus (median)
+lines across books, tracks per-book line dispersion, and identifies the best
+available line for each side. This replaces the old 'first book wins' approach.
+
 Usage:
     client = OddsAPIClient(api_key="your_key")
     games = client.get_upcoming_games_with_odds()
     for g in games:
-        print(g.matchup, g.home_team, g.away_team, g.totals_over_under)
+        print(g.matchup, g.consensus.total_over_under)
+        print(f"  Books offering ML: {g.consensus.home_ml_n_books}")
+        print(f"  ML range: {g.consensus.home_ml_low} to {g.consensus.home_ml_high}")
 """
 
 import os
@@ -17,6 +23,7 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta, timezone
 import warnings
+import statistics
 import numpy as np
 import pandas as pd
 
@@ -31,12 +38,266 @@ except ImportError:
 from config import ODDS_API_KEY, ODDS_API_BASE_URL, CACHE_DIR
 
 
-# ── Data Models ─────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+#  DATA MODELS
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@dataclass
+class BookOdds:
+    """Odds from a single sportsbook for a single game."""
+    book_key: str
+    book_title: str
+    last_update: str
+    home_moneyline: Optional[float] = None
+    away_moneyline: Optional[float] = None
+    home_spread: Optional[float] = None
+    home_spread_odds: Optional[float] = None
+    away_spread: Optional[float] = None
+    away_spread_odds: Optional[float] = None
+    total_over: Optional[float] = None
+    total_over_odds: Optional[float] = None
+    total_under: Optional[float] = None
+    total_under_odds: Optional[float] = None
+
+
+@dataclass
+class ConsensusOdds:
+    """
+    Consensus market data aggregated across ALL sportsbooks.
+
+    For each market (ML, totals, spread), we compute:
+      - consensus / sharp: median line value
+      - n_books: how many books offer this market
+      - low / high: min / max line value across books (the range)
+      - std: standard deviation of line values (low = high agreement)
+    """
+
+    # ── Moneyline Consensus ─────────────────────────────────────────
+    home_ml_consensus: Optional[float] = None   # median home moneyline
+    away_ml_consensus: Optional[float] = None   # median away moneyline
+    home_ml_n_books: int = 0
+    away_ml_n_books: int = 0
+    home_ml_low: Optional[float] = None
+    home_ml_high: Optional[float] = None
+    away_ml_low: Optional[float] = None
+    away_ml_high: Optional[float] = None
+    home_ml_std: Optional[float] = None
+    away_ml_std: Optional[float] = None
+
+    # No-vig implied probabilities from consensus lines
+    consensus_home_win_prob: Optional[float] = None
+    consensus_away_win_prob: Optional[float] = None
+
+    # Best lines available (for finding +EV against consensus)
+    best_home_ml: Optional[float] = None
+    best_away_ml: Optional[float] = None
+    best_home_ml_book: str = ""
+    best_away_ml_book: str = ""
+
+    # ── Totals Consensus ───────────────────────────────────────────
+    total_consensus: Optional[float] = None     # median total line
+    total_n_books: int = 0
+    total_low: Optional[float] = None
+    total_high: Optional[float] = None
+    total_std: Optional[float] = None
+    total_over_odds_consensus: Optional[float] = None
+    total_under_odds_consensus: Optional[float] = None
+
+    best_total_over: Optional[float] = None
+    best_total_under: Optional[float] = None
+    best_total_book: str = ""
+
+    # ── Spread Consensus ───────────────────────────────────────────
+    spread_consensus: Optional[float] = None    # median home spread
+    spread_n_books: int = 0
+    spread_low: Optional[float] = None
+    spread_high: Optional[float] = None
+    spread_std: Optional[float] = None
+    spread_home_odds_consensus: Optional[float] = None
+
+    best_spread: Optional[float] = None
+    best_spread_book: str = ""
+
+
+def _median_ignore_none(values: list) -> Optional[float]:
+    """Median of a list that may contain None values."""
+    clean = [v for v in values if v is not None]
+    if not clean:
+        return None
+    return float(statistics.median(clean))
+
+
+def _mean_ignore_none(values: list) -> Optional[float]:
+    """Mean of a list that may contain None values."""
+    clean = [v for v in values if v is not None]
+    if not clean:
+        return None
+    return float(np.mean(clean))
+
+
+def _std_ignore_none(values: list) -> Optional[float]:
+    """Std dev of a list that may contain None values."""
+    clean = [v for v in values if v is not None]
+    if len(clean) < 2:
+        return None
+    return float(np.std(clean, ddof=1))
+
+
+def _min_ignore_none(values: list) -> Optional[float]:
+    clean = [v for v in values if v is not None]
+    return min(clean) if clean else None
+
+
+def _max_ignore_none(values: list) -> Optional[float]:
+    clean = [v for v in values if v is not None]
+    return max(clean) if clean else None
+
+
+def _best_ml(home_or_away: str, values: list, books: list) -> Tuple[Optional[float], str]:
+    """
+    Find the best moneyline price for a side.
+    For the team we're betting ON, we want the highest (least negative / most positive) price.
+    The best book is the one offering that price.
+    """
+    best_price = None
+    best_book = ""
+    for price, book in zip(values, books):
+        if price is None:
+            continue
+        if best_price is None or price > best_price:
+            best_price = price
+            best_book = book
+    return (best_price, best_book)
+
+
+def _compute_moneyline_consensus(books: List[BookOdds]) -> Dict:
+    """Aggregate moneyline odds across all books into consensus stats."""
+    home_mls = [b.home_moneyline for b in books]
+    away_mls = [b.away_moneyline for b in books]
+    titles = [b.book_title for b in books]
+
+    consensus = {
+        "home_ml_consensus": _median_ignore_none(home_mls),
+        "away_ml_consensus": _median_ignore_none(away_mls),
+        "home_ml_n_books": sum(1 for v in home_mls if v is not None),
+        "away_ml_n_books": sum(1 for v in away_mls if v is not None),
+        "home_ml_low": _min_ignore_none(home_mls),
+        "home_ml_high": _max_ignore_none(home_mls),
+        "away_ml_low": _min_ignore_none(away_mls),
+        "away_ml_high": _max_ignore_none(away_mls),
+        "home_ml_std": _std_ignore_none(home_mls),
+        "away_ml_std": _std_ignore_none(away_mls),
+    }
+
+    # Best line for each side
+    best_home_ml, best_home_book = _best_ml("home", home_mls, titles)
+    best_away_ml, best_away_book = _best_ml("away", away_mls, titles)
+    consensus["best_home_ml"] = best_home_ml
+    consensus["best_home_ml_book"] = best_home_book
+    consensus["best_away_ml"] = best_away_ml
+    consensus["best_away_ml_book"] = best_away_book
+
+    # No-vig probabilities from consensus lines
+    con_home = consensus["home_ml_consensus"]
+    con_away = consensus["away_ml_consensus"]
+    if con_home is not None and con_away is not None:
+        def ml_to_prob(odds):
+            if odds > 0:
+                return 100.0 / (odds + 100.0)
+            else:
+                return abs(odds) / (abs(odds) + 100.0)
+        home_p = ml_to_prob(con_home)
+        away_p = ml_to_prob(con_away)
+        total_p = home_p + away_p
+        if total_p > 0:
+            consensus["consensus_home_win_prob"] = home_p / total_p
+            consensus["consensus_away_win_prob"] = away_p / total_p
+
+    return consensus
+
+
+def _compute_totals_consensus(books: List[BookOdds]) -> Dict:
+    """Aggregate totals across all books."""
+    overs = [b.total_over for b in books]
+    unders = [b.total_under for b in books]
+    over_odds = [b.total_over_odds for b in books]
+    under_odds = [b.total_under_odds for b in books]
+    titles = [b.book_title for b in books]
+
+    # The total line per book: average of over and under (should be same point)
+    per_book_totals = []
+    valid_books = []
+    for i, b in enumerate(books):
+        if b.total_over is not None and b.total_under is not None and b.total_over == b.total_under:
+            per_book_totals.append(float(b.total_over))
+            valid_books.append(b.book_title)
+
+    results = {
+        "total_consensus": _median_ignore_none(per_book_totals),
+        "total_n_books": len(per_book_totals),
+        "total_low": _min_ignore_none(per_book_totals),
+        "total_high": _max_ignore_none(per_book_totals),
+        "total_std": _std_ignore_none(per_book_totals),
+        "total_over_odds_consensus": _median_ignore_none(over_odds),
+        "total_under_odds_consensus": _median_ignore_none(under_odds),
+    }
+
+    # Best total (highest over = best for OVER bettor, lowest under = best for UNDER)
+    # For OVER bet: higher total is better (more points needed to hit, but better odds)
+    # For UNDER bet: lower total is better
+    if per_book_totals and valid_books:
+        best_idx = per_book_totals.index(max(per_book_totals))
+        results["best_total_over"] = per_book_totals[best_idx]
+        results["best_total_book"] = valid_books[best_idx]
+        best_idx_under = per_book_totals.index(min(per_book_totals))
+        results["best_total_under"] = per_book_totals[best_idx_under]
+    else:
+        results["best_total_over"] = None
+        results["best_total_under"] = None
+        results["best_total_book"] = ""
+
+    return results
+
+
+def _compute_spread_consensus(books: List[BookOdds]) -> Dict:
+    """Aggregate spreads across all books."""
+    spreads = [b.home_spread for b in books]
+    spread_odds = [b.home_spread_odds for b in books]
+
+    results = {
+        "spread_consensus": _median_ignore_none(spreads),
+        "spread_n_books": sum(1 for v in spreads if v is not None),
+        "spread_low": _min_ignore_none(spreads),
+        "spread_high": _max_ignore_none(spreads),
+        "spread_std": _std_ignore_none(spreads),
+        "spread_home_odds_consensus": _median_ignore_none(spread_odds),
+    }
+
+    # Best spread: highest (most favorable) for each side
+    titles = [b.book_title for b in books]
+    clean_spreads = [(s, titles[i]) for i, s in enumerate(spreads) if s is not None]
+    if clean_spreads:
+        best_spread, best_book = max(clean_spreads, key=lambda x: x[0])
+        results["best_spread"] = best_spread
+        results["best_spread_book"] = best_book
+    else:
+        results["best_spread"] = None
+        results["best_spread_book"] = ""
+
+    return results
 
 
 @dataclass
 class OddsGame:
-    """A single upcoming NBA game with market odds from TheOddsAPI."""
+    """
+    A single upcoming NBA game with FULL multi-sportsbook market odds.
+
+    KEY CHANGE from v1: Stores odds from ALL books in `all_books`, and
+    computes a `consensus` field that aggregates across all books.
+    The legacy fields (home_moneyline, market_total, etc.) now come from
+    the consensus (median) line, not from whichever book appeared first.
+    """
 
     id: str
     sport_key: str
@@ -44,10 +305,10 @@ class OddsGame:
     commence_time: str  # ISO 8601
     home_team: str
     away_team: str
-    home_team_short: str = ""  # Normalized short name (e.g. "Celtics", "Lakers")
+    home_team_short: str = ""
     away_team_short: str = ""
 
-    # Market odds
+    # ── Legacy fields: now populated from consensus median ──────────
     home_moneyline: Optional[float] = None
     away_moneyline: Optional[float] = None
     home_spread: Optional[float] = None
@@ -59,10 +320,13 @@ class OddsGame:
     total_over_odds: Optional[float] = None
     total_under_odds: Optional[float] = None
 
-    # Derived
     implied_home_win_prob: Optional[float] = None
     market_total: Optional[float] = None
     vig_free_total: Optional[float] = None
+
+    # ── NEW: Per-book and consensus data ────────────────────────────
+    all_books: List[BookOdds] = field(default_factory=list)
+    consensus: Optional[ConsensusOdds] = None
 
     @property
     def matchup(self) -> str:
@@ -90,7 +354,7 @@ class OddsGame:
         return False
 
     def compute_implied_probs(self):
-        """Compute vig-free implied win probabilities from moneyline odds."""
+        """Compute vig-free implied win probabilities from CONSENSUS lines."""
         if self.home_moneyline and self.away_moneyline:
             def moneyline_to_prob(odds):
                 if odds > 0:
@@ -103,31 +367,44 @@ class OddsGame:
             total_imp = home_imp + away_imp
             self.implied_home_win_prob = home_imp / total_imp if total_imp > 0 else 0.5
 
-        if self.total_over and self.total_under and self.total_over_odds and self.total_under_odds:
+        if self.total_over and self.total_under:
             self.market_total = (self.total_over + self.total_under) / 2
-            # Simple vig-free estimate
-            over_imp = 100 / (self.total_over_odds + 100) if self.total_over_odds > 0 else abs(self.total_over_odds) / (abs(self.total_over_odds) + 100)
-            under_imp = 100 / (self.total_under_odds + 100) if self.total_under_odds > 0 else abs(self.total_under_odds) / (abs(self.total_under_odds) + 100)
-            total_vig = over_imp + under_imp
-            if total_vig > 0:
-                self.vig_free_total = self.market_total  # Use market total as-is
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        """Serialise to JSON, handling nested dataclasses."""
+        d = asdict(self)
+        # Ensure nested dataclasses are also serialized
+        if self.consensus:
+            d["consensus"] = asdict(self.consensus)
+        else:
+            d["consensus"] = None
+        d["all_books"] = [asdict(b) for b in self.all_books]
+        return d
+
+    def get_book_summary(self) -> str:
+        """Return a human-readable summary of how many books offer each market."""
+        if not self.consensus:
+            return "No consensus data"
+        c = self.consensus
+        lines = []
+        lines.append(f"ML: {c.home_ml_n_books} books (range {c.home_ml_low} to {c.home_ml_high})")
+        if c.total_n_books:
+            lines.append(f"Total: {c.total_n_books} books (range {c.total_low} to {c.total_high})")
+        if c.spread_n_books:
+            lines.append(f"Spread: {c.spread_n_books} books (range {c.spread_low} to {c.spread_high})")
+        return " | ".join(lines)
 
     def __str__(self) -> str:
         dt = self.commence_datetime
         time_str = dt.strftime("%a %I:%M %p ET") if dt else self.commence_time
         total_str = f"O/U {self.market_total:.1f}" if self.market_total else "No total"
+        n_books = self.consensus.home_ml_n_books if self.consensus else 0
         spread_str = f"Spread: {self.home_team_short} {self.home_spread:+.0f}" if self.home_spread is not None else ""
-        return f"{self.matchup:45s} | {time_str:20s} | {total_str:12s} | {spread_str}"
+        return f"{self.matchup:45s} | {time_str:20s} | {total_str:12s} | {spread_str} | {n_books} books"
 
 
 # ── Team Name Mapping ───────────────────────────────────────────────────────
 
-
-# Maps TheOddsAPI full team names to our short/normalized team names
-# TheOddsAPI uses formats like "Boston Celtics", "LA Lakers", etc.
 ODDS_TO_SHORT_NAME: Dict[str, str] = {
     "Atlanta Hawks": "Hawks",
     "Boston Celtics": "Celtics",
@@ -164,13 +441,8 @@ ODDS_TO_SHORT_NAME: Dict[str, str] = {
     "Washington Wizards": "Wizards",
 }
 
-# Reverse map: short name -> odds API full name (for logging/display)
-SHORT_TO_ODDS_NAME: Dict[str, str] = {
-    short: full for full, short in ODDS_TO_SHORT_NAME.items()
-}
+SHORT_TO_ODDS_NAME: Dict[str, str] = {short: full for full, short in ODDS_TO_SHORT_NAME.items()}
 
-# Map short names to TEAM_IDs we expect in the database
-# These are common NBA team IDs used by stats.nba.com / NBA API
 SHORT_NAME_TO_TEAM_ID: Dict[str, int] = {
     "Hawks": 1610612737, "Celtics": 1610612738, "Nets": 1610612751,
     "Hornets": 1610612766, "Bulls": 1610612741, "Cavaliers": 1610612739,
@@ -185,20 +457,23 @@ SHORT_NAME_TO_TEAM_ID: Dict[str, int] = {
 }
 
 
-# ── Odds API Client ─────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+#  ODDS API CLIENT
+# ═══════════════════════════════════════════════════════════════════════════
 
 
 class OddsAPIClient:
     """
     Client for TheOddsAPI v4.
-    Fetches upcoming NBA games with live market odds.
-    Supports caching to avoid hitting rate limits unnecessarily.
+    Fetches upcoming NBA games with odds from ALL available sportsbooks,
+    computes consensus lines, and tracks best lines per side.
 
     Usage:
         client = OddsAPIClient(api_key="your_key_here")
         games = client.get_upcoming_games_with_odds()
         for g in games:
             print(g)
+            print(f"  (aggregated from {g.consensus.home_ml_n_books} books)")
     """
 
     def __init__(
@@ -224,7 +499,7 @@ class OddsAPIClient:
     def get_upcoming_games_with_odds(
         self,
         sport: str = "basketball_nba",
-        regions: str = "us",
+        regions: str = "us,us2,eu,uk,au",
         markets: str = "h2h,spreads,totals",
         odds_format: str = "american",
         date_format: str = "iso",
@@ -232,11 +507,12 @@ class OddsAPIClient:
         use_cache: bool = True,
     ) -> List[OddsGame]:
         """
-        Fetch upcoming NBA games with full odds data.
+        Fetch upcoming NBA games with odds from ALL sportsbooks.
 
         Args:
             sport: Sport key (default: basketball_nba)
-            regions: Bookmaker region(s) (default: us)
+            regions: Bookmaker regions. Default queries MULTIPLE regions
+                     to capture as many books as possible.
             markets: Markets to fetch (default: h2h,spreads,totals)
             odds_format: american or decimal
             date_format: iso or unix
@@ -244,20 +520,18 @@ class OddsAPIClient:
             use_cache: Use cached results if fresh enough
 
         Returns:
-            List of OddsGame objects with parsed odds
+            List of OddsGame objects with consensus and per-book odds
         """
         if not self._configured:
             return []
 
-        # Check cache first
-        cache_key = f"odds_{sport}_{markets.replace(',', '_')}"
+        cache_key = f"odds_{sport}_{markets.replace(',', '_')}_{regions.replace(',', '_')}"
         if use_cache:
             cached = self._load_cache(cache_key)
             if cached is not None:
-                print(f"  [OddsAPI] Using cached odds (TTL: {self.cache_ttl})")
+                print(f"  [OddsAPI] Using cached odds from {len(cached)} games (TTL: {self.cache_ttl})")
                 return cached
 
-        # Build request
         url = f"{self.base_url}/v4/sports/{sport}/odds"
         params = {
             "apiKey": self.api_key,
@@ -268,20 +542,18 @@ class OddsAPIClient:
         }
 
         try:
-            print(f"  [OddsAPI] Fetching upcoming {sport.upper()} games from TheOddsAPI...")
+            print(f"  [OddsAPI] Fetching {sport.upper()} odds from regions: {regions}...")
             resp = requests.get(url, params=params, timeout=15)
             resp.raise_for_status()
 
-            # Track remaining quota
             remaining = resp.headers.get("x-requests-remaining", "?")
             used = resp.headers.get("x-requests-used", "?")
-            print(f"  [OddsAPI] API quota: {remaining} remaining, {used} used this period")
+            print(f"  [OddsAPI] Quota: {remaining} remaining, {used} used")
 
             data = resp.json()
             games = self._parse_odds_response(data, ignore_live=ignore_live)
-            print(f"  [OddsAPI] Found {len(games)} upcoming games with odds")
+            print(f"  [OddsAPI] {len(games)} games with odds from multiple sportsbooks")
 
-            # Cache the result
             self._save_cache(cache_key, games)
             return games
 
@@ -290,7 +562,6 @@ class OddsAPIClient:
             return []
         except requests.exceptions.RequestException as e:
             print(f"  [OddsAPI] API request failed: {e}")
-            # Try loading stale cache
             stale = self._load_cache(cache_key, ignore_ttl=True)
             if stale:
                 print(f"  [OddsAPI] Using stale cache ({len(stale)} games)")
@@ -312,23 +583,13 @@ class OddsAPIClient:
         return None
 
     def get_team_id_map(self, db_teams_df) -> Dict[str, int]:
-        """
-        Build a mapping from short team names to database team IDs.
-        Uses the database's TEAM_NAME column.
-
-        Args:
-            db_teams_df: DataFrame with TEAM_NAME column (from game logs)
-
-        Returns:
-            Dict mapping short names (e.g. "Celtics") to team IDs
-        """
+        """Build a mapping from short team names to database team IDs."""
         team_map = {}
         if "TEAM_NAME" in db_teams_df.columns:
             unique_teams = db_teams_df[["TEAM_NAME", "TEAM_ID"]].drop_duplicates()
             for _, row in unique_teams.iterrows():
                 short = str(row["TEAM_NAME"]).strip()
                 team_map[short] = int(row["TEAM_ID"])
-        # Fill in any missing from our hardcoded map
         for short, tid in SHORT_NAME_TO_TEAM_ID.items():
             if short not in team_map:
                 team_map[short] = tid
@@ -339,12 +600,11 @@ class OddsAPIClient:
     # ═══════════════════════════════════════════════════════════════════
 
     def _parse_odds_response(self, data: list, ignore_live: bool = True) -> List[OddsGame]:
-        """Parse the raw JSON response from TheOddsAPI into OddsGame objects."""
+        """Parse the raw JSON response into OddsGame objects with multi-book data."""
         games = []
         now_utc = datetime.now(timezone.utc)
 
         for event in data:
-            # Skip live/in-progress games if requested
             if ignore_live:
                 commence_str = event.get("commence_time", "")
                 try:
@@ -370,30 +630,49 @@ class OddsAPIClient:
                 away_team_short=away_short,
             )
 
-            # Parse odds from bookmakers
-            self._extract_odds(game, event.get("bookmakers", []))
+            # Parse ALL bookmakers into BookOdds, then compute consensus
+            self._extract_multi_book_odds(game, event.get("bookmakers", []))
+            self._compute_consensus(game)
 
-            # Compute derived probabilities
+            # Legacy fields populated from consensus
+            if game.consensus:
+                c = game.consensus
+                game.home_moneyline = c.home_ml_consensus
+                game.away_moneyline = c.away_ml_consensus
+                game.home_spread = c.spread_consensus
+                if c.spread_home_odds_consensus is not None:
+                    game.home_spread_odds = c.spread_home_odds_consensus
+                game.total_over = c.total_consensus
+                game.total_under = c.total_consensus
+                if c.total_over_odds_consensus is not None:
+                    game.total_over_odds = c.total_over_odds_consensus
+                if c.total_under_odds_consensus is not None:
+                    game.total_under_odds = c.total_under_odds_consensus
+
             game.compute_implied_probs()
-
             games.append(game)
 
         return games
 
-    def _extract_odds(self, game: OddsGame, bookmakers: list):
+    def _extract_multi_book_odds(self, game: OddsGame, bookmakers: list):
         """
-        Extract best available odds across all bookmakers.
-        Uses the most favorable line (sharpest) across all sportsbooks.
+        Extract odds from ALL bookmakers and store them as BookOdds objects.
+        Unlike the old v1 `_extract_odds` which only kept the first book's line,
+        this stores every book's data so we can compute proper consensus.
         """
-        best = {
-            "home_moneyline": None, "away_moneyline": None,
-            "home_spread": None, "home_spread_odds": None,
-            "away_spread": None, "away_spread_odds": None,
-            "total_over": None, "total_over_odds": None,
-            "total_under": None, "total_under_odds": None,
-        }
+        per_book_data = []
 
         for book in bookmakers:
+            bk = book.get("key", "")
+            title = book.get("title", bk)
+            last_update = book.get("last_update", "")
+
+            book_odds = BookOdds(
+                book_key=bk,
+                book_title=title,
+                last_update=last_update,
+            )
+
             for market in book.get("markets", []):
                 key = market.get("key", "")
                 outcomes = market.get("outcomes", [])
@@ -403,11 +682,9 @@ class OddsAPIClient:
                         name = o.get("name", "")
                         price = o.get("price")
                         if name == game.home_team:
-                            if best["home_moneyline"] is None or price is not None:
-                                best["home_moneyline"] = price
+                            book_odds.home_moneyline = price
                         elif name == game.away_team:
-                            if best["away_moneyline"] is None or price is not None:
-                                best["away_moneyline"] = price
+                            book_odds.away_moneyline = price
 
                 elif key == "spreads":
                     for o in outcomes:
@@ -415,13 +692,11 @@ class OddsAPIClient:
                         point = o.get("point")
                         price = o.get("price")
                         if name == game.home_team:
-                            if best["home_spread"] is None:
-                                best["home_spread"] = point
-                                best["home_spread_odds"] = price
+                            book_odds.home_spread = point
+                            book_odds.home_spread_odds = price
                         elif name == game.away_team:
-                            if best["away_spread"] is None:
-                                best["away_spread"] = point
-                                best["away_spread_odds"] = price
+                            book_odds.away_spread = point
+                            book_odds.away_spread_odds = price
 
                 elif key == "totals":
                     for o in outcomes:
@@ -429,24 +704,39 @@ class OddsAPIClient:
                         point = o.get("point")
                         price = o.get("price")
                         if name == "Over":
-                            if best["total_over"] is None:
-                                best["total_over"] = point
-                                best["total_over_odds"] = price
+                            book_odds.total_over = point
+                            book_odds.total_over_odds = price
                         elif name == "Under":
-                            if best["total_under"] is None:
-                                best["total_under"] = point
-                                best["total_under_odds"] = price
+                            book_odds.total_under = point
+                            book_odds.total_under_odds = price
 
-        game.home_moneyline = best["home_moneyline"]
-        game.away_moneyline = best["away_moneyline"]
-        game.home_spread = best["home_spread"]
-        game.home_spread_odds = best["home_spread_odds"]
-        game.away_spread = best["away_spread"]
-        game.away_spread_odds = best["away_spread_odds"]
-        game.total_over = best["total_over"]
-        game.total_over_odds = best["total_over_odds"]
-        game.total_under = best["total_under"]
-        game.total_under_odds = best["total_under_odds"]
+            # Only add if this book actually has odds
+            has_any = any([
+                book_odds.home_moneyline is not None,
+                book_odds.away_moneyline is not None,
+                book_odds.home_spread is not None,
+                book_odds.away_spread is not None,
+                book_odds.total_over is not None,
+            ])
+            if has_any:
+                per_book_data.append(book_odds)
+
+        game.all_books = per_book_data
+
+    def _compute_consensus(self, game: OddsGame):
+        """Compute consensus odds across all stored books."""
+        if not game.all_books:
+            return
+
+        ml_consensus = _compute_moneyline_consensus(game.all_books)
+        totals_consensus = _compute_totals_consensus(game.all_books)
+        spread_consensus = _compute_spread_consensus(game.all_books)
+
+        game.consensus = ConsensusOdds(
+            **ml_consensus,
+            **totals_consensus,
+            **spread_consensus,
+        )
 
     # ═══════════════════════════════════════════════════════════════════
     #  CACHING
@@ -464,14 +754,22 @@ class OddsAPIClient:
         if not ignore_ttl:
             mod_time = datetime.fromtimestamp(cache_path.stat().st_mtime)
             if datetime.now() - mod_time > self.cache_ttl:
-                return None  # Expired
+                return None
 
         try:
             with open(cache_path, "r") as f:
                 raw = json.load(f)
-            games = [OddsGame(**g) for g in raw]
-            for g in games:
-                g.compute_implied_probs()
+            games = []
+            for g in raw:
+                # Hydrate nested BookOdds and ConsensusOdds
+                books_raw = g.pop("all_books", [])
+                consensus_raw = g.pop("consensus", None)
+                game = OddsGame(**g)
+                game.all_books = [BookOdds(**b) for b in books_raw]
+                if consensus_raw:
+                    game.consensus = ConsensusOdds(**consensus_raw)
+                game.compute_implied_probs()
+                games.append(game)
             return games
         except Exception:
             return None
@@ -486,7 +784,7 @@ class OddsAPIClient:
             print(f"  [OddsAPI] Cache write failed: {e}")
 
     # ═══════════════════════════════════════════════════════════════════
-    #  UTILITY: Team mapping for feature engineering
+    #  UTILITY: Feature Engineering
     # ═══════════════════════════════════════════════════════════════════
 
     @staticmethod
@@ -495,25 +793,12 @@ class OddsAPIClient:
         historical_df,
         feature_cols: list,
     ) -> Optional[Dict]:
-        """
-        Build a feature vector for an upcoming game using historical data.
-        This finds the most recent games for both teams and computes features.
-
-        Args:
-            game: The upcoming OddsGame
-            historical_df: DataFrame with historical game data and features
-            feature_cols: List of feature column names to use
-
-        Returns:
-            Dict with feature values for this game, or None if insufficient data
-        """
+        """Build a feature vector for an upcoming game using historical data."""
         if historical_df is None or historical_df.empty:
             return None
 
         home_short = game.home_team_short
         away_short = game.away_team_short
-
-        # Find team ID columns (could be TEAM_ID_home, TEAM_ID_away, or numeric IDs in short name map)
         home_id = SHORT_NAME_TO_TEAM_ID.get(home_short)
         away_id = SHORT_NAME_TO_TEAM_ID.get(away_short)
 
@@ -521,7 +806,6 @@ class OddsAPIClient:
             print(f"  [OddsAPI] Unknown team IDs for {home_short} vs {away_short}")
             return None
 
-        # Get the teams' most recent games from the historical dataset
         home_games = historical_df[
             (historical_df.get("TEAM_ID_home") == home_id) |
             (historical_df.get("TEAM_ID_away") == home_id)
@@ -533,14 +817,11 @@ class OddsAPIClient:
         ].sort_values("GAME_DATE").tail(20)
 
         if len(home_games) < 5 or len(away_games) < 5:
-            print(f"  [OddsAPI] Insufficient historical data: {home_short}({len(home_games)}) vs {away_short}({len(away_games)})")
             return None
 
-        # Use the most recent game row as a template, swap in the actual team info
         last_home = home_games.iloc[-1]
         last_away = away_games.iloc[-1]
 
-        # Build a feature row by taking the most recent home-team-at-home and away-team-on-road games
         recent_home_home = historical_df[
             (historical_df["TEAM_ID_home"] == home_id)
         ].sort_values("GAME_DATE").tail(10)
@@ -550,15 +831,9 @@ class OddsAPIClient:
         ].sort_values("GAME_DATE").tail(10)
 
         if len(recent_home_home) < 3 or len(recent_away_away) < 3:
-            # Fall back to general recent games
             recent_home_home = home_games.tail(5)
             recent_away_away = away_games.tail(5)
 
-        # Build a composite row using the last game structure with the correct team assignments
-        template = historical_df.iloc[-1].to_dict()
-
-        # Find a game where the home team was at home and away team was away
-        # This ensures feature continuity (rolling averages etc are preserved)
         best_match = None
         for idx in range(len(historical_df) - 1, max(0, len(historical_df) - 500), -1):
             row = historical_df.iloc[idx]
@@ -567,26 +842,18 @@ class OddsAPIClient:
                 break
 
         if best_match is not None:
-            # Found an exact same matchup — use those features
             feature_row = {col: best_match.get(col, 0) for col in feature_cols}
         else:
-            # Build a synthetic feature row
             feature_row = {}
             for col in feature_cols:
                 feature_row[col] = 0
-
-            # Try to get the actual feature values from the teams' recent games at the correct venue
             for col in feature_cols:
-                # Check if it's a home team stat (ends with _home)
                 if col.endswith("_home") and not col.startswith("TEAM_"):
-                    # Use the home team's recent value for this feature
                     if not recent_home_home.empty and col in recent_home_home.columns:
                         feature_row[col] = recent_home_home[col].iloc[-1]
                 elif col.endswith("_away") and not col.startswith("TEAM_"):
                     if not recent_away_away.empty and col in recent_away_away.columns:
                         feature_row[col] = recent_away_away[col].iloc[-1]
-
-            # Fill remaining NaN features with team averages or zeros
             feature_series = pd.Series(feature_row)
             feature_series = feature_series.fillna(0)
             feature_row = feature_series.to_dict()
@@ -594,11 +861,12 @@ class OddsAPIClient:
         return feature_row
 
 
-# ── Convenience Functions ─────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+#  CONVENIENCE FUNCTIONS
+# ═══════════════════════════════════════════════════════════════════════════
 
 
 def format_american_odds(odds: Optional[float]) -> str:
-    """Format American odds with + or - prefix."""
     if odds is None:
         return "N/A"
     if odds > 0:
@@ -607,7 +875,6 @@ def format_american_odds(odds: Optional[float]) -> str:
 
 
 def format_implied_prob(moneyline_odds: Optional[float]) -> Optional[float]:
-    """Convert American moneyline to implied win probability."""
     if moneyline_odds is None:
         return None
     if moneyline_odds > 0:
@@ -616,7 +883,7 @@ def format_implied_prob(moneyline_odds: Optional[float]) -> Optional[float]:
 
 
 def display_odds_card(games: List[OddsGame], title: str = "UPCOMING NBA GAMES"):
-    """Pretty-print odds for upcoming games."""
+    """Pretty-print odds for upcoming games with multi-book info."""
     if not games:
         print("No upcoming games found.")
         return
@@ -631,12 +898,15 @@ def display_odds_card(games: List[OddsGame], title: str = "UPCOMING NBA GAMES"):
         total_str = f"{g.market_total:.1f}" if g.market_total else "N/A"
         spread_str = f"{g.home_spread:+.0f}" if g.home_spread is not None else "N/A"
         ml_str = f"{format_american_odds(g.home_moneyline)} / {format_american_odds(g.away_moneyline)}"
+        book_summary = g.get_book_summary() if g.consensus else ""
 
         print(f"\n  [{i}] {g.away_team} @ {g.home_team}")
         print(f"       {dt_str}")
         print(f"       Moneyline: {ml_str:30s} | Spread: {spread_str:>4s} | Total: {total_str}")
         if g.implied_home_win_prob:
             print(f"       Implied Home Win: {g.implied_home_win_prob:.1%}")
+        if book_summary:
+            print(f"       {book_summary}")
 
     print(f"\n  Total: {len(games)} games")
     print(f"{'=' * 100}\n")

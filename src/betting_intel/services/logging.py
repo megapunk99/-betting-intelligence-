@@ -96,3 +96,10 @@ def setup_logging(
 
 # Global logger instance
 logger = _base_logger
+
+
+def get_logger(name: str | None = None):
+    """Get a logger instance. Backward-compatible alias for loguru.logger.bind."""
+    if name:
+        return _base_logger.bind(name=name)
+    return _base_logger

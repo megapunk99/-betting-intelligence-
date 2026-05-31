@@ -36,6 +36,7 @@ PYTHON = sys.executable or "python"
 LOGS_DIR = PROJECT_ROOT / "logs"
 UPDATE_SCRIPT = PROJECT_ROOT / "tools" / "update_data.py"
 FORWARD_SCRIPT = PROJECT_ROOT / "tools" / "forward_test.py"
+QUALITY_SCRIPT = PROJECT_ROOT / "tools" / "data_quality_report.py"
 PLAYER_STATS_MODULE = "betting_intel.data.player_stats"
 ENV_FILE = PROJECT_ROOT / ".env"
 
@@ -120,6 +121,10 @@ def main():
                         help="Skip the player stats update step")
     parser.add_argument("--skip-odds", action="store_true",
                         help="Skip the odds/prediction step")
+    parser.add_argument("--skip-quality", action="store_true",
+                        help="Skip the data quality report step")
+    parser.add_argument("--quality-only", action="store_true",
+                        help="Run only the data quality report, skip everything else")
     args = parser.parse_args()
 
     # ── Banner ──────────────────────────────────────────────────────────
@@ -132,9 +137,17 @@ def main():
     # ── Ensure logs dir exists ──────────────────────────────────────────
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # ── Step 1: Update data ─────────────────────────────────────────────
+    # -- Quality-only shortcut --
+    if args.quality_only:
+        log(f"\n  {BOLD}[Quality-only mode] Generating data quality report...{RESET}")
+        cmd = [str(PYTHON), "-B", str(QUALITY_SCRIPT)]
+        success, output = run_step("Data quality", cmd, timeout=60)
+        write_log(LOGS_DIR / f"daily_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.log", [("DATA QUALITY", output)])
+        return 0 if success else 1
+
     sections: list[tuple[str, str]] = []
 
+    # ── Step 1: Update data ─────────────────────────────────────────────
     if not args.skip_update:
         log(f"\n  {BOLD}[Step 1/3] Scraping new NBA games...{RESET}")
         cmd = [str(PYTHON), "-B", str(UPDATE_SCRIPT)]
@@ -158,16 +171,29 @@ def main():
         log(f"\n  {YELLOW}[Step 2/3] Skipped (--skip-player-stats){RESET}")
         sections.append(("PLAYER STATS", "[SKIPPED]"))
 
-    # ── Step 3: Forward test ────────────────────────────────────────────
+    # ── Step 3: Data quality report ──────────────────────────────────────
+    if not args.skip_quality:
+        log(f"\n  {BOLD}[Step 3/4] Generating data quality report...{RESET}")
+        cmd = [str(PYTHON), "-B", str(QUALITY_SCRIPT)]
+        success, output = run_step("Data quality", cmd, timeout=60)
+        sections.append(("DATA QUALITY", output))
+        # Don't fail the pipeline on quality warnings, only on critical issues
+        if not success:
+            log(f"\n  {YELLOW}[!] Data quality report flagged issues (health < 75).{RESET}")
+    else:
+        log(f"\n  {YELLOW}[Step 3/4] Skipped (--skip-quality){RESET}")
+        sections.append(("DATA QUALITY", "[SKIPPED]"))
+
+    # ── Step 4: Forward test ────────────────────────────────────────────
     if not args.skip_odds:
-        log(f"\n  {BOLD}[Step 3/3] Running forward test with real odds...{RESET}")
-        cmd = [str(PYTHON), "-B", str(FORWARD_SCRIPT), "--calibrated"]
+        log(f"\n  {BOLD}[Step 4/4] Running forward test with real odds...{RESET}")
+        cmd = [str(PYTHON), "-B", str(FORWARD_SCRIPT), "--calibrated", "--save-json"]
         success, output = run_step("Forward test", cmd, timeout=600)
         sections.append(("FORWARD TEST", output))
         if not success:
             log(f"\n  {RED}[!] Forward test had errors.{RESET}")
     else:
-        log(f"\n  {YELLOW}[Step 3/3] Skipped (--skip-odds){RESET}")
+        log(f"\n  {YELLOW}[Step 4/4] Skipped (--skip-odds){RESET}")
         sections.append(("FORWARD TEST", "[SKIPPED]"))
 
     # ── Write log file ──────────────────────────────────────────────────
@@ -186,6 +212,8 @@ def main():
         print(f"  Tip: Player stats updated for the forward test's injury adjustments.")
     if not args.skip_odds:
         print(f"  Tip: The forward test output shows +EV opportunities (if any).")
+    if not args.skip_quality:
+        print(f"  Tip: Data quality report saved to logs/data_quality_history.json for trend tracking.")
     print(f"{CYAN}{BOLD}{'=' * 70}{RESET}\n")
 
     return_code = 0
