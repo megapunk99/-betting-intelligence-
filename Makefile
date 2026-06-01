@@ -36,18 +36,21 @@ run-api:
 run-dashboard:
 	streamlit run dashboard/app.py
 
-# ── Database ──────────────────────────────────────────────────────────────
-db-init:
-	alembic init alembic
-
-db-migrate:
-	alembic revision --autogenerate -m "$(msg)"
-
+# ── Database (Alembic Migrations) ───────────────────────────────────────
 db-upgrade:
-	alembic upgrade head
+	PYTHONPATH=src alembic upgrade head
 
 db-downgrade:
-	alembic downgrade -1
+	PYTHONPATH=src alembic downgrade -1
+
+db-migrate:
+	PYTHONPATH=src alembic revision --autogenerate -m "$(msg)"
+
+db-history:
+	PYTHONPATH=src alembic history
+
+db-current:
+	PYTHONPATH=src alembic current
 
 # ── Docker ────────────────────────────────────────────────────────────────
 docker-build:
@@ -110,5 +113,8 @@ help:
 	@echo "  make docker-up      Start all services"
 	@echo ""
 	@echo "Database:"
-	@echo "  make db-migrate msg=\"description\"   Create new migration"
-	@echo "  make db-upgrade                      Apply migrations"
+	@echo "  make db-upgrade       Apply all pending Alembic migrations"
+	@echo "  make db-downgrade     Roll back the last migration"
+	@echo "  make db-migrate msg=  Create a new auto-generated migration"
+	@echo "  make db-history      Show migration history"
+	@echo "  make db-current      Show current migration version"

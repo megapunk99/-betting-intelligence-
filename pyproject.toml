@@ -65,6 +65,9 @@ include = ["betting_intel*"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
+filterwarnings = [
+    "error::RuntimeWarning",
+]
 markers = [
     "slow: marks tests as slow (deselect with '-m not slow')",
     "integration: marks tests as integration tests",

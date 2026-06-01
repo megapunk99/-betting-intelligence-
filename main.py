@@ -8,10 +8,13 @@ Run: python main.py  (from the betting-intelligence directory)
 
 import os
 import sys
+import logging
 import warnings
 from typing import Optional, Dict, List
 from pathlib import Path
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 import numpy as np
 import pandas as pd
@@ -383,7 +386,11 @@ class BettingIntelligenceSystem:
                   f"R2: {m.get('r2', 0):.3f}")
 
     def _build_ensemble(self, results: dict) -> BacktestResult:
-        """Build a stacking ensemble from individual model results."""
+        """Build a stacking ensemble from individual model results.
+
+        Trains a Ridge regression meta-learner on out-of-fold predictions
+        from each base model using TimeSeriesSplit to prevent look-ahead bias.
+        """
         # Collect all regression results
         regression_keys = [k for k in results.keys()
                           if k.startswith("total_") and results[k].total_bets > 0]
@@ -418,12 +425,54 @@ class BettingIntelligenceSystem:
         if valid_count < 2 or len(ensemble_df) == 0:
             return BacktestResult("ensemble", "Ensemble")
 
-        # Ensemble prediction = simple average
         pred_cols = [c for c in ensemble_df.columns if c.startswith("pred_")]
         if len(pred_cols) == 0:
             return BacktestResult("ensemble", "Ensemble")
 
-        ensemble_df["ensemble_pred"] = ensemble_df[pred_cols].mean(axis=1)
+        # Sort by date for time-series split
+        ensemble_df = ensemble_df.sort_values("game_date").reset_index(drop=True)
+
+        # ── Train Ridge meta-learner with TimeSeriesSplit ──────────────
+        from sklearn.linear_model import Ridge
+        from sklearn.model_selection import TimeSeriesSplit
+
+        X_meta = ensemble_df[pred_cols].fillna(0).values
+        y_meta = ensemble_df["actual_total"].values
+
+        tscv = TimeSeriesSplit(n_splits=5)
+        meta_preds = np.full(len(ensemble_df), np.nan)
+
+        for train_idx, test_idx in tscv.split(X_meta):
+            if len(train_idx) < 30:
+                # Use all but last 20% for first fold
+                split = int(len(ensemble_df) * 0.8)
+                train_idx = np.arange(split)
+                test_idx = np.arange(split, len(ensemble_df))
+
+            X_train_fold = X_meta[train_idx]
+            y_train_fold = y_meta[train_idx]
+            X_test_fold = X_meta[test_idx]
+
+            meta_model = Ridge(alpha=1.0)
+            meta_model.fit(X_train_fold, y_train_fold)
+            meta_preds[test_idx] = meta_model.predict(X_test_fold)
+
+        # Fall back to simple average for any rows where meta-learner failed
+        valid_meta = ~np.isnan(meta_preds)
+        ensemble_df["ensemble_pred"] = np.where(
+            valid_meta,
+            meta_preds,
+            ensemble_df[pred_cols].mean(axis=1).values,
+        )
+
+        n_meta = int(valid_meta.sum())
+        n_avg = len(ensemble_df) - n_meta
+        if n_meta > 10:
+            model_label = "StackingEnsemble(Ridge+TSCV)"
+        else:
+            model_label = "StackingEnsemble(Avg)"
+
+        print(f"    Ensemble: {n_meta} Ridge + {n_avg} avg predictions [{model_label}]")
 
         # Generate bets
         bet_records = []
@@ -446,17 +495,18 @@ class BettingIntelligenceSystem:
                 "game_id": row["game_id"],
                 "matchup": row.get("matchup", ""),
                 "strategy": "ensemble",
-                "model": "StackingEnsemble",
+                "model": model_label,
                 "bet_type": f"TOTAL_{bet_side}",
                 "predicted_total": float(row["ensemble_pred"]),
                 "market_line": float(row["market_line"]),
                 "actual_total": float(row["actual_total"]),
                 "edge_pct": float(edge_pct),
+                "decimal_odds": 1.91,
                 "outcome": "WIN" if won else "LOSS",
                 "profit_units": profit,
             })
 
-        ensemble = BacktestResult("ensemble", "StackingEnsemble")
+        ensemble = BacktestResult("ensemble", model_label)
         if bet_records:
             ensemble.bets_df = pd.DataFrame(bet_records)
             self.backtester._compute_performance(ensemble)
@@ -485,10 +535,15 @@ class BettingIntelligenceSystem:
         for _, bet in bets_df.iterrows():
             edge = abs(bet.get("edge_pct", 0.03))
             prob = 0.5 + edge
+            decimal_odds = float(bet.get("decimal_odds", 1.91))
+            if decimal_odds <= 0:
+                if "decimal_odds" not in bet or float(bet.get("decimal_odds", 0)) <= 0:
+                    logger.warning("decimal_odds missing or invalid, defaulting to 1.91")
+                decimal_odds = 1.91
 
             stake = bankroll.compute_kelly_stake(
                 win_probability=prob,
-                decimal_odds=1.91,
+                decimal_odds=decimal_odds,
                 edge_pct=edge,
             )
 
@@ -497,7 +552,7 @@ class BettingIntelligenceSystem:
                     game_id=str(bet["game_id"]),
                     strategy=best_result.strategy_name,
                     win_probability=prob,
-                    decimal_odds=1.91,
+                    decimal_odds=decimal_odds,
                     edge_pct=edge,
                 )
 
@@ -516,7 +571,7 @@ class BettingIntelligenceSystem:
                             bet_type="total",
                             side=bet.get("bet_type", "OVER").split("_")[-1],
                             stake_dollars=float(stake[0]),
-                            decimal_odds=1.91,
+                            decimal_odds=decimal_odds,
                             edge_pct=edge,
                             win_probability=prob,
                         )
@@ -566,7 +621,12 @@ class BettingIntelligenceSystem:
         }
 
     def _check_overfitting(self, backtest_results: dict) -> dict:
-        """Run overfitting detection on backtest results."""
+        """Run overfitting detection on backtest results.
+
+        Uses REAL out-of-fold test metrics from the walk-forward backtest
+        (per-fold train/test metrics stored in BacktestResult.fold_metrics)
+        instead of copying train metrics.
+        """
         detector = OverfittingDetector()
 
         # Find models with enough bets
@@ -581,13 +641,40 @@ class BettingIntelligenceSystem:
         # Analyze the best model (highest Sharpe)
         best_key, best_result = max(valid_results, key=lambda x: x[1].sharpe_ratio)
 
-        train_metrics = {
-            "win_rate": best_result.win_rate,
-            "r2": best_result.model_metrics.get("r2", 0),
-            "mae": best_result.model_metrics.get("mae", 0),
-            "sharpe_ratio": best_result.sharpe_ratio,
-        }
-        test_metrics = train_metrics.copy()  # Walk-forward already uses unseen data
+        # Use REAL out-of-fold test metrics from fold_metrics instead of copying train_metrics
+        if best_result.fold_metrics:
+            # Average test metrics across all folds
+            avg_test_r2 = float(np.mean([fm.get("test_r2", 0) for fm in best_result.fold_metrics]))
+            avg_test_mae = float(np.mean([fm.get("test_mae", 0) for fm in best_result.fold_metrics]))
+            avg_train_r2 = float(np.mean([fm.get("train_r2", 0) for fm in best_result.fold_metrics]))
+            avg_train_mae = float(np.mean([fm.get("train_mae", 0) for fm in best_result.fold_metrics]))
+
+            train_metrics = {
+                "win_rate": best_result.win_rate,
+                "r2": avg_train_r2,
+                "mae": avg_train_mae,
+                "sharpe_ratio": best_result.sharpe_ratio,
+            }
+            test_metrics = {
+                "win_rate": best_result.win_rate,
+                "r2": avg_test_r2,
+                "mae": avg_test_mae,
+                "sharpe_ratio": best_result.sharpe_ratio,
+            }
+        else:
+            # Fallback: use overall model metrics (still better than copy)
+            train_metrics = {
+                "win_rate": best_result.win_rate,
+                "r2": best_result.model_metrics.get("avg_train_r2", best_result.model_metrics.get("r2", 0)),
+                "mae": best_result.model_metrics.get("mae", 0),
+                "sharpe_ratio": best_result.sharpe_ratio,
+            }
+            test_metrics = {
+                "win_rate": best_result.win_rate,
+                "r2": best_result.model_metrics.get("r2", 0),
+                "mae": best_result.model_metrics.get("mae", 0),
+                "sharpe_ratio": best_result.sharpe_ratio,
+            }
 
         # CV results (if available)
         cv_results = self.results.get("cross_validation", {}).get("summary", {})
@@ -605,6 +692,8 @@ class BettingIntelligenceSystem:
         print(f"  Model: {best_key}")
         print(f"  Overfitting Score: {analysis.get('overfitting_score', 0):.1f}/100")
         print(f"  Verdict: {analysis.get('verdict', 'N/A')}")
+        print(f"  Train R2: {train_metrics['r2']:.3f} | Test R2: {test_metrics['r2']:.3f}")
+        print(f"  Train MAE: {train_metrics['mae']:.1f} | Test MAE: {test_metrics['mae']:.1f}")
         print(f"  Deflated Sharpe: {analysis.get('deflated_sharpe', 0):.2f}")
 
         return analysis
@@ -809,7 +898,6 @@ Examples:
   python main.py                           # Fast mode: LightGBM + Momentum only (default)
   python main.py --full                    # Full pipeline: all 7+ models
   python main.py --tune                    # Enable hyperparameter tuning (Optuna)
-  python main.py --live                    # Live predictions for upcoming games
   python main.py --live                    # Live predictions for upcoming games
         """
     )

@@ -131,9 +131,9 @@ async def dashboard(request: Request):
     """Main dashboard page."""
     data = load_dashboard_data()
     return templates.TemplateResponse(
+        request,
         "index.html",
         {
-            "request": request,
             "summary": data["summary"],
             "clear_picks": data["clear_picks"],
             "todays_bets": data["todays_bets"],
@@ -175,9 +175,9 @@ async def clear_picks_page(
 
     template = "partials/clear_picks_list.html" if is_htmx else "clear_picks.html"
     return templates.TemplateResponse(
+        request,
         template,
         {
-            "request": request,
             "clear_picks": filtered,
             "leagues": leagues,
             "types": types,
@@ -225,9 +225,9 @@ async def all_bets_page(
     template = "partials/bets_table.html" if is_htmx else "all_bets.html"
 
     return templates.TemplateResponse(
+        request,
         template,
         {
-            "request": request,
             "bets": [bet_to_dict(b) for b in bets],
             "leagues": leagues,
             "types": types,
@@ -247,9 +247,9 @@ async def todays_card_page(request: Request):
     """Today's betting card."""
     data = load_dashboard_data()
     return templates.TemplateResponse(
+        request,
         "todays_card.html",
         {
-            "request": request,
             "games": data["games"],
             "todays_bets": data["todays_bets"],
             "summary": data["summary"],
@@ -277,9 +277,9 @@ async def tomorrow_page(request: Request):
     tomorrow_date = (date.today() + timedelta(days=1)).isoformat()
 
     return templates.TemplateResponse(
+        request,
         "tomorrow.html",
         {
-            "request": request,
             "games": games,
             "tomorrow_bets": tomorrow_bets,
             "summary": summary,
@@ -309,9 +309,9 @@ async def player_props_page(
     away_props = [p for p in props_dicts if away in p["bet_side"]]
 
     return templates.TemplateResponse(
+        request,
         "player_props.html",
         {
-            "request": request,
             "home_team": home,
             "away_team": away,
             "league": league,
@@ -379,9 +379,9 @@ async def signals_page(request: Request):
     tracker_count = len(get_accounts_by_role(AccountRole.INJURY_TRACKER))
 
     return templates.TemplateResponse(
+        request,
         "signals.html",
         {
-            "request": request,
             "signals": signals,
             "summary": summary,
             "team_alerts": team_alerts,

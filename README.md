@@ -57,6 +57,40 @@ make install
 cp .env.example .env
 ```
 
+### Quick Start (Windows)
+
+```powershell
+# Clone the repo
+git clone https://github.com/megapunk99/betting-intelligence.git
+cd betting-intelligence
+
+# Run the Windows bootstrap installer (recommended)
+powershell -ExecutionPolicy Bypass -File install.ps1
+
+# Or manually:
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev,dashboard]"
+
+# Copy and configure environment
+Copy-Item .env.example .env
+```
+
+> **Note:** Some Python packages require a C compiler. If you get build errors,
+> install [Build Tools for Visual Studio](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+> and retry.
+
+### Initialize the Database
+
+```bash
+# Using the CLI (after pip install -e .)
+betting-intel db init
+
+# Or using the standalone script (before installing the package)
+python scripts/init_db.py
+```
+
 ### Generate Exact Bets
 
 ```bash
@@ -76,6 +110,8 @@ betting-intel recommendations player-props Spurs Thunder
 ### Launch the Dashboard
 
 ```bash
+betting-intel dashboard
+# or directly:
 streamlit run dashboard/app.py
 ```
 
@@ -140,9 +176,14 @@ src/betting_intel/
 
 ##   Configuration
 
-All settings via `.env` file:
+All settings via `.env` file. Copy `.env.example` to `.env` and fill in your values.
+
+Key settings to configure:
 
 ```ini
+# REQUIRED for live odds and --live mode
+ODDS_API_KEY=your-api-key-here
+
 # Staking
 INITIAL_BANKROLL=10000.0    # Starting bankroll ($)
 MAX_KELLY_FRACTION=0.25     # Conservative Kelly (25%)
@@ -150,13 +191,15 @@ MIN_EDGE_THRESHOLD=0.02     # Minimum edge to bet (2%)
 
 # Leagues
 ENABLE_SMALL_LEAGUES=true
-ACTIVE_SMALL_LEAGUES=lnb_pro_b,cebl,bnxt
+ACTIVE_SMALL_LEAGUES=lnb_pro_b,cebl,bnxt,wnba
 
 # Models
 ENABLE_LINEAR_MODEL=true
 ENABLE_XGBOOST_MODEL=true
 ENABLE_ENSEMBLE=true
 ```
+
+See [.env.example](.env.example) for the full list of all 40+ configuration options.
 
 ---
 
@@ -177,6 +220,7 @@ docker compose up -d
 
 ##   Development
 
+### Linux / macOS
 ```bash
 # Install dev dependencies
 make dev
@@ -189,11 +233,63 @@ make lint
 make format
 ```
 
+### Windows
+```powershell
+# Activate virtual environment
+.\.venv\Scripts\Activate.ps1
+
+# Install dev dependencies
+python -m pip install -e ".[dev,dashboard]"
+pip install ruff mypy pytest pytest-cov pytest-asyncio
+
+# Run tests
+pytest -v
+
+# Run fast tests only
+pytest -v -m "not slow"
+
+# Lint and format
+ruff check src/ tests/
+ruff format --check src/ tests/
+```
+
+---
+
+##   CLI Reference
+
+```
+Usage: betting-intel [OPTIONS] COMMAND [ARGS]...
+
+Commands:
+  pipeline         Pipeline management (run, status)
+  models           Model management (list, info)
+  backtest         Backtesting (run, report)
+  api              API server (start)
+  db               Database management (init, check)
+  dashboard        Launch Streamlit dashboard
+  web              Start FastAPI web GUI
+  small-leagues    Small-league data (list, fetch, teams, bridge)
+  recommendations  Generate bets (list, todays-card, tomorrow, clear-picks,
+                   player-props)
+```
+
+##   Quick Reference
+
+| Action | Command |
+|--------|---------|
+| Install (Linux/macOS) | `make install` |
+| Install (Windows) | `powershell -File install.ps1` |
+| Init database | `betting-intel db init` or `python scripts/init_db.py` |
+| Run pipeline | `betting-intel pipeline run` |
+| Start API | `betting-intel api start` |
+| Launch dashboard | `betting-intel dashboard` |
+| Run tests | `make test` (Linux) or `pytest -v` (Windows) |
+
 ---
 
 ##   Roadmap
 
-- [ ]  Live odds integration (ODDS API / TheOddsAPI)
+- [x]  Live odds integration (ODDS API / TheOddsAPI) ✓
 - [ ]  Live betting recommendations during games
 - [ ]  Headless browser for Cloudflare-protected leagues
 - [ ]  Telegram/Discord bot for real-time picks

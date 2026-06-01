@@ -723,9 +723,15 @@ class TestDiscordWebhook:
         from betting_intel.alerts.discord import DiscordWebhook
 
         wh = DiscordWebhook(webhook_url="https://discord.com/api/webhooks/test/id/token")
-        # Mock the client to avoid real HTTP calls
-        wh._client = AsyncMock()
-        wh._client.post = AsyncMock()
+        # Mock the client to avoid real HTTP calls.
+        # Use MagicMock for the response (not AsyncMock) so that
+        # resp.raise_for_status() is a synchronous call, avoiding
+        # RuntimeWarning: coroutine was never awaited.
+        mock_client = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        wh._client = mock_client
         return wh
 
     @pytest.mark.asyncio

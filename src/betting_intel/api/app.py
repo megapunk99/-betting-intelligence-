@@ -11,7 +11,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from betting_intel import __version__
 from betting_intel.api.routes import health, predict, backtest, alerts as alert_routes
@@ -21,6 +21,7 @@ from betting_intel.services import logger, setup_logging
 from betting_intel.alerts.dispatcher import alert_dispatcher
 from betting_intel.alerts.telegram import TelegramBot
 from betting_intel.alerts.discord import DiscordWebhook
+from betting_intel.monitoring.metrics import metrics_endpoint
 
 # WebSocket manager — initialized at app startup if live odds are enabled
 _odds_ws_manager = None
@@ -45,7 +46,8 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI):
         """Application lifespan: startup and shutdown."""
         logger.info("Starting API server", version=__version__)
-        db_manager.create_tables()
+        # Apply Alembic migrations to bring schema up to date
+        db_manager.run_migrations()
 
         # ── Initialize League Registry ────────────────────────────────
         global _league_registry
@@ -178,6 +180,17 @@ def create_app() -> FastAPI:
     app.include_router(predict.router)
     app.include_router(backtest.router)
     app.include_router(alert_routes.router)
+
+    # ── Prometheus Metrics Endpoint ──────────────────────────────────
+    @app.get("/metrics")
+    async def prometheus_metrics():
+        """Expose Prometheus metrics for scraping by Prometheus server.
+
+        Returns metrics in Prometheus text format with the correct
+        Content-Type header (text/plain; version=0.0.4).
+        """
+        data, status_code, headers = metrics_endpoint()
+        return Response(content=data, status_code=status_code, headers=headers)
 
     # ── WebSocket Endpoint ───────────────────────────────────────────
     @app.websocket("/ws/odds")

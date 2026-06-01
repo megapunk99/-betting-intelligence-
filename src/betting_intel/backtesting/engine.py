@@ -38,6 +38,7 @@ class BacktestResult:
     bets_df: pd.DataFrame = field(default_factory=lambda: pd.DataFrame())
     model_metrics: Dict[str, float] = field(default_factory=dict)
     errors: List[str] = field(default_factory=list)
+    fold_metrics: List[Dict[str, float]] = field(default_factory=list)  # Per-fold train/test metrics
 
 
 class WalkForwardEngine:
@@ -224,12 +225,29 @@ class WalkForwardEngine:
                         if bet:
                             bet_records.append(bet)
 
-                # Track training metrics
+                # Track training and test metrics for this fold
+                from sklearn.metrics import r2_score, mean_absolute_error
+
                 if prediction_type == "regression":
+                    # Train metrics
                     y_train_pred = model.predict(X_train.values)
-                    from sklearn.metrics import r2_score
                     train_r2 = r2_score(y_train.values, y_train_pred)
+                    train_mae = mean_absolute_error(y_train.values, y_train_pred)
                     train_scores.append(train_r2)
+
+                    # Test metrics
+                    test_r2 = r2_score(y_actual, y_pred)
+                    test_mae = mean_absolute_error(y_actual, y_pred)
+
+                    result.fold_metrics.append({
+                        "train_r2": float(train_r2),
+                        "train_mae": float(train_mae),
+                        "test_r2": float(test_r2),
+                        "test_mae": float(test_mae),
+                        "n_train": len(X_train),
+                        "n_test": len(X_test),
+                        "fold_start": int(start_idx),
+                    })
 
             except Exception as e:
                 result.errors.append(f"Predict error at window {start_idx}: {str(e)}")
@@ -344,6 +362,9 @@ class WalkForwardEngine:
                     outcome = "LOSS"
                     profit = -1.0  # 1 unit loss at -110 odds
 
+                # Determine decimal odds (prefer stored column, default to 1.91 = -110)
+                decimal_odds = row.get("decimal_odds", 1.91)
+
                 return {
                     "game_date": row["GAME_DATE"],
                     "game_id": row["GAME_ID"],
@@ -355,6 +376,7 @@ class WalkForwardEngine:
                     "market_line": float(market_line),
                     "actual_total": float(actual_total),
                     "edge_pct": float(edge_pct),
+                    "decimal_odds": float(decimal_odds),
                     "outcome": outcome,
                     "profit_units": profit,
                     "_used_baseline": False,  # Always false now — column-based proxy is primary

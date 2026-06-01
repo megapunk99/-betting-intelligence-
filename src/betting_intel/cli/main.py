@@ -168,13 +168,28 @@ def db():
 
 
 @db.command("init")
-def db_init():
-    """Initialize the database and create all tables."""
-    from betting_intel.db.connection import db_manager
+@click.option("--direct", is_flag=True, help="Use direct create_tables() instead of Alembic migrations")
+def db_init(direct: bool):
+    """Initialize the database using Alembic migrations.
 
-    click.echo("Creating database tables...")
-    db_manager.create_tables()
-    click.echo("Database initialized successfully.")
+    Runs ``alembic upgrade head`` to bring the schema to the latest version.
+    Use ``--direct`` to fall back to the old ``create_tables()`` approach.
+    """
+    from betting_intel.db.connection import db_manager, run_migrations
+
+    if direct:
+        click.echo("Creating database tables (direct)...")
+        db_manager.create_tables()
+        click.echo("Database initialized successfully.")
+        return
+
+    click.echo("Running Alembic migrations...")
+    success = run_migrations()
+    if success:
+        click.echo("Migrations applied. Database is up to date.")
+    else:
+        click.echo("Migrations failed. Try 'betting-intel db init --direct' as fallback.", err=True)
+        raise click.Abort()
 
 
 @db.command("check")

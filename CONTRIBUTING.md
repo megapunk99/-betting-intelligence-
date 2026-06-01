@@ -24,11 +24,11 @@ This project is committed to providing a welcoming environment. Be respectful, c
 ### 3. Pull Requests
 
 1. **Fork** the repo and create your branch from `main`
-2. **Install** dev dependencies: `make dev`
+2. **Install** dev dependencies (see platform-specific instructions below)
 3. **Make your changes** — keep them focused and minimal
 4. **Write tests** for any new functionality
-5. **Run tests**: `make test`
-6. **Lint**: `make lint`
+5. **Run tests** (see testing section)
+6. **Lint**: `make lint` (Linux/macOS) or `ruff check src/ tests/` (Windows)
 7. **Commit** with a clear message
 8. **Push** to your fork and open a PR
 
@@ -42,6 +42,8 @@ This project is committed to providing a welcoming environment. Be respectful, c
 - Reference the issue number if applicable
 
 ## Development Setup
+
+### Linux / macOS
 
 ```bash
 # Clone the repo
@@ -60,6 +62,41 @@ make test
 # Start the dashboard
 make run-dashboard
 ```
+
+### Windows
+
+```powershell
+# Clone the repo
+git clone https://github.com/YOUR_USERNAME/betting-intelligence.git
+cd betting-intelligence
+
+# Run the Windows bootstrap installer (recommended)
+powershell -ExecutionPolicy Bypass -File install.ps1
+
+# Or manually:
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev,dashboard]"
+
+# Copy and configure environment
+Copy-Item .env.example .env
+
+# Initialize database
+python scripts/init_db.py
+
+# Run tests
+pytest -v -m "not slow"
+
+# Start the dashboard
+streamlit run dashboard/app.py
+```
+
+> **Windows Requirements:**
+> - Python 3.10+ (add to PATH during installation)
+> - Some packages need a C compiler. If you see build errors, install
+>   [Build Tools for Visual Studio](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+> - PowerShell 5.1+ (included with Windows 10/11)
 
 ## Project Structure
 
@@ -81,12 +118,24 @@ betting-intelligence/
 
 ## Testing
 
+### Linux / macOS
+
 ```bash
-# Run all tests
+# Run all tests with coverage
 make test
 
 # Run fast tests only
 make test-fast
+```
+
+### Windows
+
+```powershell
+# Run all tests with coverage
+pytest -v --cov=src/betting_intel --cov-report=term-missing
+
+# Run fast tests only
+pytest -v -m "not slow"
 ```
 
 ## Code Style
@@ -95,6 +144,19 @@ make test-fast
 - Use type hints everywhere
 - Write docstrings for public APIs
 - Use `ruff` for linting and formatting
+
+### Running Linters
+
+```bash
+# Linux / macOS
+make lint
+make format
+
+# Windows
+ruff check src/ tests/
+ruff format --check src/ tests/
+ruff format src/ tests/   # auto-fix formatting
+```
 
 ## License
 

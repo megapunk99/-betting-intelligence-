@@ -1,4 +1,4 @@
-"""Database connection management with engine pooling."""
+"""Database connection management with engine pooling and Alembic migrations."""
 
 from __future__ import annotations
 
@@ -10,6 +10,42 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from betting_intel.config import settings
 from betting_intel.services import logger
+
+
+def run_migrations(database_url: Optional[str] = None) -> bool:
+    """
+    Run Alembic migrations to bring the database schema up to date.
+
+    Uses Alembic's Python API directly (no subprocess) to apply all
+    pending migrations up to ``head``. The database URL is resolved from
+    the project's pydantic-settings, which reads from .env / env vars.
+
+    Args:
+        database_url: Optional override for the database URL. If not
+                      provided, the project settings DATABASE_URL is used.
+
+    Returns:
+        True if migrations completed successfully, False otherwise.
+    """
+    project_root = Path(__file__).resolve().parent.parent.parent.parent
+
+    try:
+        from alembic.config import Config
+        from alembic import command
+
+        alembic_cfg = Config(str(project_root / "alembic.ini"))
+        alembic_cfg.set_main_option("script_location", str(project_root / "alembic"))
+
+        if database_url:
+            alembic_cfg.set_main_option("sqlalchemy.url", database_url)
+
+        command.upgrade(alembic_cfg, "head")
+        logger.info("Alembic migrations applied successfully")
+        return True
+
+    except Exception as exc:
+        logger.error("Alembic migrations failed", error=str(exc))
+        return False
 
 
 class DatabaseManager:
@@ -54,11 +90,30 @@ class DatabaseManager:
         return self.session_factory()
 
     def create_tables(self):
-        """Create all tables defined in the schema."""
+        """
+        Create all tables defined in the schema directly.
+
+        .. deprecated::
+            Use ``run_migrations()`` instead, which applies Alembic
+            migrations for proper version-controlled schema management.
+            This method is kept for backward compatibility.
+        """
         from betting_intel.db.schema import Base
 
         Base.metadata.create_all(self.engine)
-        logger.info("Database tables created/verified")
+        logger.info("Database tables created/verified (direct)")
+
+    def run_migrations(self) -> bool:
+        """
+        Apply Alembic migrations to bring the schema to the latest version.
+
+        Wrapper around the module-level ``run_migrations()`` that passes
+        the manager's database URL.
+
+        Returns:
+            True if migrations completed successfully.
+        """
+        return run_migrations(database_url=self.database_url)
 
     def health_check(self) -> bool:
         """Check if database is reachable."""

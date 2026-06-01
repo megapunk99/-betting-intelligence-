@@ -1,0 +1,26 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Grafana Dashboard Provisioning — Provider Config
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Grafana auto-discovers this file and loads all JSON dashboards from the
+# specified directory.
+#
+# Mounted at: /etc/grafana/provisioning/dashboards/dashboard.yml
+#
+# Reference: https://grafana.com/docs/grafana/latest/administration/provisioning/
+# ═══════════════════════════════════════════════════════════════════════════
+
+apiVersion: 1
+
+providers:
+  - name: Betting Intelligence
+    orgId: 1
+    folder: 'Betting Intel'
+    folderUid: 'betting-intel'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

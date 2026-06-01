@@ -66,6 +66,7 @@ class RecommendationEngine:
         enable_live_validation: bool = False,  # Opt-in: enables live data validation
         strict_validation: bool = True,
         enable_x_signals: bool = True,  # Twitter/X real-time intelligence
+        seed: Optional[int] = None,  # Seed for reproducible game generation
     ):
         self.bankroll = bankroll
         self.min_edge = min_edge_threshold
@@ -73,6 +74,7 @@ class RecommendationEngine:
         self.enable_live_validation = enable_live_validation
         self.enable_x_signals = enable_x_signals
         self.ranker = BetRanker()
+        self._seed = seed
         self.validator = PreGameValidator(strict_mode=strict_validation) if enable_live_validation else None
 
         # Lazy-loaded models and data
@@ -85,14 +87,39 @@ class RecommendationEngine:
 
     # ── Public API ──────────────────────────────────────────────────────
 
-    def generate_all_bets(self) -> list[BetSuggestion]:
+    def generate_all_bets(self, predictions: Optional[pd.DataFrame] = None) -> list[BetSuggestion]:
         """
         Generate ALL possible bets across every market for upcoming games.
-        Returns a flat list of BetSuggestion objects, sorted by edge descending.
+
+        Args:
+            predictions: Optional DataFrame of ML model predictions (from the pipeline).
+                When provided, these predictions are used as the signal source instead
+                of re-computing internally. Expected columns:
+                - home_team, away_team, predicted_total, market_total, edge_pct,
+                  confidence, game_date
+
+        Returns:
+            A flat list of BetSuggestion objects, sorted by edge descending.
         """
         all_bets: list[BetSuggestion] = []
 
-        # 1. Get upcoming games
+        # 1. Use ML pipeline predictions if provided
+        if predictions is not None and not predictions.empty:
+            logger.info(f"Using ML predictions ({len(predictions)} rows) as bet signal source")
+            all_bets = self._generate_bets_from_predictions(predictions)
+            if all_bets:
+                self._todays_games = [
+                    {"home": r.get("home_team", ""), "away": r.get("away_team", ""),
+                     "date": str(r.get("game_date", "")), "league": "NBA"}
+                    for _, r in predictions.iterrows()
+                ]
+                # Compute stakes and rank
+                all_bets = self._compute_staking(all_bets)
+                all_bets = self.ranker.rank_bets(all_bets)
+                all_bets.sort(key=lambda b: b.edge_pct, reverse=True)
+                return all_bets
+
+        # 2. Fall back to internal game generation
         nba_games = self._get_upcoming_nba_games()
         small_league_games = self._get_upcoming_small_league_games() if self.include_small_leagues else []
 
@@ -103,29 +130,70 @@ class RecommendationEngine:
             logger.warning("No upcoming games to predict. Returning empty bet list.")
             return []
 
-        # 2. For each game, generate all bet types
+        # 3. For each game, generate all bet types
         for game in all_games:
             game_bets = self._generate_bets_for_game(game)
             all_bets.extend(game_bets)
 
-        # 3. Compute stakes and confidence
+        # 4. Compute stakes and confidence
         all_bets = self._compute_staking(all_bets)
 
-        # 4. Rank and tag clear picks
+        # 5. Rank and tag clear picks
         all_bets = self.ranker.rank_bets(all_bets)
 
-        # 5. Integrate Twitter/X signals (real-time player intelligence)
+        # 6. Integrate Twitter/X signals
         if self.enable_x_signals:
             all_bets = self._integrate_x_signals(all_bets)
 
-        # 6. Validate against live data (injuries, odds freshness, line movement)
+        # 7. Validate against live data
         if self.validator is not None:
             all_bets = self.validator.validate_all(all_bets)
 
-        # 7. Sort by adjusted edge descending
+        # 8. Sort by adjusted edge descending
         all_bets.sort(key=lambda b: b.edge_pct, reverse=True)
 
         return all_bets
+
+    def _generate_bets_from_predictions(self, predictions: pd.DataFrame) -> list[BetSuggestion]:
+        """Generate BetSuggestion objects from ML pipeline predictions."""
+        bets: list[BetSuggestion] = []
+
+        for _, row in predictions.iterrows():
+            home = str(row.get("home_team", ""))
+            away = str(row.get("away_team", ""))
+            if not home or not away:
+                continue
+
+            pred_total = row.get("predicted_total", 0)
+            market_total = row.get("market_total", 0)
+            edge = row.get("edge_pct", 0)
+            direction = row.get("direction", "over" if edge > 0 else "under")
+            conf_str = row.get("confidence", "medium")
+            gdate = str(row.get("game_date", ""))
+
+            if market_total <= 0 or pred_total <= 0:
+                continue
+
+            confidence = (
+                Confidence.HIGH if conf_str == "high"
+                else Confidence.MEDIUM if conf_str == "medium"
+                else Confidence.LOW
+            )
+
+            from betting_intel.recommendations.bet_types import TotalBet
+            bets.append(TotalBet(
+                game_id=f"{home}_vs_{away}_{gdate}".replace(" ", "_"),
+                game_date=gdate,
+                matchup=f"{away} @ {home}",
+                side=direction.upper(),
+                market_total=float(market_total),
+                predicted_total=float(pred_total),
+                confidence=confidence,
+                reasoning=f"ML pipeline prediction: {pred_total:.1f} vs market {market_total:.1f} (edge: {edge:.2%})",
+                model_name="PipelineEnsemble",
+            ))
+
+        return bets
 
     def get_todays_card(self) -> list[BetSuggestion]:
         """Get bets for today's games only."""
@@ -279,8 +347,10 @@ class RecommendationEngine:
                     else:
                         west_teams.append(db_name)
 
-            random.shuffle(east_teams)
-            random.shuffle(west_teams)
+            # Seed random for deterministic output if seed is set
+            rng = random.Random(self._seed)
+            rng.shuffle(east_teams)
+            rng.shuffle(west_teams)
 
             today = date.today().isoformat()
             tomorrow = (date.today() + timedelta(days=1)).isoformat()
@@ -330,7 +400,8 @@ class RecommendationEngine:
             raw_df = loader.load_game_logs()
             if len(raw_df) > 0:
                 teams_in_db = list(raw_df["TEAM_NAME"].unique())
-                random.shuffle(teams_in_db)
+                rng = random.Random(self._seed)
+                rng.shuffle(teams_in_db)
                 today = date.today().isoformat()
                 for i in range(0, min(len(teams_in_db), 20), 2):
                     if i + 1 < len(teams_in_db):

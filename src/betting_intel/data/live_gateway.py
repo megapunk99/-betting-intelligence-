@@ -169,6 +169,7 @@ class LiveDataGateway:
         self._odds_cache = _CachedValue(ttl_seconds=odds_ttl)
         self._roster_cache = _CachedValue(ttl_seconds=roster_ttl)
         self._movement_cache = _CachedValue(ttl_seconds=movement_ttl)
+        self._odds_dataframe_cache = _CachedValue(ttl_seconds=600)  # 10-min cache for DataFrame endpoint
 
         self._db_path = db_path
         self._odds_api_key = odds_api_key or self._try_get_env_key()
@@ -424,6 +425,152 @@ class LiveDataGateway:
             "details": results,
             "all_fresh": fresh_count == len(results),
         }
+
+    def get_live_odds_dataframe(self, force_refresh: bool = False) -> "pd.DataFrame":
+        """
+        Fetch live NBA odds from TheOddsAPI and return as a structured DataFrame.
+
+        Directly calls https://api.the-odds-api.com/v4/sports/basketball_nba/odds
+        with the configured ODDS_API_KEY. Returns columns:
+          game_id, home_team, away_team, game_date, market_total,
+          over_odds, under_odds, home_ml_odds, away_ml_odds,
+          spread_line, spread_home_odds, spread_away_odds
+
+        Results are cached for 10 minutes (600 seconds) to avoid burning API quota.
+
+        Returns:
+            pd.DataFrame with the columns above, or empty DataFrame on failure.
+        """
+        import pandas as pd
+
+        if not force_refresh:
+            cached = self._odds_dataframe_cache.get()
+            if cached is not None:
+                return cached
+
+        try:
+            result_df = self._fetch_odds_dataframe_direct()
+            self._odds_dataframe_cache.set(result_df)
+            return result_df
+        except Exception as e:
+            logger.error(f"Failed to fetch odds DataFrame: {e}")
+            return pd.DataFrame()
+
+    def _fetch_odds_dataframe_direct(self) -> "pd.DataFrame":
+        """Make direct HTTP call to TheOddsAPI and parse into a DataFrame."""
+        import pandas as pd
+        import json
+        import urllib.request
+        import urllib.error
+
+        api_key = self._odds_api_key
+        if not api_key or api_key == "your-api-key-here":
+            logger.warning("No valid ODDS_API_KEY configured for direct odds fetch")
+            return pd.DataFrame()
+
+        url = (
+            f"https://api.the-odds-api.com/v4/sports/basketball_nba/odds"
+            f"?apiKey={api_key}"
+            f"&regions=us"
+            f"&markets=h2h,spreads,totals"
+            f"&oddsFormat=american"
+        )
+
+        req = urllib.request.Request(url, headers={"User-Agent": "betting-intel/1.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                status = resp.status
+                raw = resp.read().decode("utf-8")
+                if status != 200:
+                    raise RuntimeError(f"TheOddsAPI returned HTTP {status}: {raw[:200]}")
+                data = json.loads(raw)
+        except urllib.error.HTTPError as e:
+            status = e.code
+            body = e.read().decode("utf-8", errors="replace")
+            if status == 429:
+                raise RuntimeError(f"TheOddsAPI quota exceeded (429): {body}") from e
+            raise RuntimeError(f"TheOddsAPI HTTP {status}: {body}") from e
+        except urllib.error.URLError as e:
+            raise RuntimeError(f"TheOddsAPI connection failed: {e}") from e
+
+        if not isinstance(data, list):
+            return pd.DataFrame()
+
+        records = []
+        for game in data:
+            game_id = game.get("id", "")
+            home_team = game.get("home_team", "")
+            away_team = game.get("away_team", "")
+            game_date = game.get("commence_time", "")[:10]
+
+            home_ml_odds = None
+            away_ml_odds = None
+            spread_line = None
+            spread_home_odds = None
+            spread_away_odds = None
+            market_total = None
+            over_odds = None
+            under_odds = None
+
+            bookmakers = game.get("bookmakers", [])
+            if bookmakers:
+                # Use the first bookmaker's markets
+                markets = bookmakers[0].get("markets", [])
+                for market in markets:
+                    key = market.get("key", "")
+                    outcomes = market.get("outcomes", [])
+
+                    if key == "h2h":
+                        for outcome in outcomes:
+                            name = outcome.get("name", "")
+                            price = outcome.get("price")
+                            if price is not None:
+                                if name == home_team:
+                                    home_ml_odds = price
+                                elif name == away_team:
+                                    away_ml_odds = price
+
+                    elif key == "spreads":
+                        for outcome in outcomes:
+                            name = outcome.get("name", "")
+                            point = outcome.get("point")
+                            price = outcome.get("price")
+                            if point is not None and price is not None:
+                                spread_line = float(point)
+                                if name == home_team:
+                                    spread_home_odds = price
+                                elif name == away_team:
+                                    spread_away_odds = price
+
+                    elif key == "totals":
+                        for outcome in outcomes:
+                            name = outcome.get("name", "")
+                            point = outcome.get("point")
+                            price = outcome.get("price")
+                            if point is not None:
+                                market_total = float(point)
+                                if price is not None:
+                                    if name == "Over":
+                                        over_odds = price
+                                    elif name == "Under":
+                                        under_odds = price
+
+            records.append({
+                "game_id": game_id,
+                "home_team": home_team,
+                "away_team": away_team,
+                "game_date": game_date,
+                "market_total": market_total,
+                "over_odds": over_odds,
+                "under_odds": under_odds,
+                "home_ml_odds": home_ml_odds,
+                "away_ml_odds": away_ml_odds,
+                "spread_line": spread_line,
+                "spread_home_odds": spread_home_odds,
+                "spread_away_odds": spread_away_odds,
+            })
+
+        return pd.DataFrame(records)
 
     def load_all_live_data(self) -> dict:
         """

@@ -105,6 +105,7 @@ from betting_intel.validation.cross_validation import TimeSeriesCrossValidator
 from betting_intel.monitoring.drift import PerformanceTracker
 from betting_intel.backtesting.metrics import BacktestMetrics
 from betting_intel.services.logging import get_logger
+from betting_intel.services.journal import BetJournal
 
 # Module availability flags (for graceful degradation at runtime)
 HAS_RECOMMENDATIONS = True
@@ -218,6 +219,15 @@ class PredictionPipeline:
         self.model = None  # Trained model for tomorrow predictions (full-data)
         self.model_feature_cols: List[str] = []  # Feature columns used by the model
         self.tomorrow_recommendations_final: List[Dict[str, Any]] = []  # Real edge-based recs
+        self.bet_journal: Optional[BetJournal] = None  # Lazy-initialized in live mode
+        self._feature_pipeline: Optional[FeatureEngineer] = None  # Shared feature transformer
+        self._pipeline_raw_df: Optional[pd.DataFrame] = None  # Raw data cached for pipeline inference
+
+    def _init_journal(self) -> BetJournal:
+        """Lazy-initialize the bet journal."""
+        if self.bet_journal is None:
+            self.bet_journal = BetJournal(db_path=str(PROJECT_ROOT / "data" / "bets_journal.db"))
+        return self.bet_journal
 
     # ──────────────────────────────────────────────────────────────
     # 5a.  Data Loading
@@ -242,7 +252,12 @@ class PredictionPipeline:
         return df
 
     def _load_live_data(self) -> Optional[pd.DataFrame]:
-        """Fetch live upcoming games via TheOddsAPI."""
+        """Fetch live upcoming games via TheOddsAPI.
+
+        Distinguishes between:
+        - HTTP 429 (quota exceeded): raises a clear error, no fallback to historical
+        - Other errors: falls back to historical data with a warning
+        """
         # Try LiveDataGateway (the canonical odds integration module)
         try:
             from betting_intel.data.live_gateway import LiveDataGateway
@@ -254,6 +269,12 @@ class PredictionPipeline:
                 self.results["metadata"]["data_source"] = "live_gateway"
                 return df
         except Exception as e:
+            err_msg = str(e).lower()
+            if "429" in err_msg or "quota" in err_msg or "rate limit" in err_msg or "too many requests" in err_msg:
+                print(f"  ❌  API QUOTA EXCEEDED (HTTP 429): {e}")
+                print("  ❌  Cannot continue in --live mode without a valid TheOddsAPI quota.")
+                print("  ❌  Set ODDS_API_KEY in your .env file or wait for quota to reset.")
+                raise RuntimeError(f"TheOddsAPI quota exceeded: {e}") from e
             print(f"  ⚠  LiveDataGateway failed: {e}")
 
         return None
@@ -530,6 +551,8 @@ class PredictionPipeline:
 
         In live mode, train_and_predict uses 80/20 split for evaluation,
         but predicting tomorrow requires a model trained on 100% of data.
+
+        Also stores the FeatureEngineer pipeline for consistent inference.
         """
         print("  🏋  Training model on FULL dataset for tomorrow predictions...")
 
@@ -577,6 +600,17 @@ class PredictionPipeline:
                 print(f"  ✅  Full-data RandomForest trained on {len(X)} rows with {len(feature_cols)} features")
             except Exception as e:
                 print(f"  ⚠  Full-data model training failed: {e}")
+                return
+
+        # Store the feature pipeline for consistent inference
+        try:
+            self._feature_pipeline = FeatureEngineer()
+            # Keep a reference to the raw data for pipeline-based feature construction
+            if hasattr(self, 'df') and self.df is not None:
+                self._pipeline_raw_df = self.df.copy()
+            print(f"  ✅  Feature pipeline stored for consistent inference")
+        except Exception as e:
+            print(f"  ⚠  Feature pipeline storage failed (non-fatal): {e}")
 
     # ──────────────────────────────────────────────────────────────
     # 5e.  Build Feature Vector for a Tomorrow Game
@@ -585,9 +619,18 @@ class PredictionPipeline:
     def _build_tomorrow_feature_vector(self, home_team: str, away_team: str) -> Optional[pd.Series]:
         """Build a model-compatible feature vector for a specific tomorrow matchup.
 
-        For each feature column the model expects, computes the rolling average
-        from the team's recent games. Interaction features (diff columns) are
-        computed fresh from the per-team averages rather than from historical diffs.
+        Uses the stored FeatureEngineer pipeline (if available) for consistent
+        feature computation between training and inference. Falls back to
+        prefix-based extraction when the pipeline is unavailable.
+
+        The pipeline approach:
+          1. Extracts the two teams' most recent games from the training df
+          2. Runs the same FeatureEngineer transform on that subset
+          3. Takes the last computed row as the feature vector for this matchup
+
+        This guarantees that every feature (including non-standard ones like
+        elo_home_pre, pace_factor, sos_trend_home) is computed the same way
+        for both historical training and live inference.
 
         Returns a pd.Series matching self.model_feature_cols, or None if unavailable.
         """
@@ -600,6 +643,45 @@ class PredictionPipeline:
         if "home_team" not in df.columns or "away_team" not in df.columns:
             return None
 
+        # ── Pipeline-based approach (preferred) ──────────────────────────
+        if (
+            self._feature_pipeline is not None
+            and hasattr(self._feature_pipeline, 'build_all_features')
+        ):
+            try:
+                # Get recent games for both teams from the features_df
+                team_mask = (
+                    (df.get("home_team", "") == home_team)
+                    | (df.get("away_team", "") == away_team)
+                    | (df.get("home_team", "") == away_team)
+                    | (df.get("away_team", "") == home_team)
+                )
+                team_games = df[team_mask].tail(40).copy()
+
+                if len(team_games) >= 5 and self._pipeline_raw_df is not None:
+                    # Apply the same feature pipeline to this subset
+                    pipeline_features = self._feature_pipeline.build_all_features(
+                        team_games, self._pipeline_raw_df
+                    )
+
+                    if pipeline_features is not None and len(pipeline_features) > 0:
+                        last_row = pipeline_features.iloc[-1]
+                        # Build feature vector from available columns
+                        feature_dict = {}
+                        for col in self.model_feature_cols:
+                            if col in last_row.index:
+                                val = last_row[col]
+                                feature_dict[col] = float(val) if pd.notna(val) else 0.0
+                            else:
+                                feature_dict[col] = 0.0
+
+                        result = pd.Series(feature_dict)
+                        if not result.isnull().any():
+                            return result
+            except Exception as pipe_e:
+                logger.debug(f"Pipeline feature extraction failed, falling back: {pipe_e}")
+
+        # ── Fallback: prefix-based feature extraction ────────────────────
         def _team_avg(team: str, base_stat: str, n: int = 10) -> float:
             """Average `base_stat` for `team` across recent games on either side."""
             home_col = f"home_{base_stat}"
@@ -679,13 +761,17 @@ class PredictionPipeline:
                 print(f"  ⚠  Model predict failed for {home} vs {away}: {e}")
                 continue
 
-            # Market odds
-            market_total = row.get("market_total", 220.0)
+            # Market odds — require a real market line; skip if none
+            market_total = row.get("market_total")
+            if market_total is None or market_total <= 0:
+                print(f"  ⚠  No real market line for {home} vs {away} — skipping")
+                continue
+
             home_ml = row.get("home_ml_odds", -110)
             away_ml = row.get("away_ml_odds", -110)
 
             # Compute real edge: (model_prediction - market) / market
-            edge = (predicted_total - market_total) / market_total if market_total else 0.0
+            edge = (predicted_total - market_total) / market_total
             direction = "over" if edge > 0 else "under"
             abs_edge = abs(edge)
 
@@ -720,6 +806,32 @@ class PredictionPipeline:
             self.results["tomorrow_predictions"] = tomorrow_preds
             self.tomorrow_recommendations_final = tomorrow_preds
 
+            # Record bets in journal
+            try:
+                journal = self._init_journal()
+                journal_bets = []
+                for tp in tomorrow_preds:
+                    direction = tp.get("direction", "over")
+                    journal_bets.append({
+                        "game_date": tp.get("game_date", ""),
+                        "game_id": tp.get("game_id", ""),
+                        "home_team": tp.get("home_team", ""),
+                        "away_team": tp.get("away_team", ""),
+                        "bet_type": f"total_{direction}",
+                        "side": direction.upper(),
+                        "model_prediction": tp.get("predicted_total"),
+                        "market_line": tp.get("market_total"),
+                        "edge_pct": tp.get("edge_pct"),
+                        "strategy": "ml_pipeline",
+                        "model_version": "3.0",
+                        "confidence": tp.get("confidence", ""),
+                        "league": "NBA",
+                    })
+                if journal_bets:
+                    journal.record_bets(journal_bets)
+            except Exception as j_e:
+                logger.debug(f"Journal recording failed (non-fatal): {j_e}")
+
         return tomorrow_preds
 
     # ──────────────────────────────────────────────────────────────
@@ -740,8 +852,8 @@ class PredictionPipeline:
                 engine = RecommendationEngine()
                 ranker = BetRanker()
 
-                # Generate all bet types — the engine fetches games internally
-                all_bets = engine.generate_all_bets()
+                # Generate all bet types — pass ML predictions as signal source
+                all_bets = engine.generate_all_bets(predictions=predictions_df)
                 if all_bets:
                     print(f"  ✅  Generated {len(all_bets)} total bet opportunities")
 
@@ -856,9 +968,9 @@ class PredictionPipeline:
                     print(f"  ✅  Generated {len(all_props_list)} player props")
                     for prop in all_props_list[:5]:
                         # BetSuggestion object — use .as_dict() or attribute access
-                        pd = prop.as_dict() if hasattr(prop, 'as_dict') else prop
-                        print(f"       {pd.get('player', '?')}: {pd.get('prop_type', '?')} "
-                              f"→ {pd.get('line', 0)} (edge: {pd.get('edge', 0):.2%})")
+                        prop_dict = prop.as_dict() if hasattr(prop, 'as_dict') else prop
+                        print(f"       {prop_dict.get('player', '?')}: {prop_dict.get('prop_type', '?')} "
+                              f"→ {prop_dict.get('line', 0)} (edge: {prop_dict.get('edge', 0):.2%})")
                     props = [
                         {
                             "player": p.get("player", "?"),
@@ -1584,6 +1696,7 @@ class PredictionPipeline:
         # 4b. Predict tomorrow's games using full-data model (only in live mode)
         if self.args.live and self.model is not None:
             tomorrow_preds = self.predict_tomorrow_games()
+            # Journal already records bets inside predict_tomorrow_games()
             if tomorrow_preds:
                 # Convert tomorrow predictions into recommendation dicts
                 tomorrow_recs = []

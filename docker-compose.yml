@@ -155,8 +155,17 @@ services:
     image: grafana/grafana:10.4
     container_name: betting-grafana
     restart: unless-stopped
+    depends_on:
+      - prometheus
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_UID: betting-intel-overview
     ports:
       - "3000:3000"
     profiles:
