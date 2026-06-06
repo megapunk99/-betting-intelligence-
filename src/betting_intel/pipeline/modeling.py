@@ -882,6 +882,153 @@ class ModelingMixin:
         print(f"  ✅  Generated {len(df)} upcoming games from nba_api (fallback)")
         return df
 
+    # ── Multi-League Training ──────────────────────────────────────
+
+    def train_multi_league_models(self):
+        """Train per-league LightGBM models for WNBA, Euroleague, NCAAB, etc.
+
+        Called after the NBA EnhancedEnsemble is trained, this fetches
+        historical data from ESPN for each supported league and trains
+        per-league LightGBM models. Models are saved via ModelRegistry
+        and loaded at prediction time.
+        """
+        print("\n" + "=" * 70)
+        print("  🏀  MULTI-LEAGUE MODEL TRAINING")
+        print("  ℹ  Training per-league models for WNBA, Euroleague, NCAAB")
+        print("=" * 70)
+
+        from betting_intel.pipeline.multi_league import train_all_basketball_models
+
+        results = train_all_basketball_models(
+            leagues=None,  # Auto-detect leagues with ESPN API
+            output_dir=str(self.args.model_dir),
+        )
+
+        # Store results for reporting
+        trained = [k for k, v in results.items() if v.get("status") == "trained"]
+        if trained:
+            print(f"  ✅  Multi-league models trained: {', '.join(trained)}")
+        self.results["metadata"]["multi_league_models"] = results
+
+    # ── Multi-League Predictions ───────────────────────────────────
+
+    def predict_multi_league_games(self) -> list[Dict[str, Any]]:
+        """Predict upcoming games for ALL basketball leagues with trained models.
+
+        Called after predict_tomorrow_games() (which handles NBA), this
+        predicts games for WNBA, NCAAB using per-league LightGBM models.
+        Euroleague and NBL require TheOddsAPI for real odds, but don't
+        have ESPN historical data for training — they use league baselines.
+
+        Uses pre-loaded models to avoid redundant disk I/O.
+
+        Returns:
+            List of prediction dicts merged with tomorrow predictions
+        """
+        print("\n" + "=" * 70)
+        print("  🔮  MULTI-LEAGUE TOMORROW PREDICTIONS")
+        print("=" * 70)
+
+        from betting_intel.pipeline.multi_league import (
+            predict_league_games,
+            load_league_model,
+            get_upcoming_league_games,
+        )
+        from betting_intel.data.basketball_leagues import (
+            LEAGUES_WITH_ODDS, LEAGUE_BY_KEY,
+        )
+
+        all_predictions: list[Dict[str, Any]] = []
+
+        # Which leagues to try (skip NBA — already handled)
+        target_leagues = [lg for lg in LEAGUES_WITH_ODDS if lg.key != "nba"]
+
+        for league in target_leagues:
+            # Load model once (avoid double-load bug)
+            model, feature_cols = load_league_model(league.key)
+            if model is None:
+                print(f"  No trained model for {league.key} — skipping. "
+                      f"Will use league-average baselines instead.")
+                continue
+
+            # Fetch upcoming games
+            upcoming_df = self._fetch_league_upcoming(league)
+            if upcoming_df is None or upcoming_df.empty:
+                print(f"  No upcoming games for {league.key}")
+                continue
+
+            # Predict — pass pre-loaded model to avoid redundant disk load
+            predictions = predict_league_games(
+                league.key, upcoming_df,
+                model=model, feature_cols=feature_cols,
+            )
+            all_predictions.extend(predictions)
+
+        if all_predictions:
+            print(f"\n  Multi-league: {len(all_predictions)} total predictions")
+
+        return all_predictions
+
+    def _fetch_league_upcoming(self, league) -> Optional[pd.DataFrame]:
+        """Fetch upcoming games for a specific league."""
+        # Try TheOddsAPI first
+        from betting_intel.pipeline.bootstrap import ODDS_API_KEY
+
+        if ODDS_API_KEY and ODDS_API_KEY not in ("your-api-key-here", "", "REPLACE_ME_WITH_YOUR_ODDS_API_KEY"):
+            try:
+                from betting_intel.data.odds_fetcher import OddsAPIClient
+                client = OddsAPIClient(api_key=ODDS_API_KEY, cache_ttl_minutes=1)
+                odds_data = client.fetch_odds_for_sport(league.odds_sport_key, regions="us", markets="totals")
+                if odds_data and len(odds_data) > 0:
+                    records = []
+                    for game in odds_data:
+                        home = game.get("home_team", "")
+                        away = game.get("away_team", "")
+                        if not home or not away:
+                            continue
+                        # Extract total from first bookmaker
+                        market_total = 0
+                        bookmakers = game.get("bookmakers", [])
+                        if bookmakers:
+                            markets = bookmakers[0].get("markets", [])
+                            if markets:
+                                outcomes = markets[0].get("outcomes", [])
+                                for o in outcomes:
+                                    if o.get("name") == "Over":
+                                        market_total = o.get("point", 0)
+                                        break
+                        records.append({
+                            "game_id": game.get("id", f"{league.key}_{home}_{away}"),
+                            "home_team": home,
+                            "away_team": away,
+                            "game_date": game.get("commence_time", "")[:10],
+                            "league": league.key,
+                            "market_total": market_total,
+                            "home_ml_odds": -110,
+                            "away_ml_odds": -110,
+                        })
+                    if records:
+                        return pd.DataFrame(records)
+            except Exception as e:
+                logger.debug(f"TheOddsAPI for {league.key} failed: {e}")
+
+        # Fallback: ESPN API
+        if league.has_espn_api:
+            try:
+                from betting_intel.data.espn_hoops import ESPNLeagueSource
+                source = ESPNLeagueSource()
+                df = source.load_upcoming(league.key, limit=20)
+                if df is not None and not df.empty:
+                    df["league"] = league.key
+                    df["market_total"] = league.avg_total
+                    df["home_ml_odds"] = -110
+                    df["away_ml_odds"] = -110
+                    return df
+            except Exception as e:
+                logger.debug(f"ESPN upcoming for {league.key} failed: {e}")
+
+        return None
+
     # ── Predict Tomorrow's Games ─────────────────────────────────────
 
     def predict_tomorrow_games(self) -> List[Dict[str, Any]]:
