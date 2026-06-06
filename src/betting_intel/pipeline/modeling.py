@@ -932,10 +932,9 @@ class ModelingMixin:
         from betting_intel.pipeline.multi_league import (
             predict_league_games,
             load_league_model,
-            get_upcoming_league_games,
         )
         from betting_intel.data.basketball_leagues import (
-            LEAGUES_WITH_ODDS, LEAGUE_BY_KEY,
+            LEAGUES_WITH_ODDS,
         )
 
         all_predictions: list[Dict[str, Any]] = []
