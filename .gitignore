@@ -108,3 +108,9 @@ data/subscribers.json
 data/ats_history.json
 data/pipeline_history.json
 data/predictions/*.jsonl
+
+# Pipeline & engine export artifacts
+models/saved/engine_ensemble.*
+models/saved/pipeline_predictions.*
+models/saved/pipeline_metadata.*
+models/saved/momentum_engine_cache.*

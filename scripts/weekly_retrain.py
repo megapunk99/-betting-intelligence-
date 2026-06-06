@@ -255,10 +255,10 @@ def main():
     else:
         logger.info(f"\n  Skipping pipeline (--skip-pipeline)")
 
-    # Phase 4: Clear caches
+    # Phase 5: Clear caches (includes momentum model cache — force retrain)
     phase_clear_engine_caches()
 
-    # Phase 5: Regenerate engine
+    # Phase 6: Regenerate engine (loads pipeline predictions or pre-trained models)
     ok &= phase_regenerate_engine()
 
     # Summary

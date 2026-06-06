@@ -163,7 +163,16 @@ def clear_engine_caches():
 
 
 def regenerate_engine():
-    """Load the RecommendationEngine once to regenerate all caches with fresh data."""
+    """Load the RecommendationEngine once to regenerate all caches with fresh data.
+
+    The engine now loads predictions from multiple signal sources in priority order:
+      1. Pipeline predictions from models/saved/pipeline_predictions.pkl
+      2. Pre-trained EnhancedEnsemble from models/saved/engine_ensemble.joblib
+      3. Real market odds from TheOddsAPI
+      4. Internal momentum model (fallback)
+
+    After regeneration, the engine caches its results so subsequent calls are instant.
+    """
     logger.info(f"\n{CYAN}[3/4] Regenerating engine with fresh data...{RESET}")
 
     try:

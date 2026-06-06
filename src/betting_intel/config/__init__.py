@@ -70,7 +70,11 @@ MONTE_CARLO_SIMULATIONS = 10000                    # Number of MC simulations
 PREFERRED_MODEL = "lightgbm"                       # Default model strategy
 
 # ── API / External Services ───────────────────────────────────────────
-ODDS_API_KEY = ""                                   # TheOddsAPI key
+# IMPORTANT: This reads from .env via the Settings class (pydantic-settings).
+# The Settings class loads ODDS_API_KEY from the .env file automatically.
+# If not set in .env, the default is "your-api-key-here" (handled gracefully
+# by the engine's _fetch_real_odds_and_schedule method).
+ODDS_API_KEY = _settings.odds_api_key               # TheOddsAPI key (from .env)
 ODDS_API_BASE_URL = "https://api.the-odds-api.com"   # TheOddsAPI v4 base URL
 ODDS_CACHE_TTL_MINUTES = 5                          # Cache TTL for odds data
 CACHE_DIR = PROJECT_ROOT / "cache"                   # Cache directory for API responses
