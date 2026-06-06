@@ -45,8 +45,15 @@ class DataLoadingMixin:
 
         Distinguishes between:
         - HTTP 429 (quota exceeded): raises a clear error, no fallback to historical
+        - HTTP 401 (bad key / no key): returns None so nba_api fallback can generate schedule
         - Other errors: falls back to historical data with a warning
         """
+        # Skip if API key is a placeholder — avoids stale cache with wrong team name format
+        if not ODDS_API_KEY or ODDS_API_KEY in ("your-api-key-here", "", "REPLACE_ME_WITH_YOUR_ODDS_API_KEY"):
+            print("  ⚠  No valid ODDS_API_KEY configured. Skipping live odds fetch.")
+            print("  ℹ  The pipeline will generate upcoming games from NBA static data instead.")
+            return None
+
         try:
             from betting_intel.data.live_gateway import LiveDataGateway
             gateway = LiveDataGateway(odds_api_key=ODDS_API_KEY)
@@ -63,6 +70,9 @@ class DataLoadingMixin:
                 print("  ❌  Cannot continue in --live mode without a valid TheOddsAPI quota.")
                 print("  ❌  Set ODDS_API_KEY in your .env file or wait for quota to reset.")
                 raise RuntimeError(f"TheOddsAPI quota exceeded: {e}") from e
+            if "401" in err_msg or "unauthorized" in err_msg:
+                print("  ⚠  Invalid ODDS_API_KEY (HTTP 401). Using NBA static data fallback.")
+                return None
             print(f"  ⚠  LiveDataGateway failed: {e}")
 
         return None

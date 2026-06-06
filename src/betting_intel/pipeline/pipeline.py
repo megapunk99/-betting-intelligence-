@@ -165,7 +165,10 @@ class PredictionPipeline(
             self._train_all_data_model(self.features_df)
 
         # ── 4b. Predict tomorrow's games (live mode) ───────────────────
-        if self.args.live and self.model is not None and self._upcoming_games_df is not None:
+        # _run_tomorrow_predictions -> predict_tomorrow_games handles the fallback
+        # to nba_api when TheOddsAPI is unavailable, so we call it even when
+        # _upcoming_games_df is None (the fallback generates the schedule).
+        if self.args.live and self.model is not None:
             self._run_tomorrow_predictions()
 
         # ── 5. Edge detection ─────────────────────────────────────────
@@ -284,7 +287,8 @@ class PredictionPipeline(
             self._upcoming_games_df = live_df
             print(f"  ✅  Loaded {len(live_df)} upcoming games from live odds")
         else:
-            print("  ⚠  No live odds available. Tomorrow predictions will be skipped.")
+            print("  ⚠  No live odds available. Using NBA static data for schedule.")
+            print("  ℹ  Predictions will use league-average market totals for edge estimates.")
             self._upcoming_games_df = None
 
     def _prepare_predictions_for_recommendations(self):
