@@ -1,173 +1,32 @@
-# ═══════════════════════════════════════════════════════════════════════════
-# Commit Messages — Betting Intelligence
-# Date: 2026-06-01
-# ═══════════════════════════════════════════════════════════════════════════
-#
-# These are organized into logical groups. The recommended order is:
-#   1. Windows setup (foundational — enables development on Windows)
-#   2. Async warning fix (small bugfix)
-#   3. CI improvements (quality gate)
-#   4. Alembic migrations (schema versioning)
-#   5. Monitoring stack (observability)
-#   6. Prometheus gitignore fix (cleanup)
-#
-# ───────────────────────────────────────────────────────────────────────────
+Overhaul live odds, ensemble stacking, overfitting detection, and bet journal
 
-# ═══════════════════════════════════════════════════════════════════════════
-# COMMIT 1 — Windows development setup
-# ═══════════════════════════════════════════════════════════════════════════
-# Files:
-#   .env.example        (replaced with comprehensive template)
-#   requirements.txt    (new — pinned deps for pip install -r)
-#   install.ps1         (new — PowerShell bootstrap installer)
-#   README.md           (added Windows quick-start section)
-#   CONTRIBUTING.md     (updated with Windows development instructions)
+10 critical pipeline fixes:
 
-Add Windows developer setup: .env.example, requirements.txt, install.ps1
+ISSUE 1 - Live odds integration: LiveDataGateway.get_live_odds_dataframe() with direct
+TheOddsAPI v4 calls + 10-min cache. EdgeDetector.detect_all() accepts live_market_df.
+Removed hardcoded 220.0 market_total fallback.
 
-- Expand .env.example to document all 40+ environment variables with
-  descriptions, defaults, and source links (TheOddsAPI, Telegram, etc.)
-- Add requirements.txt with pinned dependencies for pip install -r
-  (Windows-friendly alternative to pip install -e ".[dev,dashboard]")
-- Add install.ps1 — PowerShell bootstrap script that creates a venv,
-  installs dependencies, copies .env.example to .env, and initializes
-  the database with a single command
-- Add Windows quick-start section to README.md with PowerShell commands
-- Update CONTRIBUTING.md with Windows-specific dev setup, testing, and
-  linting instructions
+ISSUE 2 - Removed duplicate --live line from main.py argparse epilog.
 
-Closes: #windows-setup
+ISSUE 3 - Bankroll simulation: decimal_odds now read from each bet record instead of
+hardcoded 1.91. Added decimal_odds column to backtesting bet records.
 
+ISSUE 4 - Ensemble builder now trains Ridge regression meta-learner with TimeSeriesSplit
+on out-of-fold predictions instead of simple average.
 
-# ═══════════════════════════════════════════════════════════════════════════
-# COMMIT 2 — Fix RuntimeWarning in Discord webhook tests
-# ═══════════════════════════════════════════════════════════════════════════
-# Files:
-#   tests/test_alerts_odds.py   (fixed mock response type)
+ISSUE 5 - Overfitting detector: _check_overfitting now computes train/test metrics from
+real per-fold fold_metrics (tracked in walk-forward loop).
 
-Fix RuntimeWarning: unawaited coroutine in Discord webhook tests
+ISSUE 6 - Feature pipeline: _build_tomorrow_feature_vector stores FeatureEngineer pipeline
+for consistent train/inference feature computation.
 
-The TestDiscordWebhook fixture mocked httpx.AsyncClient.post as an
-AsyncMock, which returned another AsyncMock.  When send_embed called
-resp.raise_for_status() on that mock, it returned an unawaited coroutine
-object, generating 12 RuntimeWarning instances across the test class.
+ISSUE 7 - Recommendation engine: generate_all_bets() accepts predictions DataFrame and
+uses ML pipeline predictions as signal source.
 
-Fix: Make client.post return a regular MagicMock response with a
-synchronous raise_for_status, matching the real httpx.Response API
-where raise_for_status() is synchronous and returns None.
+ISSUE 8 - Renamed shadowing variable 'pd' to 'prop_dict' in generate_player_props.
 
-Also add filterwarnings = ["error::RuntimeWarning"] to pyproject.toml's
-pytest config so any future RuntimeWarning regression causes test
-failures instead of silent warnings.
+ISSUE 9 - 429/quota error handling in _load_live_data: quota errors raise RuntimeError,
+other errors fall back to historical data.
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# COMMIT 3 — CI quality gates: Windows matrix, coverage thresholds
-# ═══════════════════════════════════════════════════════════════════════════
-# Files:
-#   .github/workflows/ci.yml    (expanded test matrix, coverage threshold)
-#   .coveragerc                 (new — coverage config)
-#   pyproject.toml              (filterwarnings for RuntimeWarning)
-
-Enhance CI: Windows test matrix, coverage thresholds, warning gates
-
-- Add windows-latest to the test matrix (3 Python versions × 2 OSes = 6
-  parallel jobs) alongside the existing ubuntu-latest
-- Add .coveragerc with fail_under=40, branch coverage, sorted worst-first
-  output, and HTML/XML report paths under reports/coverage/
-- Wire CI to use --cov-config=.coveragerc --cov-fail-under=40 so the
-  pipeline fails if total coverage drops below 40%
-- Add filterwarnings = ["error::RuntimeWarning"] to pytest config to
-  prevent async mocking regressions from reaching production
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# COMMIT 4 — Alembic migrations for schema versioning
-# ═══════════════════════════════════════════════════════════════════════════
-# Files:
-#   alembic.ini                         (new — Alembic config)
-#   alembic/env.py                      (new — runtime DB URL resolution)
-#   alembic/script.py.mako              (new — migration template)
-#   alembic/versions/                   (new — migration scripts)
-#   alembic/versions/0001_initial_schema.py  (initial idempotent migration)
-#   src/betting_intel/db/connection.py  (added run_migrations using Python API)
-#   src/betting_intel/cli/main.py       (db init now runs alembic upgrade head)
-#   src/betting_intel/api/app.py        (lifespan runs migrations on startup)
-#   scripts/init_db.py                  (updated to use Alembic by default)
-#   Makefile                            (updated db-* targets)
-
-Add Alembic migrations for version-controlled schema management
-
-Replace the flat create_tables() approach with proper Alembic migrations:
-- Set up alembic.ini + env.py that resolves the database URL from
-  pydantic-settings (reads from .env at runtime), imports all SQLAlchemy
-  models for autogenerate support, and handles both online and offline
-  modes
-- Create idempotent initial migration (0001_initial_schema.py) that
-  checks inspector.get_table_names() before each op.create_table() —
-  safe to run on both fresh databases and existing ones created by the
-  old create_tables() approach
-- Add run_migrations() to connection.py using Alembic's Python API
-  (no fragile subprocess calls) with proper Config setup
-- Update CLI: betting-intel db init now runs alembic upgrade head by
-  default; --direct flag falls back to create_tables()
-- Update api/app.py lifespan to run migrations on startup
-- Update scripts/init_db.py with --direct fallback
-- Overhaul Makefile db-* targets: db-upgrade, db-downgrade, db-migrate,
-  db-history, db-current all use PYTHONPATH=src
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# COMMIT 5 — Prometheus & Grafana monitoring stack
-# ═══════════════════════════════════════════════════════════════════════════
-# Files:
-#   prometheus.yml                      (new — scraping config)
-#   grafana/datasources/prometheus.yml  (new — auto-provisioned datasource)
-#   grafana/dashboards/dashboard.yml    (new — dashboard provider)
-#   grafana/dashboards/betting-intel-overview.json  (new — 20-panel dashboard)
-#   docker-compose.yml                  (updated Grafana volumes + env)
-#   src/betting_intel/api/app.py        (added /metrics endpoint)
-
-Add Prometheus & Grafana monitoring stack with starter dashboard
-
-- Create prometheus.yml scraping config targeting the API's /metrics
-  endpoint on port 8000 with sensible scrape intervals (10s API, 30s
-  self-monitoring)
-- Add Grafana auto-provisioning: Prometheus datasource pointing to
-  betting-prometheus:9090, dashboard provider for auto-loading
-- Create comprehensive starter dashboard (betting-intel-overview.json)
-  with 20 panels organized into 5 sections:
-    • System Overview — request rate, p95 latency, total predictions,
-      bankroll, drawdown %
-    • API Performance — request rate by endpoint, latency timeseries
-    • Prediction & Model Metrics — rate by model, avg latency, error
-      rate, model performance
-    • Bankroll & Backtest — bankroll over time, drawdown, win rate,
-      Sharpe ratio by strategy
-    • Pipeline & Database — run duration, DB query latency
-- Update docker-compose.yml: mount Grafana provisioning configs with
-  read-only volumes, add depends_on: prometheus, set home dashboard UID
-- Register /metrics endpoint on the FastAPI app that returns Prometheus
-  metrics in text format via the existing metrics_endpoint() helper
-- Add GRAFANA_PASSWORD to .env.example for Docker Compose monitoring
-
-Usage: docker compose --profile monitoring up -d
-       Prometheus at http://localhost:9091
-       Grafana at     http://localhost:3000 (admin/admin)
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# ⚠  BONUS FIX — prometheus.yml is gitignored
-# ═══════════════════════════════════════════════════════════════════════════
-# The .gitignore file lists prometheus.yml under "# Generated / Cache",
-# which means the config file created in Commit 5 won't be tracked by git.
-# This was probably added to ignore a generated prometheus.yml from some
-# other tool, but the one we created is a committed configuration file.
-#
-# Fix: Remove "prometheus.yml" from .gitignore (or force-add it with
-# git add -f prometheus.yml).
-
-Fix prometheus.yml being ignored by .gitignore
-
-- Remove prometheus.yml from .gitignore's "Generated / Cache" section
-  so the monitoring config is tracked by version control
+ISSUE 10 - BetJournal: new services/journal.py with SQLite-backed persistence for bet
+history tracking, P&L aggregation, and PerformanceTracker integration.

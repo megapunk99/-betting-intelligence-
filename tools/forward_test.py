@@ -58,7 +58,7 @@ SHORT_NAME_TO_TEAM_ID: dict[str, int] = {
 
 # ---- Odds API import (try both src and root-level paths) ----
 try:
-    from data.odds_fetcher import OddsAPIClient, OddsGame
+    from betting_intel.data.odds_fetcher import OddsAPIClient, OddsGame
     ODDS_AVAILABLE = True
 except ImportError:
     ODDS_AVAILABLE = False

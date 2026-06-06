@@ -436,6 +436,22 @@ class TestBuildMLOpportunity:
         )
         assert opp is None
 
+    def test_ml_opportunity_source_tagged(self, scanner, sample_odds_snapshot):
+        """ML opportunities should have MODEL_VS_MARKET source."""
+        opp = scanner._build_ml_opportunity(
+            game_id="NBA_Spurs-Thunder",
+            league="NBA",
+            matchup="Thunder @ Spurs",
+            game_date="2026-05-28",
+            team="Spurs",
+            model_prob=0.52,
+            implied_prob=0.476,
+            decimal_odds=2.10,
+            snapshot=sample_odds_snapshot,
+        )
+        assert opp is not None
+        assert opp.source == ScannerSource.MODEL_VS_MARKET
+
 
 class TestScanOddsSnapshots:
     """Tests for the full scan_odds_snapshots method."""
@@ -638,6 +654,108 @@ class TestCLVTracking:
         scanner._compute_clv(opp)
         assert opp.clv_pct is None
         assert opp.opening_line is None
+
+    def test_clv_computed_with_total_history(self, scanner, sample_odds_snapshot):
+        """CLV should be populated when historical data exists (regression: indentation fix)."""
+        # Record the opening snapshot
+        scanner.record_historical_snapshot([sample_odds_snapshot])
+
+        opp = EVOpportunity(
+            game_id="NBA_Spurs-Thunder", league="NBA", matchup="A @ B", game_date="",
+            bet_side="OVER 214.5", market_line=214.5, sportsbook="Test",
+            implied_probability=0.5, best_odds_decimal=1.91,
+            model_probability=0.52, model_source="test",
+            edge_pct=0.044, expected_value=0.5, expected_value_pct=0.044,
+            kelly_fraction=0.02, recommended_stake_dollars=200,
+            confidence=ScannerConfidence.MEDIUM, n_sportsbooks=2,
+            consensus_agreement=0.8,
+            home_team="Spurs",
+            away_team="Thunder",
+        )
+
+        # This should not crash (regression: the opening = historical[0] indentation fix)
+        scanner._compute_clv(opp)
+        assert opp.opening_line == 214.5, "Opening line should come from historical snapshot total"
+        assert opp.line_movement_direction is not None, "Line movement should be computed"
+
+    def test_clv_computed_with_ml_history(self, scanner, sample_odds_snapshot):
+        """CLV for moneyline bets should use home_ml from historical data."""
+        scanner.record_historical_snapshot([sample_odds_snapshot])
+
+        opp = EVOpportunity(
+            game_id="NBA_Spurs-Thunder", league="NBA", matchup="A @ B", game_date="",
+            bet_side="Spurs", market_line=2.10, sportsbook="Test",
+            implied_probability=0.476, best_odds_decimal=2.10,
+            model_probability=0.52, model_source="test",
+            edge_pct=0.044, expected_value=0.5, expected_value_pct=0.044,
+            kelly_fraction=0.02, recommended_stake_dollars=200,
+            confidence=ScannerConfidence.MEDIUM, n_sportsbooks=2,
+            consensus_agreement=0.8,
+            home_team="Spurs",
+        )
+
+        scanner._compute_clv(opp)
+        # Opening home_ml was 2.10, current market_line is also 2.10 => no movement
+        assert opp.opening_line is not None
+
+    def test_clv_line_movement_direction(self, scanner, sample_odds_snapshot):
+        """Line movement toward the bet side should be detected."""
+        scanner.record_historical_snapshot([sample_odds_snapshot])
+
+        # Market total moved from 214.5 to 210.0, which is movement TOWARD our UNDER bet
+        opp = EVOpportunity(
+            game_id="NBA_Spurs-Thunder", league="NBA", matchup="A @ B", game_date="",
+            bet_side="UNDER 214.5", market_line=210.0, sportsbook="Test",
+            implied_probability=0.5, best_odds_decimal=1.91,
+            model_probability=0.52, model_source="test",
+            edge_pct=0.02, expected_value=0.3, expected_value_pct=0.02,
+            kelly_fraction=0.01, recommended_stake_dollars=100,
+            confidence=ScannerConfidence.MEDIUM, n_sportsbooks=2,
+            consensus_agreement=0.8,
+        )
+
+        scanner._compute_clv(opp)
+        # diff = 210.0 - 214.5 = -4.5, UNDER bet => diff < 0 = "toward"
+        assert opp.line_movement_direction == "toward", \
+            f"Expected 'toward' for UNDER bet with decreasing total, got '{opp.line_movement_direction}'"
+
+    def test_clv_different_game_id_no_crash(self, scanner, sample_odds_snapshot):
+        """CLV for a game not in history should not crash (no-op)."""
+        scanner.record_historical_snapshot([sample_odds_snapshot])
+
+        opp = EVOpportunity(
+            game_id="NBA_OTHER-GAME", league="NBA", matchup="X @ Y", game_date="",
+            bet_side="OVER 200.0", market_line=200.0, sportsbook="Test",
+            implied_probability=0.5, best_odds_decimal=1.91,
+            model_probability=0.52, model_source="test",
+            edge_pct=0.02, expected_value=0.3, expected_value_pct=0.02,
+            kelly_fraction=0.01, recommended_stake_dollars=100,
+            confidence=ScannerConfidence.LOW, n_sportsbooks=1,
+            consensus_agreement=0.5,
+        )
+
+        # Should not crash — different game_id, no matching history
+        scanner._compute_clv(opp)
+        assert opp.clv_pct is None
+
+    def test_clv_different_game_id_no_crash(self, scanner, sample_odds_snapshot):
+        """CLV for a game not in history should not crash (no-op)."""
+        scanner.record_historical_snapshot([sample_odds_snapshot])
+
+        opp = EVOpportunity(
+            game_id="NBA_OTHER-GAME", league="NBA", matchup="X @ Y", game_date="",
+            bet_side="OVER 200.0", market_line=200.0, sportsbook="Test",
+            implied_probability=0.5, best_odds_decimal=1.91,
+            model_probability=0.52, model_source="test",
+            edge_pct=0.02, expected_value=0.3, expected_value_pct=0.02,
+            kelly_fraction=0.01, recommended_stake_dollars=100,
+            confidence=ScannerConfidence.LOW, n_sportsbooks=1,
+            consensus_agreement=0.5,
+        )
+
+        # Should not crash -- different game_id, no matching history
+        scanner._compute_clv(opp)
+        assert opp.clv_pct is None
 
 
 class TestScannerReport:

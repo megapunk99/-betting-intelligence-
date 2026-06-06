@@ -118,7 +118,7 @@ class PlayerPropEngine:
         away_players = self._players_by_team.get(away, [])
 
         if not home_players and not away_players:
-            logger.warning(f"No real player data found for {home} vs {away}")
+            logger.debug(f"No real player data found for {home} vs {away}")
             return []
 
         # Get team stats for scoring distribution
@@ -151,10 +151,11 @@ class PlayerPropEngine:
                 projected_ast = player_ast * home_adj
 
                 # Round to nearest 0.5 for market lines
-                pts_line = round(max(projected_pts / 2, 4) * 2) / 2
-                reb_line = round(max(projected_reb / 2, 2) * 2) / 2
-                ast_line = round(max(projected_ast / 2, 1.5) * 2) / 2
-                pra_line = round(max((projected_pts + projected_reb + projected_ast) / 2, 8) * 2) / 2
+                # (projected values are per-game averages; line should be close to projection)
+                pts_line = round(max(projected_pts, 4) * 2) / 2
+                reb_line = round(max(projected_reb, 2) * 2) / 2
+                ast_line = round(max(projected_ast, 1.5) * 2) / 2
+                pra_line = round(max(projected_pts + projected_reb + projected_ast, 8) * 2) / 2
 
                 # Points prop
                 props.append(PlayerPropBet(
@@ -274,11 +275,18 @@ class PlayerPropEngine:
     # ── Data Loading ─────────────────────────────────────────────────────────
 
     def _load_players(self):
-        """Load real active NBA players from nba_api, grouped by team."""
+        """Load real active NBA players from nba_api, grouped by team.
+
+        Network calls have a 10-second socket timeout to prevent hanging.
+        """
         if self._players_by_team:
             return
 
         try:
+            import socket
+            old_timeout = socket.getdefaulttimeout()
+            socket.setdefaulttimeout(10)
+
             from nba_api.stats.static import teams as nba_teams_static
 
             all_teams = nba_teams_static.get_teams()
@@ -340,6 +348,11 @@ class PlayerPropEngine:
             logger.warning("nba_api not available — cannot load real player data")
         except Exception as e:
             logger.error(f"Failed to load real players: {e}")
+        finally:
+            try:
+                socket.setdefaulttimeout(old_timeout)
+            except Exception:
+                pass
 
     def _load_players_from_league_leaders(
         self,
@@ -386,6 +399,7 @@ class PlayerPropEngine:
                     static_info = player_info.get(pid, {})
                     full_name = static_info.get("full_name", str(row.get("PLAYER_NAME", "")))
 
+                    gp = max(row.get("GP") or 1, 1)  # Games played (avoid division by zero; handle None)
                     player_entry = {
                         "id": pid,
                         "full_name": full_name,
@@ -394,11 +408,12 @@ class PlayerPropEngine:
                         "position": static_info.get("position", "SF"),
                         "team_abbr": team_abbr,
                         "team_name": team_id_to_full.get(team_id, ""),
-                        "pts_season_avg": row.get("PTS", 0),
-                        "reb_season_avg": row.get("REB", 0),
-                        "ast_season_avg": row.get("AST", 0),
-                        "min_season_avg": row.get("MIN", 0),
-                        "games_played": row.get("GP", 0),
+                        # LeagueLeaders PTS/REB/AST are season totals; divide by GP for per-game avg
+                        "pts_season_avg": row.get("PTS", 0) / gp,
+                        "reb_season_avg": row.get("REB", 0) / gp,
+                        "ast_season_avg": row.get("AST", 0) / gp,
+                        "min_season_avg": row.get("MIN", 0) / gp,
+                        "games_played": gp,
                     }
                     players_by_abbr.setdefault(db_team_name, []).append(player_entry)
 
@@ -436,12 +451,13 @@ class PlayerPropEngine:
                 for _, row in leaders_df.iterrows():
                     pid = row.get("PLAYER_ID")
                     if pid:
+                        gp = max(row.get("GP") or 1, 1)
                         player_stats[pid] = {
-                            "pts_season_avg": row.get("PTS", 0),
-                            "reb_season_avg": row.get("REB", 0),
-                            "ast_season_avg": row.get("AST", 0),
-                            "min_season_avg": row.get("MIN", 0),
-                            "games_played": row.get("GP", 0),
+                            "pts_season_avg": row.get("PTS", 0) / gp,
+                            "reb_season_avg": row.get("REB", 0) / gp,
+                            "ast_season_avg": row.get("AST", 0) / gp,
+                            "min_season_avg": row.get("MIN", 0) / gp,
+                            "games_played": gp,
                         }
 
                 # Enrich existing player entries
@@ -471,12 +487,13 @@ class PlayerPropEngine:
                 for _, row in leaders_df.iterrows():
                     pid = row.get("PLAYER_ID")
                     if pid:
+                        gp = max(row.get("GP") or 1, 1)
                         player_stats[pid] = {
-                            "pts_season_avg": row.get("PTS", 0),
-                            "reb_season_avg": row.get("REB", 0),
-                            "ast_season_avg": row.get("AST", 0),
-                            "min_season_avg": row.get("MIN", 0),
-                            "games_played": row.get("GP", 0),
+                            "pts_season_avg": row.get("PTS", 0) / gp,
+                            "reb_season_avg": row.get("REB", 0) / gp,
+                            "ast_season_avg": row.get("AST", 0) / gp,
+                            "min_season_avg": row.get("MIN", 0) / gp,
+                            "games_played": gp,
                         }
 
                 for team_name, players in self._players_by_team.items():

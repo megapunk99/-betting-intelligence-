@@ -10,12 +10,15 @@ from datetime import datetime, timedelta
 # Ensure src/ is on the path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from unittest.mock import patch
+
 import pytest
 
 from betting_intel.data.player_stats import (
     PlayerStatsManager,
     _parse_minutes,
     _fmt_pct,
+    _parse_stat_pair,
     _PLAYER_GAME_LOGS_DDL,
     _PLAYER_TRACKING_DDL,
 )
@@ -69,6 +72,38 @@ class TestFmtPct:
 
     def test_one(self):
         assert _fmt_pct(1.0) == 1.0
+
+
+class TestParseStatPair:
+    """Tests for the _parse_stat_pair helper (ESPN compound stats)."""
+
+    def test_standard_fg(self):
+        """Parse '10-15' -> (10, 15)."""
+        assert _parse_stat_pair("10-15") == (10, 15)
+
+    def test_zero_attempts(self):
+        """Parse '0-0' -> (0, 0)."""
+        assert _parse_stat_pair("0-0") == (0, 0)
+
+    def test_single_digits(self):
+        """Parse '2-5' -> (2, 5)."""
+        assert _parse_stat_pair("2-5") == (2, 5)
+
+    def test_empty_string(self):
+        """Empty string -> (0, 0)."""
+        assert _parse_stat_pair("") == (0, 0)
+
+    def test_none_input(self):
+        """None -> (0, 0)."""
+        assert _parse_stat_pair(None) == (0, 0)
+
+    def test_no_dash(self):
+        """String without dash -> (0, 0)."""
+        assert _parse_stat_pair("5") == (0, 0)
+
+    def test_malformed_string(self):
+        """Malformed string -> (0, 0)."""
+        assert _parse_stat_pair("abc-def") == (0, 0)
 
 
 class TestDeriveSeasonId:
@@ -337,3 +372,53 @@ class TestPlayerStatsManager:
         assert manager.search_player("Test") == []
         assert manager.get_team_missing_ppg("NYK", ["Player"]) == 0.0
         assert manager.count_unprocessed_games() == 0
+
+    # ── ESPN Dispatch Tests ────────────────────────────────────────────
+
+    def test_fetch_and_store_game_dispatches_espn(self, temp_db):
+        """ESPN-style game IDs (4017...) should route to _fetch_and_store_game_espn."""
+        manager = PlayerStatsManager(db_path=temp_db)
+        with patch.object(manager, '_fetch_and_store_game_espn', return_value=[{'PLAYER_NAME': 'Test'}]) as mock_espn:
+            result = manager._fetch_and_store_game('401716954')
+            mock_espn.assert_called_once_with('401716954')
+            assert result is not None
+
+    def test_fetch_and_store_game_dispatches_nba(self, temp_db):
+        """NBA-style game IDs (0022...) should route to _fetch_and_store_game_nba."""
+        manager = PlayerStatsManager(db_path=temp_db)
+        with patch.object(manager, '_fetch_and_store_game_nba', return_value=[{'PLAYER_NAME': 'Test'}]) as mock_nba:
+            result = manager._fetch_and_store_game('0022500001')
+            mock_nba.assert_called_once_with('0022500001')
+            assert result is not None
+
+    def test_count_unprocessed_games_includes_espn(self, temp_db):
+        """count_unprocessed_games should now include ESPN-prefixed game IDs."""
+        manager = PlayerStatsManager(db_path=temp_db)
+        conn = sqlite3.connect(str(temp_db))
+        c = conn.cursor()
+        # Create game_logs
+        c.execute("CREATE TABLE IF NOT EXISTS game_logs (GAME_ID TEXT, TEAM_ID INTEGER, TEAM_ABBREVIATION TEXT, GAME_DATE TEXT)")  # noqa: E501
+        # Insert an ESPN game - unprocessed
+        c.execute("INSERT INTO game_logs VALUES ('4017000001', 1, 'NYK', '2026-03-01')")
+        conn.commit()
+        conn.close()
+
+        # The ESPN game should be counted as unprocessed
+        count = manager.count_unprocessed_games()
+        assert count == 1, f"Expected 1 ESPN unprocessed game, got {count}"
+
+    def test_get_unprocessed_game_ids_includes_espn(self, temp_db):
+        """get_unprocessed_game_ids should now include ESPN-prefixed game IDs."""
+        manager = PlayerStatsManager(db_path=temp_db)
+        conn = sqlite3.connect(str(temp_db))
+        c = conn.cursor()
+        c.execute("CREATE TABLE IF NOT EXISTS game_logs (GAME_ID TEXT, TEAM_ID INTEGER, TEAM_ABBREVIATION TEXT, GAME_DATE TEXT)")  # noqa: E501
+        # Insert an NBA game and an ESPN game - both unprocessed
+        c.execute("INSERT INTO game_logs VALUES ('0022500001', 1, 'NYK', '2026-03-01')")
+        c.execute("INSERT INTO game_logs VALUES ('4017000001', 2, 'BOS', '2026-03-01')")
+        conn.commit()
+        conn.close()
+
+        ids = manager.get_unprocessed_game_ids(limit=10)
+        assert '0022500001' in ids, "NBA ID should be in unprocessed list"
+        assert '4017000001' in ids, "ESPN ID should be in unprocessed list"

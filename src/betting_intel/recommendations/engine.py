@@ -19,10 +19,12 @@ Usage:
 from __future__ import annotations
 
 import logging
+import pickle
 import random
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, date, timedelta
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -84,6 +86,11 @@ class RecommendationEngine:
         self._small_league_ingestion = None
         self._todays_games: list[dict] = []
         self._signal_collector = None
+
+        # Cache directory for disk-persisted data
+        self._cache_dir = Path(__file__).resolve().parent.parent.parent.parent / "models" / "saved"
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+        self._db_path = Path(__file__).resolve().parent.parent.parent.parent / "data" / "nba_data.db"
 
     # ── Public API ──────────────────────────────────────────────────────
 
@@ -265,6 +272,45 @@ class RecommendationEngine:
 
         return summary
 
+    # ── Cache Helpers ──────────────────────────────────────────────────
+
+    def _get_db_mtime(self) -> float:
+        """Get database file modification time for cache invalidation."""
+        try:
+            if self._db_path.exists():
+                return self._db_path.stat().st_mtime
+        except Exception:
+            pass
+        return 0.0
+
+    def _load_cache(self, cache_key: str) -> Optional[dict]:
+        """Load cached data from disk if DB mtime matches."""
+        cache_path = self._cache_dir / f"{cache_key}.pkl"
+        if not cache_path.exists():
+            return None
+        try:
+            with open(cache_path, "rb") as f:
+                cache = pickle.load(f)
+            if cache.get("db_mtime") == self._get_db_mtime():
+                logger.info(f"Loaded {cache_key} from disk cache")
+                return cache.get("data")
+            else:
+                logger.info(f"Cache {cache_key} stale (DB updated) — regenerating")
+        except Exception as e:
+            logger.warning(f"Cache {cache_key} load failed: {e}")
+        return None
+
+    def _save_cache(self, cache_key: str, data: object) -> None:
+        """Save data to disk cache with current DB mtime."""
+        cache_path = self._cache_dir / f"{cache_key}.pkl"
+        try:
+            cache = {"db_mtime": self._get_db_mtime(), "data": data}
+            with open(cache_path, "wb") as f:
+                pickle.dump(cache, f, protocol=pickle.HIGHEST_PROTOCOL)
+            logger.info(f"Saved {cache_key} to disk cache")
+        except Exception as e:
+            logger.warning(f"Could not save {cache_key} cache: {e}")
+
     # ── Game Data Loading ───────────────────────────────────────────────
 
     def _get_upcoming_nba_games(self) -> list[dict]:
@@ -274,11 +320,22 @@ class RecommendationEngine:
         Uses nba_api static data (30 real NBA teams) combined with the
         last-full-season database to create data-driven predictions for
         upcoming matchups. No hardcoded game data.
+
+        Network calls have a 10-second socket timeout to prevent hanging.
         """
+        # Try disk cache first
+        cached = self._load_cache("schedule_cache")
+        if cached is not None:
+            return cached
+
         games = []
 
         # Step 1: Get real NBA teams from static API
         try:
+            import socket
+            old_timeout = socket.getdefaulttimeout()
+            socket.setdefaulttimeout(10)
+
             from nba_api.stats.static import teams as nba_teams
             all_teams = nba_teams.get_teams()
             team_names = [
@@ -307,21 +364,13 @@ class RecommendationEngine:
                 mapped = team_name_map.get(nickname, nickname)
                 mapped_names.append(mapped)
 
-            # Step 2: Load database to get real team stats for predictions
+            # Step 2: Use cached team stats (avoids DB query if available)
             db_stats = {}
             try:
-                from betting_intel.data.loader import NBADataLoader
-                loader = NBADataLoader()
-                raw_df = loader.load_game_logs()
-                if len(raw_df) > 0:
-                    # Compute season averages per team
-                    for _, row in raw_df.groupby("TEAM_NAME").agg({
-                        "PTS": "mean", "REB": "mean", "AST": "mean",
-                        "FGM": "mean", "FGA": "mean", "FG3M": "mean",
-                        "PLUS_MINUS": "mean", "TOV": "mean",
-                    }).iterrows():
-                        db_stats[row.name] = row.to_dict()
-                    logger.info(f"Loaded stats for {len(db_stats)} teams from database")
+                db_stats = self._load_team_stats() if self._load_team_stats() else {}
+                db_stats = {k: {kk: vv for kk, vv in v.items() if kk in {
+                    "PTS", "REB", "AST", "FGM", "FGA", "FG3M", "PLUS_MINUS", "TOV"
+                }} for k, v in db_stats.items()}
             except Exception as db_e:
                 logger.warning(f"Could not load DB stats (using defaults): {db_e}")
 
@@ -386,12 +435,19 @@ class RecommendationEngine:
                     })
 
             logger.info(f"Generated {len(games)} upcoming NBA games from {len(all_teams)} real teams")
+            # Cache to disk (schedule changes when DB is updated)
+            self._save_cache("schedule_cache", games)
             return games
 
         except ImportError:
             logger.warning("nba_api not available, can't generate real schedule")
         except Exception as e:
             logger.error(f"Failed to generate NBA games: {e}")
+        finally:
+            try:
+                socket.setdefaulttimeout(old_timeout)
+            except Exception:
+                pass
 
         # Last resort: use teams from the database
         try:
@@ -413,6 +469,7 @@ class RecommendationEngine:
                             "series": "",
                         })
                 logger.info(f"Generated {len(games)} games from DB teams (fallback)")
+                self._save_cache("schedule_cache", games)
                 return games
         except Exception as e:
             logger.error(f"DB fallback also failed: {e}")
@@ -492,9 +549,16 @@ class RecommendationEngine:
         plus_minus, tov, win_pct, home_win_pct, pace}
 
         All values are actual season averages from real NBA data.
+        Results are cached to disk and auto-refreshed when the DB changes.
         """
         if hasattr(self, "_cached_team_stats") and self._cached_team_stats:
             return self._cached_team_stats
+
+        # Try disk cache first
+        cached = self._load_cache("team_stats_cache")
+        if cached is not None:
+            self._cached_team_stats = cached
+            return cached
 
         team_stats = {}
         try:
@@ -533,6 +597,9 @@ class RecommendationEngine:
 
             logger.info(f"Loaded real stats for {len(team_stats)} NBA teams from database")
             self._cached_team_stats = team_stats
+
+            # Save to disk cache
+            self._save_cache("team_stats_cache", team_stats)
         except Exception as e:
             logger.warning(f"Failed to load team stats: {e}")
             self._cached_team_stats = {}
@@ -889,13 +956,39 @@ class RecommendationEngine:
     def _get_model_data(self) -> Optional[tuple]:
         """
         Load trained models and recent data.
-        Lazy-loaded and cached.
+        Lazy-loaded and cached to disk for fast reloads.
+
+        Saves the trained model, feature names, and recent data to
+        models/saved/ so subsequent calls are near-instant.
         """
         if self._models is not None:
             return self._models
 
         warnings.filterwarnings("ignore")
+        model_path = self._cache_dir / "momentum_engine_cache.pkl"
 
+        # Try loading from disk cache with DB mtime invalidation
+        if model_path.exists():
+            try:
+                with open(model_path, "rb") as f:
+                    cache = pickle.load(f)
+                # Check DB mtime — regenerate if stale
+                if cache.get("db_mtime") == self._get_db_mtime():
+                    self._models = (
+                        cache["model"],
+                        cache["features"],
+                        cache["recent_data"],
+                        cache["full_df"],
+                    )
+                    n_features = len(cache["features"])
+                    logger.info(f"Loaded cached model from disk ({n_features} features)")
+                    return self._models
+                else:
+                    logger.info("Model cache stale (DB updated) — retraining")
+            except Exception as e:
+                logger.warning(f"Cache load failed, retraining: {e}")
+
+        # Train model from scratch
         try:
             from betting_intel.data.loader import NBADataLoader
             from betting_intel.data.features import FeatureEngineer
@@ -931,8 +1024,23 @@ class RecommendationEngine:
 
             recent_data = feature_df.sort_values("GAME_DATE").tail(100)
 
+            # Save to disk cache for next time with DB mtime for invalidation
+            try:
+                cache = {
+                    "db_mtime": self._get_db_mtime(),
+                    "model": model,
+                    "features": momentum_features,
+                    "recent_data": recent_data,
+                    "full_df": feature_df,
+                }
+                with open(model_path, "wb") as f:
+                    pickle.dump(cache, f, protocol=pickle.HIGHEST_PROTOCOL)
+                logger.info(f"Saved model cache to {model_path}")
+            except Exception as save_e:
+                logger.warning(f"Could not save model cache: {save_e}")
+
             self._models = (model, momentum_features, recent_data, feature_df)
-            logger.info(f"Model loaded: momentum model with {len(momentum_features)} features")
+            logger.info(f"Model trained: momentum model with {len(momentum_features)} features")
             return self._models
 
         except Exception as e:

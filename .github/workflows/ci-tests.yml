@@ -1,0 +1,47 @@
+name: CI — Tests (Every Push)
+
+on:
+  push:
+    paths-ignore:
+      - "README.md"
+      - "CONTRIBUTING.md"
+      - "LICENSE"
+      - ".gitignore"
+      - "commit_msg.txt"
+      - "*.md"
+      - "docs/**"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Use 3.11 as a canary alongside the full CI which tests 3.10, 3.11, 3.12
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ── Quick Test (single config, fast feedback) ──────────────────────────
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests (fail-fast, no coverage)
+        run: |
+          pytest -v \
+            --tb=short \
+            -x \
+            -m "not slow" \
+            tests/

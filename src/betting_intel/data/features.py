@@ -134,6 +134,75 @@ class FeatureEngineer:
                 .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
             )
 
+            # ══════════════════════════════════════════════════════════════
+            #  v3.0 — Rolling 5g/10g for ALL boxscore stats (NBA_AI 43-feature style)
+            #  Adds rolling averages for every per-game stat so the model
+            #  has full team statistical profile — not just pts/pm.
+            # ══════════════════════════════════════════════════════════════
+            _BOX_SCORE_STATS = [
+                "fgm", "fga", "fg3m", "fg3a", "ftm", "fta",
+                "oreb", "dreb", "reb", "ast", "stl", "blk", "tov", "pf",
+            ]
+            for box_stat in _BOX_SCORE_STATS:
+                src_col = f"team_{box_stat}_{team_prefix}"
+                if src_col not in df.columns:
+                    continue
+                for w in [5, 10]:
+                    df[f"avg_{box_stat}_{w}g_{suffix}"] = (
+                        df.groupby(team_id_col)[src_col]
+                        .transform(lambda x, win=w: x.rolling(win, min_periods=1).mean().shift(1))
+                    )
+                # Also add EMA (exponential moving average) for key stats
+                if box_stat in ("fgm", "fga", "reb", "ast", "stl", "blk", "tov", "pf"):
+                    span_10 = max(10, 2)
+                    df[f"ema_{box_stat}_10g_{suffix}"] = (
+                        df.groupby(team_id_col)[src_col]
+                        .transform(lambda x, sp=span_10: (
+                            x.ewm(span=sp, min_periods=1, adjust=False).mean().shift(1)
+                        ))
+                    )
+
+            # ── 3-point & free throw percentage rolling ────────────────
+            fg3_pct_col = f"team_fg3_pct_{team_prefix}"
+            if fg3_pct_col in df.columns:
+                for w in [5, 10]:
+                    df[f"avg_fg3_pct_{w}g_{suffix}"] = (
+                        df.groupby(team_id_col)[fg3_pct_col]
+                        .transform(lambda x, win=w: x.rolling(win, min_periods=1).mean().shift(1))
+                    )
+            ft_pct_col = f"team_ft_pct_{team_prefix}"
+            if ft_pct_col in df.columns:
+                for w in [5, 10]:
+                    df[f"avg_ft_pct_{w}g_{suffix}"] = (
+                        df.groupby(team_id_col)[ft_pct_col]
+                        .transform(lambda x, win=w: x.rolling(win, min_periods=1).mean().shift(1))
+                    )
+
+            # ── Opponent-allowed rolling averages ─────────────────────
+            # What does this team's defense allow over the last 5/10 games?
+            # Opponent's stats in the same game = what this team allowed.
+            opp_prefix = "away" if team_prefix == "home" else "home"
+            for box_stat in _BOX_SCORE_STATS:
+                opp_col = f"team_{box_stat}_{opp_prefix}"
+                if opp_col not in df.columns:
+                    continue
+                for w in [5, 10]:
+                    df[f"avg_{box_stat}_allowed_{w}g_{suffix}"] = (
+                        df.groupby(team_id_col)[opp_col]
+                        .transform(lambda x, win=w: x.rolling(win, min_periods=1).mean().shift(1))
+                    )
+
+            # ── Trend slopes for key stats (momentum signals) ──────────
+            for box_stat in ("fgm", "fga", "reb", "ast", "stl", "blk", "tov"):
+                src_col = f"team_{box_stat}_{team_prefix}"
+                if src_col not in df.columns:
+                    continue
+                for w in [5, 10]:
+                    df[f"trend_{box_stat}_{w}g_{suffix}"] = (
+                        df.groupby(team_id_col)[src_col]
+                        .transform(lambda x, win=w: self._compute_trend_slope(x, window=win))
+                    )
+
         # ── Rest Days ─────────────────────────────────────────────────
         # Map rest days from raw data into the merged game dataframe
         home_rest = raw_df[raw_df["IS_HOME"] == 1][["GAME_ID", "TEAM_ID", "rest_days"]].copy()
@@ -235,13 +304,45 @@ class FeatureEngineer:
             margin_5g = df.get(f"avg_pm_5g_{suffix}", 0).fillna(0)
             df[f"form_score_{suffix}"] = weighted_wins + 0.02 * margin_5g
 
+        # ══════════════════════════════════════════════════════════════════
+        #  v3.0 — Home-Away Differentials for ALL rolling stats
+        #  Diff = home_value - away_value
+        #  Positive means home team is stronger in that stat. Feature
+        #  names use _diff suffix so the model can learn interaction patterns
+        #  like "home shoots better AND defends better = strong edge".
+        # ══════════════════════════════════════════════════════════════════
+        _ROLLING_STAT_KEYS = [
+            "pts", "fgm", "fga", "fg3m", "fg3a", "ftm", "fta",
+            "oreb", "dreb", "reb", "ast", "stl", "blk", "tov", "pf",
+            "efg", "pace", "pm", "fg3_pct", "ft_pct",
+        ]
+        for w in [5, 10]:
+            for stat_key in _ROLLING_STAT_KEYS:
+                col_home = f"avg_{stat_key}_{w}g_home"
+                col_away = f"avg_{stat_key}_{w}g_away"
+                if col_home in df.columns and col_away in df.columns:
+                    df[f"{stat_key}_diff_{w}g"] = (
+                        df[col_home].fillna(0) - df[col_away].fillna(0)
+                    )
+
+            # Also compute allowed stat differentials
+            for stat_key in ["pts", "fgm", "fga", "fg3m", "fg3a", "ftm", "fta",
+                             "oreb", "dreb", "reb", "ast", "stl", "blk", "tov", "pf"]:
+                col_home = f"avg_{stat_key}_allowed_{w}g_home"
+                col_away = f"avg_{stat_key}_allowed_{w}g_away"
+                if col_home in df.columns and col_away in df.columns:
+                    df[f"{stat_key}_allowed_diff_{w}g"] = (
+                        df[col_home].fillna(0) - df[col_away].fillna(0)
+                    )
+
         # ── Market Line Baseline (for backtesting — NOT used as a feature) ─
         # This is a simple trailing average used as a proxy for the sportsbook's line.
         # It is deliberately excluded from select_features() to prevent data leakage.
-        df["market_line_baseline"] = (
-            df.get("avg_pts_5g_home", 110).fillna(110) +
-            df.get("avg_pts_5g_away", 108).fillna(108)
-        ) / 1.0  # Simple average of home and away scoring
+        # Blend trailing averages with league mean (224) for more realistic proxy
+        # Regression to mean prevents extreme team averages from inflating win rates
+        avg_home = df.get("avg_pts_10g_home", 112).fillna(112)
+        avg_away = df.get("avg_pts_10g_away", 112).fillna(112)
+        df["market_line_baseline"] = 0.80 * (avg_home + avg_away) + 0.20 * 224.0
 
         # Also compute a pace-adjusted baseline for comparison
         df["market_line_pace_adj"] = (
@@ -714,6 +815,58 @@ class FeatureEngineer:
             "win_streak": 0.0,
             "weighted_momentum": 0.5,
             "form_score": 0.5,
+            # v3.0 — Boxscore stat rolling averages (all default to NBA league avg)
+            "avg_fgm": 42.0,
+            "avg_fga": 88.0,
+            "avg_fg3m": 13.5,
+            "avg_fg3a": 38.0,
+            "avg_ftm": 18.0,
+            "avg_fta": 23.0,
+            "avg_oreb": 10.0,
+            "avg_dreb": 33.0,
+            "avg_reb": 43.0,
+            "avg_ast": 25.0,
+            "avg_stl": 7.5,
+            "avg_blk": 5.0,
+            "avg_tov": 13.0,
+            "avg_pf": 19.0,
+            "avg_fg3_pct": 0.355,
+            "avg_ft_pct": 0.780,
+            # v3.0 — Opponent-allowed rolling averages
+            "avg_pts_allowed": 114.5,
+            "avg_fgm_allowed": 42.0,
+            "avg_fga_allowed": 88.0,
+            "avg_fg3m_allowed": 13.5,
+            "avg_fg3a_allowed": 38.0,
+            "avg_ftm_allowed": 18.0,
+            "avg_fta_allowed": 23.0,
+            "avg_oreb_allowed": 10.0,
+            "avg_dreb_allowed": 33.0,
+            "avg_reb_allowed": 43.0,
+            "avg_ast_allowed": 25.0,
+            "avg_stl_allowed": 7.5,
+            "avg_blk_allowed": 5.0,
+            "avg_tov_allowed": 13.0,
+            "avg_pf_allowed": 19.0,
+            # v3.0 — Trend slopes for boxscore stats
+            "trend_fgm": 0.0,
+            "trend_fga": 0.0,
+            "trend_reb": 0.0,
+            "trend_ast": 0.0,
+            "trend_stl": 0.0,
+            "trend_blk": 0.0,
+            "trend_tov": 0.0,
+            # v3.0 — EMA for boxscore stats
+            "ema_fgm": 42.0,
+            "ema_fga": 88.0,
+            "ema_reb": 43.0,
+            "ema_ast": 25.0,
+            "ema_stl": 7.5,
+            "ema_blk": 5.0,
+            "ema_tov": 13.0,
+            "ema_pf": 19.0,
+            # v3.0 — Home-away differentials (diff = 0 means teams are equal)
+            "_diff_": 0.0,
             # Opponent features
             "opp_avg_pts": 114.5,
             "opp_avg_pm": 0.0,

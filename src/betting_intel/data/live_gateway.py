@@ -604,8 +604,8 @@ class LiveDataGateway:
         """Try TheOddsAPI, fall back to the root-level OddsAPIClient."""
         # Try the root-level odds fetcher first (used in predict_tomorrow.py)
         try:
-            from data.odds_fetcher import OddsAPIClient as RootOddsClient
-            from config import ODDS_API_KEY, ODDS_CACHE_TTL_MINUTES
+            from betting_intel.data.odds_fetcher import OddsAPIClient as RootOddsClient
+            from betting_intel.config import ODDS_API_KEY, ODDS_CACHE_TTL_MINUTES
 
             key = self._odds_api_key or ODDS_API_KEY
             if key and key != "your-api-key-here":

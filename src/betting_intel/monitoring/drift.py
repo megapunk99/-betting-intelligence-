@@ -35,6 +35,10 @@ def compute_psi(
     n_bins: int = 10,
 ) -> float:
     """
+    expected = np.asarray(expected)
+    actual = np.asarray(actual)
+    expected = expected[~np.isnan(expected)]
+    actual = actual[~np.isnan(actual)]
     Population Stability Index — measures distribution shift.
 
     PSI = sum((actual_pct_i - expected_pct_i) * ln(actual_pct_i / expected_pct_i))
@@ -105,6 +109,10 @@ def compute_kl_divergence(
     n_bins: int = 20,
 ) -> float:
     """
+    expected = np.asarray(expected)
+    actual = np.asarray(actual)
+    expected = expected[~np.isnan(expected)]
+    actual = actual[~np.isnan(actual)]
     Kullback-Leibler divergence between expected and actual distributions.
 
     Higher values indicate more drift.

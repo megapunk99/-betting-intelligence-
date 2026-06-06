@@ -14,6 +14,12 @@ from betting_intel.monitoring.drift import (
     PerformanceWindow,
     DriftAlert,
 )
+from betting_intel.monitoring.pipeline_monitor import (
+    PipelineMonitor,
+    PipelineRun,
+    ATSTracker,
+    ATSRecord,
+)
 
 __all__ = [
     "metrics_endpoint",
@@ -26,4 +32,8 @@ __all__ = [
     "FeatureDriftDetector",
     "PerformanceWindow",
     "DriftAlert",
+    "PipelineMonitor",
+    "PipelineRun",
+    "ATSTracker",
+    "ATSRecord",
 ]

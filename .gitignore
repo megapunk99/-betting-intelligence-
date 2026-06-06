@@ -95,3 +95,16 @@ prometheus.yml
 .ruff_cache/
 *.orig
 *.bak
+
+# Generated caches
+models/saved/*.pkl
+server*.log
+webhook*.log
+stripe_listen.log
+
+# Generated test/output data
+data/test_props_*.json
+data/subscribers.json
+data/ats_history.json
+data/pipeline_history.json
+data/predictions/*.jsonl

@@ -206,22 +206,7 @@ def db_check():
 
 # ── Dashboard Command ─────────────────────────────────────────────────────
 @cli.command()
-@click.option("--port", default=8501, help="Streamlit port")
-def dashboard(port: int):
-    """Launch the Streamlit dashboard."""
-    import subprocess
-    import sys as _sys
-
-    dashboard_path = Path(__file__).resolve().parent.parent.parent.parent / "dashboard" / "app.py"
-    click.echo(f"Starting dashboard at http://localhost:{port}")
-    subprocess.run(
-        [_sys.executable, "-m", "streamlit", "run", str(dashboard_path), "--server.port", str(port)],
-        cwd=settings.project_root,
-    )
-
-
-# ── Web App (FastAPI) Commands ─────────────────────────────────────────────
-@cli.group()
+@click.option("--port", default=8501, help="Streamlit port
 def web():
     """Web app (FastAPI) commands."""
     pass

@@ -921,14 +921,32 @@ Examples:
         cfg_inner.ENABLE_HYPERPARAMETER_TUNING = True
 
     if args.live:
-        # Run the live prediction engine instead
-        print("Starting LIVE prediction engine with TheOddsAPI...\n")
-        from predict_tomorrow import AdvancedPredictionEngine
-        engine = AdvancedPredictionEngine(
-            tune_hyperparams=tuning,
-            live_mode=True,
+        # Run the live prediction pipeline (modular pipeline)
+        print("Starting LIVE prediction pipeline...\n")
+        from betting_intel.pipeline import PredictionPipeline
+        live_args = argparse.Namespace(
+            live=True,
+            full=False,
+            recommend_only=False,
+            simulate=False,
+            scheduled=False,
+            days_history=90,
+            data_source=None,
+            csv_path=None,
+            no_tune=not tuning,
+            model_dir="models/saved",
+            ensemble=True,
+            strategy="all",
+            bankroll=INITIAL_BANKROLL,
+            kelly_fraction=0.25,
+            max_exposure=0.20,
+            min_edge=0.02,
+            output=None,
+            html=False,
+            verbose=False,
         )
-        results = engine.run()
+        pipeline = PredictionPipeline(live_args)
+        results = pipeline.run()
     else:
         # Run the backtesting pipeline
         mode_label = "FAST" if cfg.FAST_MODE else "FULL"

@@ -1,13 +1,12 @@
 """
-NBA Player Stats Updater — fetches player-level game logs from CDN boxscore API.
+NBA Player Stats Updater — fetches player-level game logs from boxscore APIs.
+
+Supports two data sources:
+- NBA CDN (cdn.nba.com): NBA-style game IDs (0022..., 0042..., etc.)
+- ESPN summary API (site.api.espn.com): ESPN-style game IDs (4017...)
 
 Pulls player stats (PTS, MIN, FGM, FGA, FG3M, FG3A, FTM, FTA, REB, AST, STL,
-BLK, TOV, PF, PLUS_MINUS) from the official NBA CDN boxscore endpoint for each
-completed game and stores them in a `player_game_logs` table.
-
-This replaces the hardcoded PLAYER_DATABASE in player_injury.py with dynamic
-season averages computed from actual game data. The system stays up to date
-as new games are played.
+BLK, TOV, PF, PLUS_MINUS) and stores them in a `player_game_logs` table.
 
 Usage:
     from betting_intel.data.player_stats import PlayerStatsManager
@@ -15,10 +14,8 @@ Usage:
     manager = PlayerStatsManager()
     manager.update_all()                          # Fetch all unprocessed games
     pg = manager.get_player_ppg("Jalen Brunson")  # 27.0
-    team_pts = manager.get_team_missing_ppg_impact("NYK", ["Julius Randle"])
+    team_pts = manager.get_team_missing_ppg("NYK", ["Julius Randle"])
     # Returns 22.0 (Randle's season PPG)
-
-Data source: https://cdn.nba.com/static/json/liveData/boxscore/boxscore_{game_id}.json
 """
 
 from __future__ import annotations
@@ -43,6 +40,11 @@ BOXSCORE_TEMPLATE = (
     "https://cdn.nba.com/static/json/liveData/boxscore/boxscore_{game_id}.json"
 )
 
+ESPN_SUMMARY_TEMPLATE = (
+    "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary"
+    "?event={game_id}"
+)
+
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -52,9 +54,15 @@ HEADERS = {
     "Referer": "https://www.nba.com/",
 }
 
-# ── Team Tricode → Abbreviation / Name helpers ────────────────────────────
-# NBA CDN uses tricodes (e.g., "NYK") which map to the same abbreviations used
-# throughout this project. We use them directly.
+ESPN_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json",
+    "Referer": "https://www.espn.com/nba/scoreboard",
+}
 
 # ── Player Table Creation ─────────────────────────────────────────────────
 
@@ -129,12 +137,27 @@ def _fmt_pct(val) -> float:
     return round(float(val), 3)
 
 
+def _parse_stat_pair(val: str) -> tuple[int, int]:
+    """Parse '10-15' -> (10, 15) for FG/3PT/FT compound stats."""
+    if not val or "-" not in val:
+        return (0, 0)
+    parts = val.split("-")
+    try:
+        return (int(parts[0]), int(parts[1]))
+    except (ValueError, IndexError):
+        return (0, 0)
+
+
 # ── Manager ───────────────────────────────────────────────────────────────
 
 
 class PlayerStatsManager:
     """
-    Manages player-level game logs from the NBA CDN boxscore API.
+    Manages player-level game logs from NBA CDN and ESPN boxscore APIs.
+
+    Automatically dispatches to the correct API based on game ID prefix:
+    - `0022...`, `0042...`, etc. → NBA CDN (cdn.nba.com)
+    - `4017...` (ESPN IDs) → ESPN summary API (site.api.espn.com)
 
     Usage:
         manager = PlayerStatsManager()
@@ -162,7 +185,8 @@ class PlayerStatsManager:
 
         Tries exact match first. If not found, extracts the last name
         and does a LIKE search (handles CDN abbreviated names like
-        "J. Randle" when queried with "Julius Randle").
+        "J. Randle" when queried with "Julius Randle", and vice versa
+        after the _rebuild_tracking merge step).
 
         Args:
             player_name: Full player name (e.g., "Jalen Brunson")
@@ -173,7 +197,7 @@ class PlayerStatsManager:
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
 
-        # Strategy 1: Exact match
+        # Strategy 1: Exact match (handles merged full-name entries)
         cursor.execute(
             "SELECT season_ppg FROM player_tracking WHERE player_name = ?",
             (player_name,),
@@ -183,8 +207,11 @@ class PlayerStatsManager:
             conn.close()
             return row[0]
 
-        # Strategy 2: Search by last name (handles CDN abbreviated names)
-        # CDN stores "J. Randle" but queries use "Julius Randle"
+        # Strategy 2: Extract last name and search for any variant
+        # Handles both directions:
+        #   - Abbreviated query ("D. Lillard") → find full name ("Damian Lillard")
+        #   - Full-name query ("Damian Lillard") → find abbreviated entry
+        # Uses the entry with the highest PPG (real stats over zero-stats)
         parts = player_name.split()
         if len(parts) >= 2:
             last_name = parts[-1]
@@ -206,12 +233,17 @@ class PlayerStatsManager:
         """
         Get full season stats for a player.
 
+        Tries exact match first, then falls back to last-name search
+        (handles both abbreviated and full name formats).
+
         Returns:
             Dict with keys: ppg, min, reb, ast, fgm, fga, fg_pct, games_played
             Empty dict if player not found.
         """
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
+
+        # Strategy 1: Exact match
         cursor.execute(
             "SELECT games_played, season_ppg, season_min, season_reb, "
             "season_ast, season_fgm, season_fga, season_fg_pct, team_abbr "
@@ -219,6 +251,22 @@ class PlayerStatsManager:
             (player_name,),
         )
         row = cursor.fetchone()
+
+        if not row:
+            # Strategy 2: Last-name search (handles format mismatch)
+            parts = player_name.split()
+            if len(parts) >= 2:
+                last_name = parts[-1]
+                cursor.execute(
+                    "SELECT games_played, season_ppg, season_min, season_reb, "
+                    "season_ast, season_fgm, season_fga, season_fg_pct, team_abbr "
+                    "FROM player_tracking "
+                    "WHERE player_name LIKE ? "
+                    "ORDER BY season_ppg DESC LIMIT 1",
+                    (f"%{last_name}%",),
+                )
+                row = cursor.fetchone()
+
         conn.close()
         if not row:
             return {}
@@ -306,7 +354,6 @@ class PlayerStatsManager:
             FROM game_logs g
             LEFT JOIN player_game_logs p ON g.GAME_ID = p.GAME_ID
             WHERE p.GAME_ID IS NULL
-            AND g.GAME_ID NOT LIKE 'ESPN%'
         """)
         count = cursor.fetchone()[0]
         conn.close()
@@ -329,7 +376,6 @@ class PlayerStatsManager:
             FROM game_logs g
             LEFT JOIN player_game_logs p ON g.GAME_ID = p.GAME_ID
             WHERE p.GAME_ID IS NULL
-            AND g.GAME_ID NOT LIKE 'ESPN%'
             ORDER BY g.GAME_DATE DESC
             LIMIT ?
         """, (limit,))
@@ -337,7 +383,7 @@ class PlayerStatsManager:
         conn.close()
         return ids
 
-    def update_all(self, limit: int = 50, delay: float = 0.15) -> dict:
+    def update_all(self, limit: int = 50, delay: float = 0.75) -> dict:
         """
         Fetch player data for unprocessed games and update the database.
 
@@ -406,7 +452,6 @@ class PlayerStatsManager:
             FROM game_logs g
             LEFT JOIN player_game_logs p ON g.GAME_ID = p.GAME_ID
             WHERE p.GAME_ID IS NULL
-            AND g.GAME_ID NOT LIKE 'ESPN%'
             ORDER BY g.GAME_DATE DESC
             LIMIT ?
         """, (num_games,))
@@ -416,13 +461,33 @@ class PlayerStatsManager:
         if not ids:
             return {"processed": 0, "players_added": 0, "errors": 0, "games_in_db": 0}
 
-        return self.update_all(limit=num_games, delay=0.15)
+        return self.update_all(limit=num_games, delay=0.75)
 
     # ── Internal Methods ────────────────────────────────────────────────
 
     def _fetch_and_store_game(self, game_id: str) -> list[dict] | None:
         """
         Fetch boxscore for a game and store player stats.
+
+        Dispatches to NBA CDN or ESPN API based on game ID prefix:
+        - `0022...`, `0042...`, etc. → NBA CDN (cdn.nba.com)
+        - `4017...` (ESPN IDs) → ESPN summary API
+
+        Args:
+            game_id: NBA game ID (e.g., "0042500316" or "401716954")
+
+        Returns:
+            List of player dicts stored, or None on failure.
+        """
+        # Dispatch based on game ID prefix
+        if game_id.startswith("4017"):
+            return self._fetch_and_store_game_espn(game_id)
+        else:
+            return self._fetch_and_store_game_nba(game_id)
+
+    def _fetch_and_store_game_nba(self, game_id: str) -> list[dict] | None:
+        """
+        Fetch boxscore from NBA CDN and store player stats.
 
         Args:
             game_id: NBA game ID (e.g., "0042500316")
@@ -502,6 +567,146 @@ class PlayerStatsManager:
         self._store_players_bulk(all_players)
         return all_players
 
+    def _fetch_and_store_game_espn(self, game_id: str) -> list[dict] | None:
+        """
+        Fetch boxscore from ESPN summary API and store player stats.
+
+        The ESPN API returns player stats as flat lists matched to labels:
+            labels = ['MIN', 'PTS', 'FG', '3PT', 'FT', 'REB', 'AST',
+                      'TO', 'STL', 'BLK', 'OREB', 'DREB', 'PF', '+/-']
+            stats  = ['36', '28', '10-15', '2-4', '6-7', '12', '8', ...]
+
+        Compound fields (FG, 3PT, FT) are "made-attempted" format.
+
+        Args:
+            game_id: ESPN game ID (e.g., "401716954")
+
+        Returns:
+            List of player dicts stored, or None on failure.
+        """
+        url = ESPN_SUMMARY_TEMPLATE.format(game_id=game_id)
+        try:
+            resp = requests.get(url, headers=ESPN_HEADERS, timeout=30)
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+        except Exception:
+            return None
+
+        # Verify game is finished
+        header = data.get("header", {})
+        competitions = header.get("competitions", [])
+        if not competitions:
+            return None
+
+        comp = competitions[0]
+        status = comp.get("status", {}).get("type", {}).get("name", "")
+        if status != "STATUS_FINAL":
+            return None
+
+        # Extract game date (format: "2024-10-07T...Z")
+        game_date = (comp.get("date", "") or "")[:10]
+        season_id = self._derive_season_id(game_date)
+
+        # Build team_id lookup: competitors -> {homeAway: teamId}
+        team_map = {}  # homeAway -> {id, abbr}
+        for competitor in comp.get("competitors", []):
+            team = competitor.get("team", {})
+            ha = competitor.get("homeAway", "")
+            tid = int(team.get("id", 0))
+            abbr = team.get("abbreviation", "")
+            team_map[ha] = {"id": tid, "abbr": abbr}
+
+        # Parse player data from boxscore.players
+        players_data = data.get("boxscore", {}).get("players", [])
+
+        all_players = []
+        for team_entry in players_data:
+            team_info = team_entry.get("team", {})
+            home_away = "home" if team_entry.get("homeAway") == "home" else "away"
+            if home_away in team_map:
+                team_id = team_map[home_away]["id"]
+            else:
+                team_id = int(team_info.get("id", 0))
+
+            for stat_group in team_entry.get("statistics", []):
+                labels = stat_group.get("labels", [])
+                if "PTS" not in labels or "MIN" not in labels:
+                    continue  # Skip non-standard stat groups
+
+                for athlete_entry in stat_group.get("athletes", []):
+                    if athlete_entry.get("didNotPlay", False):
+                        continue  # Skip DNP players
+
+                    athlete = athlete_entry.get("athlete", {})
+                    stats_list = athlete_entry.get("stats", [])
+
+                    if not stats_list:
+                        continue
+
+                    # Build stat dict from labels + flat stats list
+                    stat_dict = {}
+                    for i, label in enumerate(labels):
+                        if i < len(stats_list):
+                            stat_dict[label] = stats_list[i]
+
+                    # Parse compound fields
+                    fgm, fga = _parse_stat_pair(stat_dict.get("FG", ""))
+                    fg3m, fg3a = _parse_stat_pair(stat_dict.get("3PT", ""))
+                    ftm, fta = _parse_stat_pair(stat_dict.get("FT", ""))
+
+                    # Parse +/- (may be "+2", "-5", "--", or "E")
+                    pm_str = stat_dict.get("PLUS_MINUS", "0")
+                    try:
+                        plus_minus = int(pm_str)
+                    except ValueError:
+                        plus_minus = 0
+
+                    # Parse minutes (ESPN uses integer "36", not "PT36M...S")
+                    min_str = stat_dict.get("MIN", "0")
+                    try:
+                        minutes = int(min_str) if min_str else 0
+                    except ValueError:
+                        minutes = 0
+
+                    player_entry = {
+                        "GAME_ID": game_id,
+                        "TEAM_ID": team_id,
+                        "PLAYER_ID": int(athlete.get("id", 0)),
+                        "PLAYER_NAME": athlete.get("displayName", ""),
+                        "POSITION": athlete.get("position", {}).get("abbreviation", ""),
+                        "MINUTES": minutes,
+                        "PTS": int(stat_dict.get("PTS", 0)),
+                        "FGM": fgm,
+                        "FGA": fga,
+                        "FG_PCT": _fmt_pct(fgm / fga) if fga > 0 else 0.0,
+                        "FG3M": fg3m,
+                        "FG3A": fg3a,
+                        "FG3_PCT": _fmt_pct(fg3m / fg3a) if fg3a > 0 else 0.0,
+                        "FTM": ftm,
+                        "FTA": fta,
+                        "FT_PCT": _fmt_pct(ftm / fta) if fta > 0 else 0.0,
+                        "OREB": int(stat_dict.get("OREB", 0)),
+                        "DREB": int(stat_dict.get("DREB", 0)),
+                        "REB": int(stat_dict.get("REB", 0)),
+                        "AST": int(stat_dict.get("AST", 0)),
+                        "STL": int(stat_dict.get("STL", 0)),
+                        "BLK": int(stat_dict.get("BLK", 0)),
+                        "TOV": int(stat_dict.get("TO", 0)),
+                        "PF": int(stat_dict.get("PF", 0)),
+                        "PLUS_MINUS": plus_minus,
+                        "SEASON_ID": season_id,
+                        "GAME_DATE": game_date,
+                        "scraped_at": datetime.now().isoformat(),
+                    }
+                    all_players.append(player_entry)
+
+        if not all_players:
+            return None
+
+        self._store_players_bulk(all_players)
+        return all_players
+
     def _store_players_bulk(self, players: list[dict]):
         """Bulk-insert player game logs into the database."""
         conn = sqlite3.connect(str(self.db_path))
@@ -533,12 +738,30 @@ class PlayerStatsManager:
         conn.commit()
         conn.close()
 
+    @staticmethod
+    def _normalize_abbreviated_name(name: str) -> str | None:
+        """
+        Convert an abbreviated NBA CDN name ('D. Lillard') to its last name ('Lillard').
+
+        Returns the last name if the name matches the abbreviated pattern
+        (single initial + '. ' + last name), or None otherwise.
+        """
+        m = re.match(r"^[A-Z]\.\s+(.+)$", name.strip())
+        if m:
+            return m.group(1).strip()
+        return None
+
     def _rebuild_tracking(self):
         """
         Rebuild the player_tracking table from player_game_logs.
 
         Computes season averages PPG, MIN, etc., grouped by player name
         and current team (last team they played for).
+
+        After initial aggregation, merges entries where the same player
+        appears under both abbreviated (NBA CDN "D. Lillard") and full
+        (ESPN "Damian Lillard") names. The full name is kept as canonical
+        with combined stats from both sources.
         """
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
@@ -546,6 +769,7 @@ class PlayerStatsManager:
         # Clear and rebuild
         cursor.execute("DELETE FROM player_tracking")
 
+        # Step 1: Build tracking from player_game_logs joined with game_logs
         cursor.execute("""
             INSERT INTO player_tracking (player_name, team_abbr, games_played,
                 season_ppg, season_min, season_reb, season_ast,
@@ -573,6 +797,122 @@ class PlayerStatsManager:
             GROUP BY p.PLAYER_NAME
             ORDER BY season_ppg DESC
         """)
+
+        conn.commit()
+
+        # Step 2: Detect and merge abbreviated names into full names.
+        # Query PLAYER_GAME_LOGS directly to catch entries that may not have
+        # joined with game_logs (e.g., test records, partial data).
+        cursor.execute("""
+            SELECT PLAYER_NAME,
+                   COUNT(*) as games_played,
+                   ROUND(AVG(PTS), 1) as season_ppg,
+                   ROUND(AVG(MINUTES), 1) as season_min,
+                   ROUND(AVG(REB), 1) as season_reb,
+                   ROUND(AVG(AST), 1) as season_ast,
+                   ROUND(AVG(FGM), 1) as season_fgm,
+                   ROUND(AVG(FGA), 1) as season_fga,
+                   ROUND(AVG(CAST(FGM AS REAL) / NULLIF(FGA, 0)), 3) as season_fg_pct
+            FROM player_game_logs
+            GROUP BY PLAYER_NAME
+        """)
+        all_raw = cursor.fetchall()
+
+        # Build lookup: last_name -> list of (player_name, row) for non-abbreviated names
+        full_by_last: dict[str, list[tuple[str, tuple]]] = {}
+        abbr_entries: list[tuple[str, str, tuple]] = []  # (abbrev_name, last_name, row)
+
+        for row in all_raw:
+            pname = row[0]
+            last = self._normalize_abbreviated_name(pname)
+            if last:
+                abbr_entries.append((pname, last.lower(), row))
+            else:
+                parts = pname.strip().split()
+                if parts:
+                    key = parts[-1].lower()
+                    full_by_last.setdefault(key, []).append((pname, row))
+
+        # For each abbreviated entry with zero stats, find matching full-name
+        # entry with actual stats and merge them into the tracking table.
+        updates: list[tuple] = []
+        abbr_to_delete: list[str] = []
+
+        for abbr_name, last_lower, abbr_row in abbr_entries:
+            # Abbreviation already has stats — no need to merge
+            if abbr_row[2] > 0 or abbr_row[3] > 0:
+                continue
+
+            matches = full_by_last.get(last_lower, [])
+            if not matches:
+                continue
+
+            # Among matches, pick the one with the most games (likely the real player)
+            matches.sort(key=lambda m: m[1][1], reverse=True)
+            full_name, full_row = matches[0]
+
+            # Only merge if full-name entry actually has stats
+            if full_row[2] == 0 and full_row[3] == 0:
+                continue
+
+            # Use the FULL-NAME entry's stats directly (not weighted average)
+            # because the abbreviated entry's zeros are corrupt data (NBA CDN
+            # returned 0 PTS/MIN for known star players as roster listing,
+            # not actual game stats). Weighted averaging would dilute real
+            # stats with these zeros.
+            updates.append((
+                full_name,
+                full_row[1],           # games_played from real stats
+                full_row[2],           # ppg
+                full_row[3],           # min
+                full_row[4],           # reb
+                full_row[5],           # ast
+                full_row[6],           # fgm
+                full_row[7],           # fga
+                full_row[8],           # fg_pct
+            ))
+            abbr_to_delete.append(abbr_name)
+
+        # Apply: upsert full-name entries, delete merged abbreviated ones
+        for (full_name, total_gp, ppg, min_, reb, ast, fgm, fga, fg_pct) in updates:
+            # Check if entry already exists in tracking (has team_abbr from SQL JOIN)
+            cursor.execute(
+                "SELECT team_abbr FROM player_tracking WHERE player_name = ?",
+                (full_name,),
+            )
+            existing = cursor.fetchone()
+            if existing:
+                # Entry exists — preserve team_abbr, update stats
+                cursor.execute(
+                    "UPDATE player_tracking SET games_played = ?, season_ppg = ?, "
+                    "season_min = ?, season_reb = ?, season_ast = ?, "
+                    "season_fgm = ?, season_fga = ?, season_fg_pct = ?, "
+                    "last_updated = datetime('now') WHERE player_name = ?",
+                    (total_gp, ppg, min_, reb, ast, fgm, fga, fg_pct, full_name)
+                )
+            else:
+                # Entry not in tracking — insert with team abbreviation
+                # derived from the abbreviated entry's tracking row
+                cursor.execute(
+                    "SELECT team_abbr FROM player_tracking WHERE player_name LIKE ?",
+                    (f"%{full_name.split()[-1]}%",),
+                )
+                team_row = cursor.fetchone()
+                team_abbr = team_row[0] if team_row else ''
+                cursor.execute(
+                    "INSERT INTO player_tracking "
+                    "(player_name, team_abbr, games_played, season_ppg, season_min, "
+                    "season_reb, season_ast, season_fgm, season_fga, season_fg_pct, last_updated) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+                    (full_name, team_abbr, total_gp, ppg, min_, reb, ast, fgm, fga, fg_pct)
+                )
+
+        for abbr_name in abbr_to_delete:
+            cursor.execute("DELETE FROM player_tracking WHERE player_name = ?", (abbr_name,))
+
+        if updates:
+            logger.info(f"  Merged {len(updates)} abbreviated entries into full names")
+            logger.info(f"  Deleted {len(abbr_to_delete)} stale zero-stat entries")
 
         conn.commit()
         conn.close()
@@ -638,8 +978,12 @@ def main():
         help="Process ALL unprocessed games"
     )
     parser.add_argument(
-        "--delay", type=float, default=0.15,
-        help="Delay between API calls in seconds (default: 0.15)"
+        "--delay", type=float, default=0.75,
+        help="Delay between API calls in seconds (default: 0.75)"
+    )
+    parser.add_argument(
+        "--fast", action="store_true",
+        help="Skip delay (risks rate limiting - not recommended)"
     )
     args = parser.parse_args()
 
@@ -651,8 +995,9 @@ def main():
         print("All games processed. Nothing to do.")
         return 0
 
+    delay = 0.0 if args.fast else args.delay
     if args.all:
-        result = manager.update_all(limit=unprocessed, delay=args.delay)
+        result = manager.update_all(limit=unprocessed, delay=delay)
     else:
         result = manager.update_recent(num_games=args.recent)
 

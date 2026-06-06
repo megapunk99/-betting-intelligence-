@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checkout Cancelled — Exact Bets</title>
+    <meta name="robots" content="noindex, follow">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: { 50: '#f0f0f5', 100: '#d6d6e0', 200: '#adadb8', 300: '#84848f', 400: '#5b5b66', 500: '#32323d', 600: '#292934', 700: '#1e1e2a', 800: '#151520', 900: '#0c0c14', 950: '#06060a' },
+                        accent: { 50: '#e6fff0', 100: '#b3ffd1', 200: '#80ffb3', 300: '#4dff94', 400: '#1aff75', 500: '#00e65e', 600: '#00b84b', 700: '#008a38', 800: '#005c25', 900: '#002e13' }
+                    },
+                    fontFamily: { sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, sans-serif; background: #06060a; color: #d6d6e0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .glass-card { background: rgba(21,21,32,0.75); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.06); box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+        .btn-accent { background: linear-gradient(135deg, #00e65e, #00b84b); color: #000; font-weight: 600; border: none; cursor: pointer; transition: all 0.25s ease; }
+        .btn-accent:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,230,94,0.35); }
+        .btn-outline { background: transparent; border: 1px solid rgba(255,255,255,0.15); color: #fff; font-weight: 500; transition: all 0.25s ease; }
+        .btn-outline:hover { border-color: rgba(0,230,94,0.5); background: rgba(0,230,94,0.05); }
+        .gradient-text { background: linear-gradient(135deg, #1aff75, #60a5fa, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    </style>
+</head>
+<body>
+    <div class="glass-card rounded-3xl p-10 sm:p-14 text-center max-w-lg mx-4">
+        <div class="w-20 h-20 rounded-full bg-gray-800/50 border border-gray-700/50 flex items-center justify-center mx-auto mb-6">
+            <svg class="w-10 h-10 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+        </div>
+
+        <h1 class="text-3xl font-extrabold text-white mb-2">Checkout Cancelled</h1>
+        <p class="text-gray-400 mb-6">
+            No worries — you haven't been charged. Your picks are ready whenever you are.
+        </p>
+
+        <div class="bg-accent-500/5 border border-accent-500/10 rounded-xl p-4 mb-8 text-sm text-gray-400">
+            <span class="text-accent-400 font-semibold">💡 Still interested?</span>
+            Jump back to the pricing page to compare plans, or start with a free pick on the dashboard.
+        </div>
+
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <a href="/#pricing" class="px-8 py-3 text-sm font-bold btn-accent rounded-xl neon-glow">
+                View Pricing
+            </a>
+            <a href="/dashboard" class="px-8 py-3 text-sm font-semibold btn-outline rounded-xl">
+                Free Dashboard →
+            </a>
+        </div>
+    </div>
+</body>
+</html>

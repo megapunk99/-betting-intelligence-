@@ -324,7 +324,7 @@ class PredictTomorrowPipeline:
             # Try both possible import paths for OddsAPIClient
             OddsAPIClient = None
             try:
-                from data.odds_fetcher import OddsAPIClient
+                from betting_intel.data.odds_fetcher import OddsAPIClient
             except ImportError:
                 try:
                     from betting_intel.data.odds_fetcher import OddsAPIClient
@@ -413,7 +413,7 @@ class PredictTomorrowPipeline:
                 game_id = game.id if hasattr(game, "id") else ""
                 gid = int(game_id.split("_")[-1]) if "_" in str(game_id) else hash(game_id) % 100000
                 # Build feature row using OddsAPIClient's static method
-                from data.odds_fetcher import OddsAPIClient as OAC
+                from betting_intel.data.odds_fetcher import OddsAPIClient as OAC
                 row = OAC.build_feature_row_for_game(game, feature_df, feature_cols)
                 if row:
                     features[game_id] = row

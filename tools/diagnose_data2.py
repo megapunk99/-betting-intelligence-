@@ -55,7 +55,7 @@ print("=" * 70)
 
 # Now check the forward test flow
 sys.path.insert(0, '.')
-from data.odds_fetcher import OddsAPIClient
+from betting_intel.data.odds_fetcher import OddsAPIClient
 from dotenv import load_dotenv
 import os
 load_dotenv()

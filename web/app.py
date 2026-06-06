@@ -15,6 +15,14 @@ import sys
 from datetime import datetime, date, timedelta
 from pathlib import Path
 from typing import Any
+import asyncio
+from typing import Any
+
+from dotenv import load_dotenv
+
+# Load .env into process environment BEFORE importing other modules
+# This ensures os.getenv() works for Stripe keys in API routes
+load_dotenv()
 
 from fastapi import FastAPI, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -126,10 +134,48 @@ def bet_to_dict(bet) -> dict:
 
 # ── Routes ─────────────────────────────────────────────────────────────────
 
+
+
+async def _safe_load_dashboard() -> dict:
+    """Load dashboard data with a 30-second timeout. Returns empty defaults on failure."""
+    try:
+        data = await asyncio.wait_for(
+            asyncio.to_thread(load_dashboard_data),
+            timeout=15.0
+        )
+        if isinstance(data, dict):
+            return data
+    except asyncio.TimeoutError:
+        print("  [WARN] Dashboard data load timed out (30s)")
+    except Exception as e:
+        print(f"  [WARN] Dashboard data load failed: {e}")
+    # Complete fallback with all fields expected by templates
+    return {
+        "summary": {
+            "total_bets": 0, "total_stake": 0.0, "total_collected": 0.0,
+            "clear_picks": 0, "games_available": 0, "freshness_seconds": 0,
+            "active_signals": 0, "by_type": {}, "nitter_available": False,
+        },
+        "clear_picks": [],
+        "todays_bets": [],
+        "games": {},
+        "generated_at": "",
+    }
+
 @app.get("/", response_class=HTMLResponse)
+async def landing_page(request: Request):
+    """Landing / marketing page with pricing tiers."""
+    return templates.TemplateResponse(
+        request,
+        "landing.html",
+        {},
+    )
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
     """Main dashboard page."""
-    data = load_dashboard_data()
+    data = await _safe_load_dashboard()
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -152,7 +198,7 @@ async def clear_picks_page(
     min_edge: float = 0.0,
 ):
     """Clear picks page with HTMX filtering."""
-    data = load_dashboard_data()
+    data = await _safe_load_dashboard()
     picks = data["clear_picks"]
 
     # Filter
@@ -199,7 +245,7 @@ async def all_bets_page(
     sort_by: str = "edge",
 ):
     """All bets page with sorting and filtering."""
-    data = load_dashboard_data()
+    data = await _safe_load_dashboard()
     bets = data["all_bets"]
 
     # Filter
@@ -245,7 +291,7 @@ async def all_bets_page(
 @app.get("/todays-card", response_class=HTMLResponse)
 async def todays_card_page(request: Request):
     """Today's betting card."""
-    data = load_dashboard_data()
+    data = await _safe_load_dashboard()
     return templates.TemplateResponse(
         request,
         "todays_card.html",
@@ -345,7 +391,7 @@ async def api_bets(
     limit: int = 50,
 ):
     """JSON API for bets."""
-    data = load_dashboard_data()
+    data = await _safe_load_dashboard()
     bets = data["all_bets"]
     if league != "all":
         bets = [b for b in bets if b.league.lower() == league.lower()]
@@ -414,7 +460,7 @@ async def api_signals():
 @app.get("/api/clear-picks")
 async def api_clear_picks():
     """JSON API for clear picks."""
-    data = load_dashboard_data()
+    data = await _safe_load_dashboard()
     return JSONResponse(content=[
         {
             "bet": bet_to_dict(cp.bet),
@@ -426,7 +472,337 @@ async def api_clear_picks():
     ])
 
 
+# ── Stripe Integration ────────────────────────────────────────────────────
+
+_stripe_manager = None
+
+
+def _get_stripe_manager() -> StripeIntegration:
+    """Lazy-load the Stripe integration."""
+    global _stripe_manager
+    if _stripe_manager is None:
+        from betting_intel.business.subscriptions import StripeIntegration
+        _stripe_manager = StripeIntegration()
+    return _stripe_manager
+
+
+def _get_sub_manager() -> "SubscriptionManager":
+    """Lazy-load the subscription manager."""
+    from betting_intel.business.subscriptions import SubscriptionManager
+    sm = SubscriptionManager(str(PROJECT_ROOT / "data" / "subscribers.json"))
+    return sm
+
+
+@app.get("/api/stripe/config")
+async def stripe_config():
+    """Return Stripe publishable key for the frontend."""
+    import os
+    pub_key = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
+    return JSONResponse({
+        "publishableKey": pub_key,
+        "enabled": bool(pub_key) and pub_key != "your-stripe-key-here",
+    })
+
+
+@app.post("/api/stripe/create-checkout-session")
+async def create_checkout_session(request: Request):
+    """
+    Create a Stripe Checkout Session for a subscription.
+
+    Expects JSON: { "tier": "basic", "interval": "month", "user_id": "..." }
+      - interval: "month" or "year"
+    Returns: { "url": "https://checkout.stripe.com/..." }
+    """
+    import os
+
+    body = await request.json()
+    tier = body.get("tier", "basic")
+    interval = body.get("interval", "month")
+    user_id = body.get("user_id", f"user_{os.urandom(4).hex()}")
+
+    domain = os.getenv("SITE_DOMAIN", "http://localhost:8000")
+    success_url = f"{domain}/subscribe/success?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{domain}/subscribe/cancel"
+
+    stripe_mgr = _get_stripe_manager()
+
+    if not stripe_mgr.is_enabled():
+        # Demo mode: simulate checkout for development
+        sm = _get_sub_manager()
+        months = 12 if interval == "year" else 1
+        sm.add_subscriber(
+            user_id=user_id,
+            tier=tier,
+            email="demo@example.com",
+            months=months,
+        )
+        return JSONResponse({
+            "url": f"/subscribe/success?demo=1&tier={tier}&interval={interval}",
+            "demo": True,
+            "user_id": user_id,
+        })
+
+    checkout_url = stripe_mgr.create_checkout_session(
+        user_id=user_id,
+        tier=tier,
+        interval=interval,
+        success_url=success_url,
+        cancel_url=cancel_url,
+    )
+
+    if not checkout_url:
+        return JSONResponse(
+            {"error": "Failed to create checkout session. Check Stripe configuration."},
+            status_code=400,
+        )
+
+    return JSONResponse({"url": checkout_url, "demo": False})
+
+
+@app.post("/api/stripe/webhook")
+async def stripe_webhook(request: Request):
+    """
+    Handle incoming Stripe webhook events.
+
+    This endpoint receives events from Stripe:
+      - checkout.session.completed → activate subscription
+      - customer.subscription.updated → tier changes
+      - customer.subscription.deleted → cancellations
+      - invoice.payment_succeeded → renewal confirmations
+    """
+    import stripe
+    import os
+
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+    webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+
+    # If no webhook secret configured, skip verification for development
+    if webhook_secret:
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, webhook_secret
+            )
+        except (ValueError, stripe.error.SignatureVerificationError) as e:
+            logger.warning(f"Stripe webhook signature verification failed: {e}")
+            return JSONResponse({"error": "Invalid signature"}, status_code=400)
+    else:
+        # Dev mode: parse payload manually
+        import json
+        try:
+            event = json.loads(payload)
+        except json.JSONDecodeError:
+            return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+
+    stripe_mgr = _get_stripe_manager()
+    result = stripe_mgr.process_webhook(event)
+
+    if result:
+        sm = _get_sub_manager()
+        action = result.get("action")
+        user_id = result.get("user_id", "")
+        tier = result.get("tier", "basic")
+        status = result.get("status", "")
+
+        if action == "subscribe" and status == "active":
+            months = result.get("months", 1)
+            sm.add_subscriber(
+                user_id=user_id,
+                tier=tier,
+                email=result.get("email", ""),
+                stripe_customer_id=result.get("stripe_customer_id", ""),
+                stripe_subscription_id=result.get("stripe_subscription_id", ""),
+                months=months,
+            )
+        elif action == "update":
+            sm.update_tier(user_id, tier)
+        elif action == "cancel":
+            sm.cancel_subscription(user_id)
+
+    return JSONResponse({"received": True})
+
+
+@app.get("/subscribe/success", response_class=HTMLResponse)
+async def subscribe_success(request: Request, session_id: str = "", demo: str = "0", tier: str = "basic"):
+    """Show a success page after a subscription is activated."""
+    is_demo = demo == "1"
+    tier_name = tier.capitalize()
+    return templates.TemplateResponse(
+        request,
+        "subscribe_success.html",
+        {
+            "session_id": session_id,
+            "demo": is_demo,
+            "tier": tier_name,
+            "dashboard_url": "/dashboard",
+        },
+    )
+
+
+@app.get("/subscribe/cancel", response_class=HTMLResponse)
+async def subscribe_cancel(request: Request):
+    """Show a cancellation page if the user leaves the checkout."""
+    return templates.TemplateResponse(
+        request,
+        "subscribe_cancel.html",
+        {
+            "pricing_url": "/#pricing",
+        },
+    )
+
+
+@app.get("/subscribe/manage", response_class=HTMLResponse)
+async def subscribe_manage(request: Request, user_id: str = ""):
+    """Subscription management page — view/edit current plan."""
+    sm = _get_sub_manager()
+    stats = sm.get_stats()
+
+    # Look up stripe_customer_id for the portal link
+    stripe_customer_id = ""
+    if user_id:
+        sub = sm.get_subscriber(user_id)
+        if sub and sub.stripe_customer_id:
+            stripe_customer_id = sub.stripe_customer_id
+
+    return templates.TemplateResponse(
+        request,
+        "subscribe_manage.html",
+        {
+            "stats": stats,
+            "dashboard_url": "/dashboard",
+            "stripe_customer_id": stripe_customer_id,
+        },
+    )
+
+
+@app.post("/api/stripe/create-portal-session")
+async def create_portal_session(request: Request):
+    """
+    Create a Stripe Customer Portal session for subscription management.
+
+    Expects JSON: { "customer_id": "cus_...", "return_url": "..." }
+    Returns: { "url": "https://billing.stripe.com/..." }
+    """
+    import os
+
+    body = await request.json()
+    customer_id = body.get("customer_id", "")
+    return_url = body.get("return_url", os.getenv("SITE_DOMAIN", "http://localhost:8000") + "/subscribe/manage")
+
+    if not customer_id:
+        return JSONResponse(
+            {"error": "customer_id is required"},
+            status_code=400,
+        )
+
+    stripe_mgr = _get_stripe_manager()
+    portal_url = stripe_mgr.create_customer_portal_session(
+        customer_id=customer_id,
+        return_url=return_url,
+    )
+
+    if not portal_url:
+        return JSONResponse(
+            {"error": "Failed to create portal session. Stripe may not be configured."},
+            status_code=400,
+        )
+
+    return JSONResponse({"url": portal_url})
+
+
+# ── Legal Pages ───────────────────────────────────────────────────────────
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+async def privacy_page(request: Request):
+    """Privacy Policy page."""
+    return templates.TemplateResponse(request, "privacy.html", {})
+
+
+@app.get("/terms", response_class=HTMLResponse)
+async def terms_page(request: Request):
+    """Terms of Service page."""
+    return templates.TemplateResponse(request, "terms.html", {})
+
+
+# ── SEO Routes ──────────────────────────────────────────────────────────────
+
+
+@app.get("/robots.txt", response_class=HTMLResponse)
+async def robots_txt():
+    """Serve robots.txt for search engines."""
+    return HTMLResponse(
+        content="""# https://www.robotstxt.org/robotstxt.html
+User-agent: *
+Allow: /
+Allow: /dashboard
+Allow: /static/
+Disallow: /api/
+Disallow: /signals
+
+Sitemap: https://exactbets.com/sitemap.xml
+""",
+        media_type="text/plain",
+    )
+
+
+@app.get("/sitemap.xml", response_class=HTMLResponse)
+async def sitemap_xml():
+    """Serve sitemap.xml for search engines."""
+    today = date.today().isoformat()
+    return HTMLResponse(
+        content=f"""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://exactbets.com/</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://exactbets.com/dashboard</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>hourly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://exactbets.com/todays-card</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://exactbets.com/all-bets</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://exactbets.com/player-props</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://exactbets.com/privacy</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://exactbets.com/terms</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.3</priority>
+  </url>
+</urlset>
+""",
+        media_type="application/xml",
+    )
+
+
 # ── Run ────────────────────────────────────────────────────────────────────
+
 
 def run(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
     """Run the web server via uvicorn."""

@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exact Bets — AI-Powered Betting Intelligence</title>
+    <meta name="description" content="Professional-grade betting intelligence. Identify market inefficiencies and get exact, actionable bets with Kelly-optimized stake sizing.">
+    <meta name="keywords" content="sports betting, AI betting picks, NBA picks, betting intelligence, +EV betting, Kelly staking, predictive analytics">
+    <meta name="author" content="Exact Bets">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://exactbets.com/">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="Exact Bets — AI-Powered Betting Intelligence">
+    <meta property="og:description" content="Professional-grade betting intelligence that identifies market inefficiencies. Just exact, actionable bets with Kelly-optimized stake sizing.">
+    <meta property="og:url" content="https://exactbets.com/">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Exact Bets">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://exactbets.com/static/favicon.svg">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Exact Bets — AI-Powered Betting Intelligence Dashboard">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:site" content="@exactbets">
+    <meta name="twitter:title" content="Exact Bets — AI-Powered Betting Intelligence">
+    <meta name="twitter:description" content="Professional-grade betting intelligence that identifies market inefficiencies. Just exact, actionable bets with Kelly-optimized stake sizing.">
+    <meta name="twitter:image" content="https://exactbets.com/static/favicon.svg">
+    <meta name="twitter:image:alt" content="Exact Bets Dashboard Preview">
+
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Exact Bets",
+      "applicationCategory": "Sports Application",
+      "operatingSystem": "Web",
+      "description": "Professional-grade betting intelligence that identifies market inefficiencies using 5-model ML ensemble.",
+      "offers": [
+        {
+          "@type": "Offer",
+          "name": "Free",
+          "price": "0",
+          "priceCurrency": "USD",
+          "description": "1 pick per day via Telegram"
+        },
+        {
+          "@type": "Offer",
+          "name": "Basic",
+          "price": "49",
+          "priceCurrency": "USD",
+          "description": "Full daily betting card with Kelly staking"
+        },
+        {
+          "@type": "Offer",
+          "name": "Premium",
+          "price": "199",
+          "priceCurrency": "USD",
+          "description": "Live alerts, player props, CLV tracking"
+        },
+        {
+          "@type": "Offer",
+          "name": "Elite",
+          "price": "999",
+          "priceCurrency": "USD",
+          "description": "API access, custom models, priority support"
+        }
+      ],
+
+      "featureList": [
+        "5-Model ML Ensemble",
+        "Kelly-Optimized Staking",
+        "Closing Line Value Tracking",
+        "Live Market Scanning",
+        "Player Props Analysis"
+      ]
+    }
+    </script>
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="apple-touch-icon" href="/static/favicon.svg">
+    <link rel="manifest" href="/static/site.webmanifest">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: {
+                            50: '#f0f0f5', 100: '#d6d6e0', 200: '#adadb8',
+                            300: '#84848f', 400: '#5b5b66', 500: '#32323d',
+                            600: '#292934', 700: '#1e1e2a', 800: '#151520',
+                            900: '#0c0c14', 950: '#06060a',
+                        },
+                        accent: {
+                            50: '#e6fff0', 100: '#b3ffd1', 200: '#80ffb3',
+                            300: '#4dff94', 400: '#1aff75', 500: '#00e65e',
+                            600: '#00b84b', 700: '#008a38', 800: '#005c25',
+                            900: '#002e13',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: #06060a;
+            color: #d6d6e0;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ── Animated Background ─────────────────────────── */
+        #bg-canvas {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 0; pointer-events: none;
+        }
+        body::before {
+            content: ''; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 0; pointer-events: none;
+            background:
+                radial-gradient(ellipse 80% 60% at 20% 20%, rgba(0,230,94,0.04) 0%, transparent 60%),
+                radial-gradient(ellipse 60% 50% at 80% 80%, rgba(96,165,250,0.03) 0%, transparent 60%),
+                radial-gradient(ellipse 50% 40% at 50% 50%, rgba(167,139,250,0.02) 0%, transparent 50%);
+            animation: meshShift 20s ease-in-out infinite alternate;
+        }
+        @keyframes meshShift {
+            0% { transform: scale(1) rotate(0deg); }
+            50% { transform: scale(1.1) rotate(2deg); }
+            100% { transform: scale(1) rotate(-2deg); }
+        }
+        body::after {
+            content: ''; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 0; pointer-events: none;
+            background-image:
+                linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+            background-size: 60px 60px;
+        }
+        nav, main, footer { position: relative; z-index: 1; }
+
+        /* ── Glass Card ──────────────────────────────────── */
+        .glass-card {
+            background: rgba(21,21,32,0.75);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255,255,255,0.06);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            transition: all 0.25s ease;
+        }
+        .glass-card:hover {
+            border-color: rgba(0,230,94,0.25);
+            box-shadow: 0 8px 40px rgba(0,230,94,0.08), 0 8px 32px rgba(0,0,0,0.3);
+            transform: translateY(-2px);
+        }
+
+        /* ── Gradient Text ───────────────────────────────── */
+        .gradient-text {
+            background: linear-gradient(135deg, #1aff75, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .gradient-text-green {
+            background: linear-gradient(135deg, #1aff75, #00e65e);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* ── Neon Glow ───────────────────────────────────── */
+        .neon-glow {
+            box-shadow: 0 0 30px rgba(0,230,94,0.15), 0 0 60px rgba(0,230,94,0.05);
+        }
+        .neon-text {
+            text-shadow: 0 0 20px rgba(0,230,94,0.3), 0 0 40px rgba(0,230,94,0.1);
+        }
+
+        /* ── Buttons ─────────────────────────────────────── */
+        .btn-accent {
+            background: linear-gradient(135deg, #00e65e, #00b84b);
+            color: #000; font-weight: 600; border: none; cursor: pointer;
+            transition: all 0.25s ease; position: relative; overflow: hidden;
+        }
+        .btn-accent::before {
+            content: ''; position: absolute; top: 0; left: -100%;
+            width: 100%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s ease;
+        }
+        .btn-accent:hover::before { left: 100%; }
+        .btn-accent:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0,230,94,0.35);
+        }
+        .btn-outline {
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.15);
+            color: #fff; font-weight: 500; cursor: pointer;
+            transition: all 0.25s ease;
+        }
+        .btn-outline:hover {
+            border-color: rgba(0,230,94,0.5);
+            background: rgba(0,230,94,0.05);
+            transform: translateY(-1px);
+        }
+
+        /* ── Animations ──────────────────────────────────── */
+        .fade-in { animation: fadeIn 0.6s ease-out forwards; }
+        .fade-in-up { animation: fadeInUp 0.6s ease-out forwards; }
+        .fade-in-scale { animation: fadeInScale 0.5s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeInScale {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .delay-0 { animation-delay: 0s; }
+        .delay-1 { animation-delay: 0.1s; }
+        .delay-2 { animation-delay: 0.2s; }
+        .delay-3 { animation-delay: 0.3s; }
+        .delay-4 { animation-delay: 0.4s; }
+
+        /* ── Pricing Toggle ──────────────────────────────── */
+        .pricing-toggle {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 999px;
+            padding: 4px;
+            display: inline-flex;
+        }
+        .pricing-toggle button {
+            padding: 8px 20px;
+            border-radius: 999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #84848f;
+            transition: all 0.25s ease;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+        }
+        .pricing-toggle button.active {
+            background: rgba(0,230,94,0.1);
+            color: #1aff75;
+        }
+
+        /* ── Scrollbar ───────────────────────────────────── */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #06060a; }
+        ::-webkit-scrollbar-thumb { background: #32323d; border-radius: 3px; }
+
+        /* ── Pulse Dot ───────────────────────────────────── */
+        .pulse-dot {
+            display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+            background: #1aff75; animation: pulseDot 2s ease-in-out infinite;
+        }
+        @keyframes pulseDot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* ── Pricing Card Highlight ──────────────────────── */
+        .pricing-highlight {
+            border: 1px solid rgba(0,230,94,0.3);
+            background: linear-gradient(135deg, rgba(0,230,94,0.06), rgba(21,21,32,0.85));
+            box-shadow: 0 0 40px rgba(0,230,94,0.08);
+            transform: scale(1.02);
+            position: relative;
+        }
+        .pricing-highlight .popular-badge {
+            position: absolute;
+            top: -12px; left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, #00e65e, #00b84b);
+            color: #000;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 4px 16px;
+            border-radius: 999px;
+        }
+
+        /* ── Stats Counter ───────────────────────────────── */
+        .stat-number {
+            font-size: 3rem;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        /* ── Feature checkmarks ──────────────────────────── */
+        .feature-check {
+            color: #1aff75;
+            font-weight: bold;
+        }
+        .feature-missing {
+            color: #32323d;
+        }
+
+        /* ── Mobile menu ─────────────────────────────────── */
+        #mobile-menu {
+            display: none;
+        }
+        #mobile-menu.open {
+            display: flex;
+        }
+    </style>
+</head>
+<body>
+    <!-- ═══ ANIMATED BACKGROUND ═══ -->
+    <canvas id="bg-canvas"></canvas>
+
+    <!-- ═══ NAV ═══ -->
+    <nav class="sticky top-0 z-50" style="background: rgba(6,6,10,0.85); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255,255,255,0.05);">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <!-- Logo -->
+                <a href="/" class="flex items-center gap-2.5">
+                    <span class="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-400 to-accent-600 flex items-center justify-center text-black font-extrabold text-sm">EB</span>
+                    <span class="text-xl font-extrabold gradient-text">EXACT BETS</span>
+                </a>
+
+                <!-- Desktop Nav -->
+                <div class="hidden md:flex items-center gap-1">
+                    <a href="#features" class="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">Features</a>
+                    <a href="#how-it-works" class="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">How It Works</a>
+                    <a href="#pricing" class="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">Pricing</a>
+                    <a href="#faq" class="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">FAQ</a>
+                    <a href="/dashboard" class="ml-4 px-5 py-2 text-sm font-semibold btn-outline rounded-lg">Dashboard</a>
+                    <a href="#pricing" class="px-5 py-2 text-sm font-semibold btn-accent rounded-lg">Get Started</a>
+                </div>
+
+                <!-- Mobile Toggle -->
+                <button id="mobile-toggle" class="md:hidden p-2 text-gray-400 hover:text-white">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Mobile Nav -->
+            <div id="mobile-menu" class="md:hidden pb-4 flex-col gap-2">
+                <a href="#features" class="px-4 py-2 text-sm text-gray-400 hover:text-white rounded-lg hover:bg-white/5">Features</a>
+                <a href="#how-it-works" class="px-4 py-2 text-sm text-gray-400 hover:text-white rounded-lg hover:bg-white/5">How It Works</a>
+                <a href="#pricing" class="px-4 py-2 text-sm text-gray-400 hover:text-white rounded-lg hover:bg-white/5">Pricing</a>
+                <a href="#faq" class="px-4 py-2 text-sm text-gray-400 hover:text-white rounded-lg hover:bg-white/5">FAQ</a>
+                <div class="flex gap-2 mt-2 pt-2 border-t border-white/5">
+                    <a href="/dashboard" class="flex-1 text-center px-4 py-2 text-sm font-semibold btn-outline rounded-lg">Dashboard</a>
+                    <a href="#pricing" class="flex-1 text-center px-4 py-2 text-sm font-semibold btn-accent rounded-lg">Get Started</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ═══ MAIN ═══ -->
+    <main>
+
+        <!-- ════════════════════════════════════════════════════════════ -->
+        <!--  HERO SECTION                                                -->
+        <!-- ════════════════════════════════════════════════════════════ -->
+        <section class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 sm:pt-28 pb-16 text-center fade-in">
+            <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-accent-500/10 border border-accent-500/20 text-accent-400 text-xs sm:text-sm mb-6">
+                <span class="pulse-dot"></span>
+                <span id="live-status">System Online — Generating Live Picks</span>
+            </div>
+
+            <h1 class="text-4xl sm:text-6xl lg:text-7xl font-extrabold gradient-text leading-tight mb-6">
+                Beat the Closing Line<br>
+                <span class="text-white">Every Single Day</span>
+            </h1>
+
+            <p class="text-gray-400 text-base sm:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
+                Professional-grade betting intelligence that identifies market inefficiencies.
+                <span class="text-white font-semibold">No probabilities. No confusion.</span>
+                Just exact, actionable bets with Kelly-optimized stake sizing.
+            </p>
+
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12">
+                <a href="#pricing" class="px-8 py-4 text-base font-bold btn-accent rounded-xl neon-glow">
+                    Start Winning — $49/mo
+                </a>
+                <a href="/dashboard" class="px-8 py-4 text-base font-semibold btn-outline rounded-xl">
+                    View Live Dashboard →
+                </a>
+            </div>
+
+            <!-- Trust Bar -->
+            <div class="flex flex-wrap items-center justify-center gap-8 sm:gap-12 text-gray-600 text-sm">
+                <div class="flex items-center gap-2">
+                    <span class="text-accent-400 font-bold text-lg">5,548+</span>
+                    <span class="text-gray-500">Games Analyzed</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-accent-400 font-bold text-lg">30</span>
+                    <span class="text-gray-500">NBA Teams Tracked</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-accent-400 font-bold text-lg">5</span>
+                    <span class="text-gray-500">ML Models Ensemble</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-accent-400 font-bold text-lg">100%</span>
+                    <span class="text-gray-500">Data-Driven</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- ════════════════════════════════════════════════════════════ -->
+        <!--  FEATURES SECTION                                           -->
+        <!-- ════════════════════════════════════════════════════════════ -->
+        <section id="features" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+            <div class="text-center mb-14 fade-in-up">
+                <span class="text-accent-400 text-sm font-semibold uppercase tracking-widest">Features</span>
+                <h2 class="text-3xl sm:text-4xl font-extrabold text-white mt-3">What You Get</h2>
+                <p class="text-gray-500 mt-3 max-w-xl mx-auto">Every pick comes with full transparency — model probability, market odds, edge percentage, and exact stake sizing.</p>
+            </div>
+
+            <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                <!-- Feature 1 -->
+                <div class="glass-card rounded-2xl p-6 fade-in-up delay-0">
+                    <div class="w-12 h-12 rounded-xl bg-accent-500/10 border border-accent-500/20 flex items-center justify-center mb-4 text-2xl">🎯</div>
+                    <h3 class="text-lg font-bold text-white mb-2">Exact Bet Recommendations</h3>
+                    <p class="text-gray-400 text-sm leading-relaxed">No probabilities. No confusion. Just exact bets with dollar amounts: "$55 on Spurs -3.5 (4.2% edge)"</p>
+                </div>
+                <!-- Feature 2 -->
+                <div class="glass-card rounded-2xl p-6 fade-in-up delay-1">
+                    <div class="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mb-4 text-2xl">📊</div>
+                    <h3 class="text-lg font-bold text-white mb-2">Every Major Market</h3>
+                    <p class="text-gray-400 text-sm leading-relaxed">Moneyline, point spreads, totals, team totals, quarters, halves, player props, and auto-suggested parlays.</p>
+                </div>
+                <!-- Feature 3 -->
+                <div class="glass-card rounded-2xl p-6 fade-in-up delay-2">
+                    <div class="w-12 h-12 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center mb-4 text-2xl">🧠</div>
+                    <h3 class="text-lg font-bold text-white mb-2">5-Model Ensemble</h3>
+                    <p class="text-gray-400 text-sm leading-relaxed">LightGBM, CatBoost, XGBoost, Bayesian Ridge, and Momentum models combined for maximum predictive power.</p>
+                </div>
+                <!-- Feature 4 -->
+                <div class="glass-card rounded-2xl p-6 fade-in-up delay-3">
+                    <div class="w-12 h-12 rounded-xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center mb-4 text-2xl">💰</div>
+                    <h3 class="text-lg font-bold text-white mb-2">Kelly-Optimized Staking</h3>
+                    <p class="text-gray-400 text-sm leading-relaxed">Quarter-Kelly stake sizing with drawdown protection. Maximum growth with minimum risk of ruin.</p>
+                </div>
+                <!-- Feature 5 -->
+                <div class="glass-card rounded-2xl p-6 fade-in-up delay-4">
+                    <div class="w-12 h-12 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center mb-4 text-2xl">📈</div>
+                    <h3 class="text-lg font-bold text-white mb-2">CLV Tracking</h3>
+                    <p class="text-gray-400 text-sm leading-relaxed">Closing Line Value tracked for every bet. We prove our edge against the market closing line — the gold standard.</p>
+                </div>
+                <!-- Feature 6 -->
+                <div class="glass-card rounded-2xl p-6 fade-in-up delay-4">
+                    <div class="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-4 text-2xl">🔍</div>
+                    <h3 class="text-lg font-bold text-white mb-2">Live Market Scanning</h3>
+                    <p class="text-gray-400 text-sm leading-relaxed">Real-time +EV scanner detects market inefficiencies as they happen. Steam move alerts for sharp money.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ════════════════════════════════════════════════════════════ -->
+        <!--  HOW IT WORKS                                               -->
+        <!-- ════════════════════════════════════════════════════════════ -->
+        <section id="how-it-works" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+            <div class="text-center mb-14 fade-in-up">
+                <span class="text-blue-400 text-sm font-semibold uppercase tracking-widest">The Process</span>
+                <h2 class="text-3xl sm:text-4xl font-extrabold text-white mt-3">How We Find Edges</h2>
+                <p class="text-gray-500 mt-3 max-w-xl mx-auto">Our pipeline processes thousands of data points per game to find mispriced lines.</p>
+            </div>
+
+            <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="glass-card rounded-2xl p-6 text-center fade-in-up delay-0">
+                    <div class="w-14 h-14 rounded-2xl bg-accent-500/10 border border-accent-500/20 flex items-center justify-center mx-auto mb-4">
+                        <span class="text-accent-400 text-2xl font-bold">1</span>
+                    </div>
+                    <h3 class="text-base font-bold text-white mb-2">Data Ingestion</h3>
+                    <p class="text-gray-500 text-xs leading-relaxed">Load 5,000+ historical NBA games with full play-by-play, team stats, and injury data.</p>
+                </div>
+                <div class="glass-card rounded-2xl p-6 text-center fade-in-up delay-1">
+                    <div class="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mx-auto mb-4">
+                        <span class="text-blue-400 text-2xl font-bold">2</span>
+                    </div>
+                    <h3 class="text-base font-bold text-white mb-2">Feature Engineering</h3>
+                    <p class="text-gray-500 text-xs leading-relaxed">159+ advanced features: opponent-adjusted stats, SOS, play-style, momentum, rest, travel fatigue.</p>
+                </div>
+                <div class="glass-card rounded-2xl p-6 text-center fade-in-up delay-2">
+                    <div class="w-14 h-14 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center mx-auto mb-4">
+                        <span class="text-purple-400 text-2xl font-bold">3</span>
+                    </div>
+                    <h3 class="text-base font-bold text-white mb-2">Model Ensemble</h3>
+                    <p class="text-gray-500 text-xs leading-relaxed">5 ML models + Monte Carlo simulation. Walk-forward backtesting prevents overfitting.</p>
+                </div>
+                <div class="glass-card rounded-2xl p-6 text-center fade-in-up delay-3">
+                    <div class="w-14 h-14 rounded-2xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center mx-auto mb-4">
+                        <span class="text-pink-400 text-2xl font-bold">4</span>
+                    </div>
+                    <h3 class="text-base font-bold text-white mb-2">Edge Detection</h3>
+                    <p class="text-gray-500 text-xs leading-relaxed">Model vs market comparison. Only bets with positive EV and measurable edge get recommended.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ════════════════════════════════════════════════════════════ -->
+        <!--  SOCIAL PROOF / STATS                                       -->
+        <!-- ════════════════════════════════════════════════════════════ -->
+        <section class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+            <div class="glass-card rounded-3xl p-8 sm:p-12 text-center neon-glow fade-in-scale">
+                <span class="text-accent-400 text-sm font-semibold uppercase tracking-widest">Proven Results</span>
+                <h2 class="text-3xl sm:text-4xl font-extrabold text-white mt-3 mb-8">Our Track Record</h2>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+                    <div>
+                        <div class="stat-number gradient-text-green">5,548</div>
+                        <div class="text-gray-500 text-sm mt-1">NBA Games Analyzed</div>
+                    </div>
+                    <div>
+                        <div class="stat-number gradient-text-green">159</div>
+                        <div class="text-gray-500 text-sm mt-1">Features Per Game</div>
+                    </div>
+                    <div>
+                        <div class="stat-number text-blue-400">5</div>
+                        <div class="text-gray-500 text-sm mt-1">ML Models</div>
+                    </div>
+                    <div>
+                        <div class="stat-number text-purple-400">30</div>
+                        <div class="text-gray-500 text-sm mt-1">NBA Teams</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ════════════════════════════════════════════════════════════ -->
+        <!--  PRICING SECTION                                             -->
+        <!-- ════════════════════════════════════════════════════════════ -->
+        <section id="pricing" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+            <div class="text-center mb-14 fade-in-up">
+                <span class="text-accent-400 text-sm font-semibold uppercase tracking-widest">Pricing</span>
+                <h2 class="text-3xl sm:text-4xl font-extrabold text-white mt-3">Invest in Your Edge</h2>
+                <p class="text-gray-500 mt-3 max-w-xl mx-auto">Every plan is backed by our full ML pipeline. The only difference is how much you get.</p>
+            </div>
+
+            <!-- Billing Toggle -->
+            <div class="flex items-center justify-center mb-10 fade-in-up delay-0">
+                <div class="pricing-toggle">
+                    <button id="toggle-monthly" class="active" onclick="setBilling('month')">Monthly</button>
+                    <button id="toggle-yearly" onclick="setBilling('year')">
+                        Annual
+                        <span class="text-accent-400 text-xs ml-1 font-semibold">Save ~17%</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="grid md:grid-cols-4 gap-4 max-w-6xl mx-auto" id="pricing-grid">
+                <!-- FREE -->
+                <div class="glass-card rounded-2xl p-6 text-center fade-in-up delay-0 flex flex-col">
+                    <div class="mb-4">
+                        <div class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Free</div>
+                        <div class="text-3xl font-extrabold text-white mt-2">$0</div>
+                        <div class="text-gray-500 text-sm">forever</div>
+                    </div>
+                    <ul class="text-left space-y-3 mb-8 flex-1 text-sm">
+                        <li class="flex items-start gap-2"><span class="feature-check mt-0.5">✓</span> <span class="text-gray-400">1 pick per day</span></li>
+                        <li class="flex items-start gap-2"><span class="feature-check mt-0.5">✓</span> <span class="text-gray-400">Public Telegram channel</span></li>
+                        <li class="flex items-start gap-2"><span class="feature-missing mt-0.5">✗</span> <span class="text-gray-600">24-hour delay</span></li>
+                        <li class="flex items-start gap-2"><span class="feature-missing mt-0.5">✗</span> <span class="text-gray-600">Full daily card</span></li>
+                        <li class="flex items-start gap-2"><span class="feature-missing mt-0.5">✗</span> <span class="text-gray-600">Kelly stake sizing</span></li>
+                    </ul>
+                    <a href="/dashboard" class="w-full py-3 text-sm font-semibold btn-outline rounded-xl text-center block">Try Free</a>
+                </div>
+
+                <!-- BASIC — HIGHLIGHTED -->
+                <div class="glass-card rounded-2xl p-6 text-center fade-in-up delay-1 flex flex-col pricing-highlight relative">
+                    <div class="popular-badge">MOST POPULAR</div>
+                    <div class="mb-4 mt-3">
+                        <div class="text-sm font-semibold text-accent-400 uppercase tracking-wider">Basic</div>
+                        <!-- Monthly price -->
+                        <div class="price-monthly">
+                            <div class="text-3xl font-extrabold text-white mt-2">$49</div>
+                            <div class="text-gray-500 text-sm">/month</div>
+                        </div>
+                        <!-- Annual price -->
+                        <div class="price-yearly hidden">
+                            <div class="text-3xl font-extrabold text-white mt-2">$490</div>
+                            <div class="text-gray-500 text-sm">/year <span class="text-accent-400 font-semibold">(save $98)</span></div>
+                        </div>
+                    </div>
+                    <ul class="text-left space-y-3 mb-8 flex-1 text-sm">
+                        <li class="flex items-start gap-2"><span class="feature-check mt-0.5">✓</span> <span class="text-white">Full daily betting card</span></li>
+                        <li class="flex items-start gap-2"><span class="feature-check mt-0.5">✓</span> <span class="text-white">All NBA games analyzed</span></li>
+                        <li class="flex items-start gap-2"><span class="feature-check mt-0.5">✓</span> <span class="text-white">Telegram delivery</span></li>
+                        <li class="flex items-start gap-2"><span class="feature-check mt-0.5">✓</span> <span class="text-white">Email delivery</span></li>
+                        <li class="flex items-start gap-2"><span class="feature-check mt-0.5">✓</span> <span class="text-white">Kelly stake sizing</span></li>
+                        <li class="flex items-start gap-2"><span class="feature-check mt-0.5">✓</span> <span class="text-white">No delay — real-time</span></li>
+                    </ul>
+                    <button onclick="startCheckout('basic')" class="w-full py-3 text-sm font-bold btn-accent rounded-xl neon-glow stripe-checkout-btn" data-tier="basic">Subscribe</button>
+                </div>
+
+                <!-- PREMIUM -->
+                <div class="glass-card rounded-2xl p-6 text-center fade-in-up delay-2 flex flex-col">
+                    <div class="mb-4">
+                        <div class="text-sm font-semibold text-blue-400 uppercase tracking-wider">Premium</div>
+                        <!-- Monthly price -->
+                        <div class="price-monthly">
+                            <div class="text-3xl font-extrabold text-white mt-2">$199</div>
+                            <div class="text-gray-500 text-sm">/month</div>
+                        </div>
+                        <!-- Annual price -->
+                        <div class="price-yearly hidden">
+                            <div class="text-3xl font-extrabold text-white mt-2">$1,990</div>
+                            <div class="text-gray-500 text-sm">/year <span class="text-accent-400 font-semibold">(save $398)</span></div>
+                        </div>
+                    </div>
+                    <ul class="text-left space-y-3 mb-8 flex-1 text-sm">
+                        <li class="flex items-start gap-2"><span class="feature-check mt-0.5">✓</span> <span class="text-gray-400">Everything in Basic</span></li>
+                        <li class="flex items-start gap-2"><span class="feature-check mt-0.5">✓</span> <span class="text-gray-400">Live in-game alerts</span></li>
+                        <li class="flex items-start gap-2"><span class="feature-check mt-0.5">✓</span> <span class="text-gray-400">Player props + parlays</span></li>
+                        <li class="flex items-start gap-2"><span class="feature-check mt-0.5">✓</span> <span class="text-gray-400">Small league coverage</span></li>
+                        <li class="flex items-start gap-2"><span class="feature-check mt-0.5">✓</span> <span class="text-gray-400">CLV tracking dashboard</span></li>
+                        <li class="flex items-start gap-2"><span class="feature-check mt-0.5">✓</span> <span class="text-gray-400">Discord community access</span></li>
+                    </ul>
+                    <button onclick="startCheckout('premium')" class="w-full py-3 text-sm font-semibold btn-outline rounded-xl stripe-checkout-btn" data-tier="premium">Subscribe</button>
+                </div>
+
+                <!-- ELITE -->
+                <div class="glass-card rounded-2xl p-6 text-center fade-in-up delay-3 flex flex-col">
+                    <div class="mb-4">
+                        <div class="text-sm font-semibold text-purple-400 uppercase tracking-wider">Elite</div>
+                        <!-- Monthly price -->
+                        <div class="price-monthly">
+                            <div class="text-3xl font-extrabold text-white mt-2">$999</div>
+                            <div class="text-gray-500 text-sm">/month</div>
+                        </div>
+                        <!-- Annual price -->
+                        <div class="price-yearly hidden">
+                            <div class="text-3xl font-extrabold text-white mt-2">$9,990</div>
+                            <div class="text-gray-500 text-sm">/year <span class="text-accent-400 font-semibold">(save $1,998)</span></div>
+                        </div>
+                    </div>
+                    <ul class="text-left space-y-3 mb-8 flex-1 text-sm">
+                        <li class="flex items-start gap-2"><span class="feature-check mt-0.5">✓</span> <span class="text-gray-400">Everything in Premium</span></li>
+                        <li class="flex items-start gap-2"><span class="feature-check mt-0.5">✓</span> <span class="text-gray-400">REST API access</span></li>
+                        <li class="flex items-start gap-2"><span class="feature-check mt-0.5">✓</span> <span class="text-gray-400">Custom model training</span></li>
+                        <li class="flex items-start gap-2"><span class="feature-check mt-0.5">✓</span> <span class="text-gray-400">Portfolio tracking</span></li>
+                        <li class="flex items-start gap-2"><span class="feature-check mt-0.5">✓</span> <span class="text-gray-400">Monthly strategy call</span></li>
+                        <li class="flex items-start gap-2"><span class="feature-check mt-0.5">✓</span> <span class="text-gray-400">Priority support</span></li>
+                    </ul>
+                    <button onclick="startCheckout('elite')" class="w-full py-3 text-sm font-semibold btn-outline rounded-xl stripe-checkout-btn" data-tier="elite">Subscribe</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ════════════════════════════════════════════════════════════ -->
+        <!--  FEATURE COMPARISON TABLE                                   -->
+        <!-- ════════════════════════════════════════════════════════════ -->
+        <section class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+            <div class="glass-card rounded-3xl p-8 sm:p-12 fade-in-up">
+                <h2 class="text-2xl font-extrabold text-white text-center mb-8">Plan Comparison</h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-white/5">
+                                <th class="text-left py-3 pr-4 text-gray-400 font-semibold">Feature</th>
+                                <th class="text-center py-3 px-4 text-gray-500">Free</th>
+                                <th class="text-center py-3 px-4 text-accent-400 font-semibold">Basic</th>
+                                <th class="text-center py-3 px-4 text-blue-400">Premium</th>
+                                <th class="text-center py-3 px-4 text-purple-400">Elite</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% set features = [
+                                ('Daily picks', '1/day', 'Unlimited', 'Unlimited', 'Unlimited'),
+                                ('NBA coverage', '✗', '✓', '✓', '✓'),
+                                ('Small leagues', '✗', '✗', '✓', '✓'),
+                                ('Player props', '✗', '✗', '✓', '✓'),
+                                ('Live alerts', '✗', '✗', '✓', '✓'),
+                                ('Kelly staking', '✗', '✓', '✓', '✓'),
+                                ('CLV tracking', '✗', '✗', '✓', '✓'),
+                                ('API access', '✗', '✗', '✗', '✓'),
+                                ('Custom models', '✗', '✗', '✗', '✓'),
+                                ('Priority support', '✗', '✗', '✗', '✓'),
+                            ] %}
+                            {% for name, free, basic, premium, elite in features %}
+                            <tr class="border-b border-white/[0.03]">
+                                <td class="py-3 pr-4 text-gray-300">{{ name }}</td>
+                                <td class="text-center py-3 px-4 text-gray-600">{{ free }}</td>
+                                <td class="text-center py-3 px-4 text-accent-400">{{ basic }}</td>
+                                <td class="text-center py-3 px-4 text-blue-400">{{ premium }}</td>
+                                <td class="text-center py-3 px-4 text-purple-400">{{ elite }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ════════════════════════════════════════════════════════════ -->
+        <!--  FINAL CTA                                                  -->
+        <!-- ════════════════════════════════════════════════════════════ -->
+        <section id="subscribe" class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
+            <div class="glass-card rounded-3xl p-10 sm:p-16 neon-glow fade-in-scale">
+                <span class="text-accent-400 text-sm font-semibold uppercase tracking-widest">Get Started</span>
+                <h2 class="text-3xl sm:text-4xl font-extrabold text-white mt-3 mb-4">Ready to Beat the Market?</h2>
+                <p class="text-gray-400 max-w-lg mx-auto mb-8">
+                    Join thousands of bettors using ML-powered analytics to find +EV opportunities. No commitment required — start with a free pick today.
+                </p>
+                <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+                    <a href="/dashboard" class="px-10 py-4 text-lg font-bold btn-outline rounded-xl">
+                        View Live Dashboard →
+                    </a>
+                </div>
+                <p class="text-gray-600 text-xs mt-6">
+                    ⚠ For educational and research purposes only. Gamble responsibly. Never bet more than you can afford to lose.
+                </p>
+            </div>
+        </section>
+
+        <!-- ════════════════════════════════════════════════════════════ -->
+        <!--  FAQ                                                        -->
+        <!-- ════════════════════════════════════════════════════════════ -->
+        <section id="faq" class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+            <div class="text-center mb-10">
+                <h2 class="text-3xl font-extrabold text-white">Frequently Asked Questions</h2>
+            </div>
+            <div class="space-y-3">
+                {% set faqs = [
+                    ('How are picks delivered?', 'Picks are delivered via Telegram (instant), email (daily digest), and our web dashboard. You choose your preferred channel.'),
+                    ('Do you guarantee wins?', 'No. No one can guarantee sports betting results. We provide data-driven analysis that identifies positive expected value (+EV) opportunities. Over a large sample size, +EV betting is profitable — but individual bets can and will lose.'),
+                    ('What is Closing Line Value (CLV)?', 'CLV measures how your bet line compares to the final closing line. If you consistently get better odds than the closing line, you have a true edge. It\'s the single most important metric for serious bettors.'),
+                    ('Can I cancel anytime?', 'Yes. All plans are month-to-month with no long-term commitment. Cancel anytime and retain access until the end of your billing period.'),
+                    ('What sports do you cover?', 'NBA (primary), plus LNB Pro B (France), CEBL (Canada), BNXT (Belgium/Netherlands), and WNBA. Premium+ plans get access to all leagues.'),
+                    ('How is Kelly staking calculated?', 'We use quarter-Kelly (25% of full Kelly) with a max 15% of bankroll per bet and 40% max daily exposure. This balances growth with drawdown protection.'),
+                ] %}
+                {% for question, answer in faqs %}
+                <div class="glass-card rounded-xl overflow-hidden">
+                    <button class="faq-question w-full text-left px-6 py-4 flex items-center justify-between text-white font-semibold hover:bg-white/[0.02] transition-colors">
+                        <span>{{ question }}</span>
+                        <svg class="w-4 h-4 text-gray-500 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </button>
+                    <div class="faq-answer hidden px-6 pb-4 text-sm text-gray-400 leading-relaxed">
+                        {{ answer }}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+    </main>
+
+    <!-- ═══ FOOTER ═══ -->
+    <footer class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div class="glass-card rounded-2xl p-8">
+            <div class="flex flex-col md:flex-row justify-between items-center gap-6">
+                <div class="flex items-center gap-3">
+                    <span class="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-400 to-accent-600 flex items-center justify-center text-black font-extrabold text-xs">EB</span>
+                    <div>
+                        <div class="text-sm font-semibold text-white">Exact Bets</div>
+                        <div class="text-xs text-gray-600">Betting Intelligence System v0.2.0</div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4 text-xs text-gray-600">
+                    <a href="#features" class="hover:text-accent-400 transition-colors">Features</a>
+                    <a href="#pricing" class="hover:text-accent-400 transition-colors">Pricing</a>
+                    <a href="#faq" class="hover:text-accent-400 transition-colors">FAQ</a>
+                    <a href="/dashboard" class="hover:text-accent-400 transition-colors">Dashboard</a>
+                    <a href="/privacy" class="hover:text-accent-400 transition-colors">Privacy</a>
+                    <a href="/terms" class="hover:text-accent-400 transition-colors">Terms</a>
+                </div>
+            </div>
+            <div class="mt-6 pt-6 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-3">
+                <div class="text-xs text-gray-600">
+                    <span class="text-accent-400 font-semibold">⚠</span> For educational and research purposes only. Gamble responsibly.
+                </div>
+                <div class="text-xs text-gray-600">
+                    © 2026 Exact Bets. All rights reserved.
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- ═══ SCRIPTS ═══ -->
+    <script>
+        // ── Particle background ──
+        (function() {
+            const canvas = document.getElementById('bg-canvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            let particles = [];
+            let mouseX = 0, mouseY = 0;
+
+            function resize() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                initParticles();
+            }
+
+            function initParticles() {
+                const count = Math.min(Math.floor(canvas.width * canvas.height / 12000), 80);
+                particles = [];
+                for (let i = 0; i < count; i++) {
+                    particles.push({
+                        x: Math.random() * canvas.width,
+                        y: Math.random() * canvas.height,
+                        vx: (Math.random() - 0.5) * 0.5,
+                        vy: (Math.random() - 0.5) * 0.5,
+                        r: Math.random() * 1.2 + 0.3,
+                        a: Math.random() * 0.4 + 0.1,
+                    });
+                }
+            }
+
+            function draw() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                for (let i = 0; i < particles.length; i++) {
+                    const p = particles[i];
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    if (p.x < 0) p.x = canvas.width;
+                    if (p.x > canvas.width) p.x = 0;
+                    if (p.y < 0) p.y = canvas.height;
+                    if (p.y > canvas.height) p.y = 0;
+
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255, 255, 255, ${p.a})`;
+                    ctx.fill();
+
+                    // Connections
+                    for (let j = i + 1; j < particles.length; j++) {
+                        const p2 = particles[j];
+                        const dx = p.x - p2.x;
+                        const dy = p.y - p2.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        if (dist < 150) {
+                            ctx.beginPath();
+                            ctx.moveTo(p.x, p.y);
+                            ctx.lineTo(p2.x, p2.y);
+                            ctx.strokeStyle = `rgba(0, 230, 94, ${0.06 * (1 - dist / 150)})`;
+                            ctx.lineWidth = 0.5;
+                            ctx.stroke();
+                        }
+                    }
+                }
+                requestAnimationFrame(draw);
+            }
+
+            window.addEventListener('resize', resize);
+            resize();
+            draw();
+        })();
+
+        // ── Mobile menu toggle ──
+        document.getElementById('mobile-toggle')?.addEventListener('click', function() {
+            document.getElementById('mobile-menu').classList.toggle('open');
+        });
+
+        // ── FAQ accordion ──
+        document.querySelectorAll('.faq-question').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const answer = this.nextElementSibling;
+                const icon = this.querySelector('svg');
+                const isOpen = !answer.classList.contains('hidden');
+                answer.classList.toggle('hidden');
+                icon.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+            });
+        });
+
+        // ── Smooth scroll for anchor links ──
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        });
+
+        // ── Live clock ──
+        function updateClock() {
+            const el = document.getElementById('live-status');
+            if (el) {
+                const now = new Date();
+                el.textContent = `System Online — ${now.toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })} ET`;
+            }
+        }
+        updateClock();
+        setInterval(updateClock, 10000);
+
+        // ── Billing toggle ──
+        let currentBilling = 'month';
+
+        function setBilling(interval) {
+            currentBilling = interval;
+            document.getElementById('toggle-monthly').classList.toggle('active', interval === 'month');
+            document.getElementById('toggle-yearly').classList.toggle('active', interval === 'year');
+
+            // Toggle price displays
+            document.querySelectorAll('.price-monthly').forEach(el => {
+                el.classList.toggle('hidden', interval !== 'month');
+            });
+            document.querySelectorAll('.price-yearly').forEach(el => {
+                el.classList.toggle('hidden', interval !== 'year');
+            });
+
+            // Update button text
+            document.querySelectorAll('.stripe-checkout-btn').forEach(btn => {
+                const tier = btn.getAttribute('data-tier');
+                if (interval === 'year') {
+                    const labels = { basic: 'Subscribe $490/yr', premium: 'Subscribe $1,990/yr', elite: 'Subscribe $9,990/yr' };
+                    btn.textContent = labels[tier] || 'Subscribe';
+                } else {
+                    const labels = { basic: 'Subscribe $49/mo', premium: 'Subscribe $199/mo', elite: 'Subscribe $999/mo' };
+                    btn.textContent = labels[tier] || 'Subscribe';
+                }
+            });
+        }
+
+        // ── Stripe Checkout ──
+        async function startCheckout(tier) {
+            const btn = document.querySelector(`[data-tier="${tier}"]`);
+            if (!btn) return;
+
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Redirecting...';
+
+            try {
+                const response = await fetch('/api/stripe/create-checkout-session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        tier: tier,
+                        interval: currentBilling,
+                        user_id: 'web_' + Math.random().toString(36).substring(2, 10)
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.url) {
+                    window.location.href = data.url;
+                } else {
+                    alert('Failed to create checkout session. Please try again.');
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                }
+            } catch (error) {
+                console.error('Checkout error:', error);
+                alert('Connection error. Please try again.');
+                btn.textContent = originalText;
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>

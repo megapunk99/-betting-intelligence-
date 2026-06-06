@@ -639,7 +639,7 @@ class PositiveEVScanner:
             return
 
         # Earliest snapshot = opening line
-            opening = historical[0]
+        opening = historical[0]
         opening_total = opening.get("total")
         opening_home_ml = opening.get("home_ml")
 
@@ -690,9 +690,6 @@ class PositiveEVScanner:
 
         confidence = self._determine_confidence(edge, n_books, model_prob)
         tags = self._generate_tags(edge, n_books, league)
-
-        home_team = snapshot.get("home_team", "")
-        away_team = snapshot.get("away_team", "")
 
         home_team = snapshot.get("home_team", "")
         away_team = snapshot.get("away_team", "")

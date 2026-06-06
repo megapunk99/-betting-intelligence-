@@ -35,7 +35,7 @@ try:
 except ImportError:
     REQUESTS_AVAILABLE = False
 
-from config import ODDS_API_KEY, ODDS_API_BASE_URL, CACHE_DIR
+from betting_intel.config import ODDS_API_KEY, ODDS_API_BASE_URL, CACHE_DIR
 
 
 # ═══════════════════════════════════════════════════════════════════════════

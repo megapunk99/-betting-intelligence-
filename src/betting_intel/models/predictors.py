@@ -116,9 +116,21 @@ class SpreadPredictor(BasePredictor):
     we can identify regression-to-mean opportunities.
     """
 
-    def __init__(self):
-        super().__init__("SpreadPred_Ridge")
-        self.model = Ridge(alpha=2.0)
+    def __init__(self, model_type: str = "ridge"):
+        super().__init__(f"SpreadPred_{model_type}")
+        if model_type == "ridge":
+            self.model = Ridge(alpha=2.0)
+        elif model_type == "lightgbm":
+            try:
+                from lightgbm import LGBMRegressor
+                self.model = LGBMRegressor(
+                    n_estimators=100, max_depth=4, learning_rate=0.1,
+                    random_state=42, verbosity=-1
+                )
+            except ImportError:
+                self.model = Ridge(alpha=2.0)
+        else:
+            self.model = Ridge(alpha=2.0)
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> "SpreadPredictor":
         X_scaled = self.scaler.fit_transform(X)
@@ -166,11 +178,20 @@ class MomentumModel(BasePredictor):
             C=0.5, class_weight="balanced", random_state=42
         )
         if calibrate:
-            self.model = CalibratedClassifierCV(
-                base_estimator=self._base_logistic,
-                method="sigmoid",   # Platt scaling
-                cv=5,               # 5-fold CV within training set
-            )
+            # sklearn >= 1.2 renamed base_estimator to estimator
+            try:
+                self.model = CalibratedClassifierCV(
+                    estimator=self._base_logistic,
+                    method="sigmoid",
+                    cv=5,
+                )
+            except TypeError:
+                # Fallback for older sklearn versions
+                self.model = CalibratedClassifierCV(
+                    base_estimator=self._base_logistic,
+                    method="sigmoid",
+                    cv=5,
+                )
         else:
             self.model = self._base_logistic
 
@@ -191,11 +212,12 @@ class MomentumModel(BasePredictor):
             coefs = []
             for cc in self.model.calibrated_classifiers_:
                 # Access the fitted base estimator (attribute name varies by sklearn version)
-                base = getattr(cc, "base_estimator_", None) or getattr(cc, "base_estimator", None) or getattr(cc, "estimator", None)
+                # sklearn >= 1.2 uses estimator_, older uses base_estimator_
+                base = (getattr(cc, "estimator", None) or
+                        getattr(cc, "base_estimator_", None) or
+                        getattr(cc, "base_estimator", None))
                 if base is not None and hasattr(base, "coef_"):
                     coefs.append(base.coef_[0])
-            if coefs:
-                self.feature_importance = np.mean(coefs, axis=0)
         else:
             if hasattr(self.model, "coef_"):
                 self.feature_importance = self.model.coef_[0]

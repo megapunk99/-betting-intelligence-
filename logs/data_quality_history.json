@@ -202,6 +202,70 @@
         "deductions": [],
         "status": "HEALTHY"
       }
+    },
+    {
+      "timestamp": "2026-06-04T06:00:15.618506",
+      "table_counts": {
+        "game_logs": 5544,
+        "odds": 0,
+        "odds_meta": 0,
+        "player_game_logs": 78852,
+        "player_tracking": 638
+      },
+      "unique_counts": {
+        "unique_games": 2772,
+        "unique_teams": 30,
+        "unique_players": 1302
+      },
+      "freshness": {
+        "first_game_date": "2024-10-04",
+        "last_game_date": "2026-05-30",
+        "days_since_update": 5,
+        "total_days_span": 603,
+        "freshness_score": 75,
+        "freshness_grade": "C"
+      },
+      "issue_count": 0,
+      "alert_count": 1,
+      "health_score": {
+        "score": 85.0,
+        "grade": "B",
+        "deductions": [
+          "Data 5d stale (-15)"
+        ],
+        "status": "HEALTHY"
+      }
+    },
+    {
+      "timestamp": "2026-06-06T11:29:23.675056",
+      "table_counts": {
+        "game_logs": 5548,
+        "odds": 0,
+        "odds_meta": 0,
+        "player_game_logs": 78912,
+        "player_tracking": 638
+      },
+      "unique_counts": {
+        "unique_games": 2774,
+        "unique_teams": 30,
+        "unique_players": 1302
+      },
+      "freshness": {
+        "first_game_date": "2024-10-04",
+        "last_game_date": "2026-06-05",
+        "days_since_update": 1,
+        "total_days_span": 609,
+        "freshness_score": 95,
+        "freshness_grade": "A"
+      },
+      "issue_count": 0,
+      "alert_count": 0,
+      "health_score": {
+        "score": 100,
+        "grade": "A",
+        "deductions": [],
+        "status": "HEALTHY"
+      }
     }
   ]
 }

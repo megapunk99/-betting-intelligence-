@@ -4,6 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Dashboard{% endblock %} — Exact Bets</title>
+    <meta name="description" content="{% block meta_description %}Professional betting intelligence dashboard with live +EV picks, CLV tracking, and Kelly-optimized stake sizing.{% endblock %}">
+    <meta name="robots" content="{% block meta_robots %}noindex, follow{% endblock %}">
+
+    <!-- Open Graph (defaults for dashboard) -->
+    <meta property="og:site_name" content="Exact Bets">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:type" content="website">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="apple-touch-icon" href="/static/favicon.svg">
 
     <!-- Tailwind CSS via CDN (for utility classes) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -65,7 +76,7 @@
 
                 <!-- Desktop Nav -->
                 <div class="hidden md:flex items-center gap-0.5">
-                    <a href="/" class="nav-link" hx-boost="true"> Dashboard</a>
+                    <a href="/dashboard" class="nav-link" hx-boost="true"> Dashboard</a>
                     <a href="/clear-picks" class="nav-link" hx-boost="true">★ Clear Picks</a>
                     <a href="/todays-card" class="nav-link" hx-boost="true"> Today's Card</a>
                     <a href="/tomorrow" class="nav-link" hx-boost="true"> Tomorrow</a>
@@ -97,7 +108,7 @@
 
             <!-- Mobile Nav -->
             <div id="mobile-nav" class="hidden md:hidden pb-3 border-t border-white/5 pt-3 space-y-1">
-                <a href="/" class="nav-link block" hx-boost="true"> Dashboard</a>
+                <a href="/dashboard" class="nav-link block" hx-boost="true"> Dashboard</a>
                 <a href="/clear-picks" class="nav-link block" hx-boost="true">★ Clear Picks</a>
                 <a href="/todays-card" class="nav-link block" hx-boost="true"> Today's Card</a>
                 <a href="/tomorrow" class="nav-link block" hx-boost="true"> Tomorrow</a>
@@ -137,10 +148,12 @@
                     <span class="text-accent-400 font-semibold">⚠</span> For educational purposes only. Gamble responsibly.
                 </div>
                 <div class="flex items-center gap-4 text-xs text-gray-600">
-                    <a href="/" class="hover:text-accent-400 transition-colors" hx-boost="true">Dashboard</a>
+                    <a href="/dashboard" class="hover:text-accent-400 transition-colors" hx-boost="true">Dashboard</a>
                     <a href="/clear-picks" class="hover:text-accent-400 transition-colors" hx-boost="true">Clear Picks</a>
                     <a href="/all-bets" class="hover:text-accent-400 transition-colors" hx-boost="true">All Bets</a>
                     <a href="/player-props" class="hover:text-accent-400 transition-colors" hx-boost="true">Props</a>
+                    <a href="/privacy" class="hover:text-accent-400 transition-colors">Privacy</a>
+                    <a href="/terms" class="hover:text-accent-400 transition-colors">Terms</a>
                 </div>
             </div>
         </div>

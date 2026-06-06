@@ -221,6 +221,7 @@ class WalkForwardEngine:
                             feature_cols,
                             baseline_prediction=baseline_pred,
                             prediction_probability=prob,
+                            baseline_model_was_provided=(baseline_model_builder is not None),
                         )
                         if bet:
                             bet_records.append(bet)
@@ -266,15 +267,14 @@ class WalkForwardEngine:
             # Remove internal tracking column before computing perf
             if "_used_baseline" in result.bets_df.columns:
                 result.bets_df = result.bets_df.drop(columns=["_used_baseline"])
-            self._compute_performance(result)
-
-        # Track baseline usage for diagnostics (not an error)
-        if baseline_model_builder is not None and result.total_bets > 0:
-            n_with_baseline = sum(
-                1 for r in bet_records if r.get("_used_baseline", False)
-            )
-            pct = n_with_baseline / result.total_bets * 100
-            result.model_metrics["baseline_pct"] = pct
+            self._compute_performance(result)            # Track baseline usage for diagnostics — counts bets where
+            # the in-fold baseline model prediction was used as market line
+            if baseline_model_builder is not None and result.total_bets > 0:
+                n_with_baseline = sum(
+                    1 for r in bet_records if r.get("_used_baseline", False)
+                )
+                pct = n_with_baseline / result.total_bets * 100
+                result.model_metrics["baseline_pct"] = pct
 
         # Model metrics
         if prediction_type == "regression" and len(predictions) > 0:
@@ -300,24 +300,19 @@ class WalkForwardEngine:
         feature_cols: List[str],
         baseline_prediction: Optional[float] = None,
         prediction_probability: Optional[float] = None,
+        baseline_model_was_provided: bool = False,
     ) -> Optional[Dict]:
         """Create a bet record from a prediction.
 
         Edge is calculated against a market line proxy, in priority order:
-        1. market_line_baseline column (pre-computed column in df — trailing avg of team scoring)
-        2. trailing_avg_total_10g column (naive trailing average)
-        3. baseline_prediction (in-fold baseline model — used as diagnostic only)
-
-        IMPORTANT: The pre-computed market_line_baseline (simple trailing average of
-        home + away scoring) is preferred over the baseline model's prediction.
-        Using an in-fold model as the "market line" introduces systematic bias
-        because both the main model and baseline model learn from the same data
-        distribution. The baseline model tends to systematically under-predict,
-        which inflates win rates at the cost of scientific validity.
-
-        The market_line_baseline column, being a simple rolling average of actual
-        observed scoring, closely matches the true distribution (mean 228.0 vs
-        actual mean 228.5) and serves as a fairer, more realistic market proxy.
+        1. baseline_prediction (in-fold baseline model) — this is the FAIREST comparison
+           because the baseline model is trained on the same data distribution but
+           with simpler features, simulating a less sophisticated oddsmaker.
+           Using different baseline predictions per-model gives each strategy a
+           unique market line, preventing the identical-win-rate bug.
+        2. market_line_baseline column (pre-computed trailing avg of team scoring)
+           — used when no baseline model was provided.
+        3. trailing_avg_total_10g column (naive trailing average)
         """
         try:
             if prediction_type == "regression":
@@ -325,15 +320,20 @@ class WalkForwardEngine:
                 actual_total = row.get("total_points", actual)
                 predicted_total = prediction
 
-                # Determine market line: prefer pre-computed column-based proxies
-                # over the baseline model prediction to avoid systematic model bias.
-                market_line = row.get(
-                    "market_line_baseline",
-                    row.get(
-                        "trailing_avg_total_10g",
-                        baseline_prediction if baseline_prediction is not None else predicted_total
+                # Determine market line: prefer in-fold baseline model prediction
+                # when available (gives each model a unique market line preventing
+                # identical-win-rate across strategies).
+                # Fall back to column-based proxies when no baseline was provided.
+                if baseline_model_was_provided and baseline_prediction is not None:
+                    market_line = float(baseline_prediction)
+                else:
+                    market_line = row.get(
+                        "market_line_baseline",
+                        row.get(
+                            "trailing_avg_total_10g",
+                            predicted_total
+                        )
                     )
-                )
 
                 # Edge = our prediction vs market (as percentage of market)
                 if market_line > 0:
@@ -365,6 +365,9 @@ class WalkForwardEngine:
                 # Determine decimal odds (prefer stored column, default to 1.91 = -110)
                 decimal_odds = row.get("decimal_odds", 1.91)
 
+                # Track whether a baseline model prediction was used as the market line
+                used_baseline = baseline_model_was_provided and baseline_prediction is not None
+
                 return {
                     "game_date": row["GAME_DATE"],
                     "game_id": row["GAME_ID"],
@@ -379,7 +382,7 @@ class WalkForwardEngine:
                     "decimal_odds": float(decimal_odds),
                     "outcome": outcome,
                     "profit_units": profit,
-                    "_used_baseline": False,  # Always false now — column-based proxy is primary
+                    "_used_baseline": used_baseline,
                 }
 
             elif prediction_type == "classification":

@@ -1,11 +1,11 @@
-.PHONY: install dev test lint clean run-api run-pipeline run-dashboard docker-build docker-up db-init db-migrate refresh-data refresh-data-fast refresh-data-backfill verify-data
+.PHONY: install dev test lint clean run-api run-pipeline docker-build docker-up db-init db-migrate refresh-data refresh-data-fast refresh-data-backfill verify-data
 
 # ── Installation ──────────────────────────────────────────────────────────
 install:
-	pip install -e ".[dev,dashboard]"
+	pip install -e ".[dev]"
 
 dev:
-	pip install -e ".[dev,dashboard]"
+	pip install -e ".[dev]"
 
 # ── Testing ───────────────────────────────────────────────────────────────
 test:
@@ -32,9 +32,6 @@ run-pipeline:
 
 run-api:
 	betting-api
-
-run-dashboard:
-	streamlit run dashboard/app.py
 
 # ── Database (Alembic Migrations) ───────────────────────────────────────
 db-upgrade:
