@@ -46,6 +46,14 @@ from betting_intel.recommendations.bet_types import (
 from betting_intel.recommendations.ranker import BetRanker, ClearPick
 from betting_intel.recommendations.validator import PreGameValidator
 
+# Multi-league support
+from betting_intel.data.basketball_leagues import (
+    ALL_BASKETBALL_LEAGUES,
+    LEAGUES_WITH_ODDS,
+    LEAGUE_BY_KEY as BBALL_LEAGUE_BY_KEY,
+    get_league as get_bball_league,
+)
+
 logger = logging.getLogger(__name__)
 
 # NOTE: pipeline.export is imported LAZILY inside methods to avoid circular imports.
@@ -633,26 +641,50 @@ class RecommendationEngine:
 
     def _get_upcoming_small_league_games(self) -> list[dict]:
         """
-        Get upcoming games from small leagues.
+        Get upcoming games from all basketball leagues.
+
+        Tries TheOddsAPI first for leagues with real odds support (WNBA, Euroleague,
+        NCAAB, NBL), then falls back to the small_leagues ingestion system for
+        leagues without API odds (CEBL, BNXT, LNB Pro B).
         """
         games = []
 
+        # 1. Try TheOddsAPI for leagues with real odds support
+        if self._enable_real_odds:
+            for league in LEAGUES_WITH_ODDS:
+                if league.key in ("nba", "nba_preseason", "nba_summer"):
+                    continue  # NBA is handled by _get_upcoming_nba_games
+                try:
+                    odds_games = self._fetch_league_odds(league.odds_sport_key, league.key)
+                    if odds_games:
+                        games.extend(odds_games)
+                        logger.info(f"Fetched {len(odds_games)} {league.key} games from TheOddsAPI")
+                except Exception as e:
+                    logger.debug(f"Odds fetch for {league.key} failed: {e}")
+
+        # 2. Fall back to small_leagues scraping for leagues without API odds
+        scraped_leagues = ["lnb_pro_b", "cebl", "bnxt", "wnba", "euroleague_women"]
+        already_have = {g.get("league", "") for g in games}
+
         try:
             from betting_intel.data.small_leagues import SmallLeagueIngestion
-
             ing = SmallLeagueIngestion()
 
-            for league_key in ["lnb_pro_b", "cebl", "bnxt"]:
+            for league_key in scraped_leagues:
+                if league_key in already_have:
+                    continue  # Already got odds for this league
                 try:
                     upcoming = ing.load_upcoming(league_key, limit=10)
                     if not upcoming.empty:
                         for _, row in upcoming.iterrows():
+                            bl = BBALL_LEAGUE_BY_KEY.get(league_key)
                             games.append({
                                 "date": str(row.get("date", "")),
                                 "home": row.get("team_name", ""),
                                 "away": row.get("opponent_name", ""),
                                 "league": league_key,
                                 "series": "",
+                                "odds_source": "scraped",
                             })
                 except Exception as e:
                     logger.debug(f"Could not load {league_key}: {e}")
@@ -660,6 +692,77 @@ class RecommendationEngine:
             logger.warning("Small league module not available")
 
         return games
+
+    def _fetch_league_odds(self, sport_key: str, league_key: str) -> Optional[list[dict]]:
+        """
+        Fetch real market odds for a specific basketball league from TheOddsAPI.
+
+        Args:
+            sport_key: TheOddsAPI sport key (e.g. 'basketball_wnba', 'basketball_euroleague')
+            league_key: Internal league key (e.g. 'wnba', 'euroleague')
+
+        Returns:
+            List of game dicts with real odds, or None if unavailable
+        """
+        import time as time_module
+
+        try:
+            from betting_intel.data.odds_fetcher import OddsAPIClient
+            from betting_intel.config import ODDS_API_KEY
+
+            api_key = ODDS_API_KEY or ""
+            if not api_key or api_key == "your-api-key-here":
+                return None
+
+            client = OddsAPIClient(api_key=api_key, cache_ttl_minutes=15)
+            games = client.get_upcoming_games_with_odds(
+                sport=sport_key,
+                markets="h2h,spreads,totals",
+                use_cache=True,
+            )
+
+            if not games:
+                return None
+
+            bl = BBALL_LEAGUE_BY_KEY.get(league_key)
+            odds_games = []
+            for g in games:
+                home_short = g.home_team_short or ""
+                away_short = g.away_team_short or ""
+                if not home_short or not away_short:
+                    continue
+
+                game_dict = {
+                    "date": g.commence_time[:10] if g.commence_time else "",
+                    "home": home_short,
+                    "away": away_short,
+                    "league": league_key,
+                    "series": "",
+                    "home_ml": g.home_moneyline,
+                    "away_ml": g.away_moneyline,
+                    "market_total": g.market_total,
+                    "over_odds": g.total_over_odds,
+                    "under_odds": g.total_under_odds,
+                    "spread_line": g.home_spread,
+                    "home_spread_odds": g.home_spread_odds,
+                    "away_spread_odds": g.away_spread_odds,
+                    "implied_home_win_prob": g.implied_home_win_prob,
+                    "n_books": g.consensus.home_ml_n_books if g.consensus else 0,
+                    "total_n_books": g.consensus.total_n_books if g.consensus else 0,
+                    "odds_source": "the_odds_api",
+                    "game_id": g.id,
+                    "avg_total": bl.avg_total if bl else 224.0,
+                    "avg_home_pts": bl.avg_home_pts if bl else 114.0,
+                    "avg_away_pts": bl.avg_away_pts if bl else 110.0,
+                    "home_win_pct": bl.home_win_pct if bl else 0.58,
+                }
+                odds_games.append(game_dict)
+
+            return odds_games
+
+        except Exception as e:
+            logger.warning(f"Failed to fetch {sport_key} odds: {e}")
+            return None
 
     # ── Bet Generation ──────────────────────────────────────────────────
 
@@ -680,9 +783,12 @@ class RecommendationEngine:
         # ── Load model features (lazy) ──────────────────────────────────
         model_data = self._get_model_data()
 
-        if model_data is not None and league == "NBA":
-            # Use actual model predictions
+        if model_data is not None and league in ("NBA", "nba"):
+            # Use actual model predictions for NBA
             bets.extend(self._generate_model_bets(game, model_data))
+        elif game.get("odds_source") == "the_odds_api":
+            # For non-NBA leagues WITH real odds, generate edge-based bets
+            bets.extend(self._generate_odds_bets(game))
         else:
             # Use statistical / heuristic predictions
             bets.extend(self._generate_heuristic_bets(game))
@@ -990,6 +1096,105 @@ class RecommendationEngine:
             confidence=Confidence.MEDIUM,
             reasoning=f"First half accounts for ~52% of scoring. Predicted: {first_half_pred:.0f}.",
         ))
+
+        return bets
+
+    def _generate_odds_bets(self, game: dict) -> list[BetSuggestion]:
+        """
+        Generate bets using REAL market odds from TheOddsAPI for any basketball league.
+
+        Uses league-specific baselines from basketball_leagues.py for model estimates,
+        and compares them against real market lines for edge calculations.
+
+        This is the primary signal source for non-NBA leagues when real odds are available.
+        """
+        bets: list[BetSuggestion] = []
+        home = game["home"]
+        away = game["away"]
+        gdate = game["date"]
+        gid = game.get("game_id", f"{home}_vs_{away}_{gdate}".replace(" ", "_"))
+        matchup = f"{away} @ {home}"
+        league = game.get("league", "wnba")
+
+        # Get league-specific baselines
+        bl = BBALL_LEAGUE_BY_KEY.get(league)
+        avg_total = game.get("avg_total", bl.avg_total if bl else 165.0)
+        avg_home_pts = game.get("avg_home_pts", bl.avg_home_pts if bl else 83.0)
+        avg_away_pts = game.get("avg_away_pts", bl.avg_away_pts if bl else 82.0)
+        league_home_win_pct = game.get("home_win_pct", bl.home_win_pct if bl else 0.57)
+
+        # Real market lines from TheOddsAPI
+        home_ml = game.get("home_ml")
+        away_ml = game.get("away_ml")
+        market_total = game.get("market_total")
+        spread_line = game.get("spread_line")
+        implied_home_win = game.get("implied_home_win_prob")
+        n_books = game.get("n_books", 0)
+
+        # ── Model estimates using league baselines ─────────────────────
+        model_home_win = league_home_win_pct
+        model_total = avg_total
+        model_margin = avg_home_pts - avg_away_pts
+
+        # ── Edge calculation vs real market ────────────────────────────
+        if implied_home_win is not None:
+            home_edge = model_home_win - implied_home_win
+            away_edge = (1.0 - model_home_win) - (1.0 - implied_home_win)
+
+            bets.append(MoneylineBet(
+                game_id=gid, game_date=gdate, matchup=matchup,
+                team=home,
+                win_probability=model_home_win,
+                market_implied_prob=implied_home_win,
+                confidence=self._estimate_confidence(abs(home_edge)),
+                reasoning=f"{league.upper()} baseline. Model: {model_home_win:.0%} vs Market: {implied_home_win:.0%} (from {n_books} books). Edge: {home_edge:+.1%}.",
+                model_name=f"{league.upper()} Baseline",
+            ))
+            bets.append(MoneylineBet(
+                game_id=gid, game_date=gdate, matchup=matchup,
+                team=away,
+                win_probability=1.0 - model_home_win,
+                market_implied_prob=1.0 - implied_home_win,
+                confidence=self._estimate_confidence(abs(away_edge)),
+                reasoning=f"{away} dog value in {league.upper()}. Model: {1.0-model_home_win:.0%} vs Market: {1.0-implied_home_win:.0%}.",
+                model_name=f"{league.upper()} Baseline",
+            ))
+
+        # ── Total Points ────────────────────────────────────────────────
+        if market_total is not None and market_total > 0:
+            total_edge = (model_total - market_total) / market_total
+
+            bets.append(TotalBet(
+                game_id=gid, game_date=gdate, matchup=matchup,
+                side="OVER", market_total=market_total,
+                predicted_total=model_total,
+                confidence=self._estimate_confidence(abs(total_edge)),
+                reasoning=f"{league.upper()} avg total: {model_total:.0f}. Market: {market_total:.0f}. Edge: {total_edge:+.1%}.",
+                model_name=f"{league.upper()} Baseline",
+            ))
+            bets.append(TotalBet(
+                game_id=gid, game_date=gdate, matchup=matchup,
+                side="UNDER", market_total=market_total,
+                predicted_total=model_total - 4.0,
+                confidence=Confidence.LOW,
+                reasoning=f"Under side in {league.upper()}. Defensive adjustment.",
+                model_name=f"{league.upper()} Baseline",
+            ))
+
+        # ── Spread ───────────────────────────────────────────────────────
+        if spread_line is not None:
+            bets.append(SpreadBet(
+                game_id=gid, game_date=gdate, matchup=matchup,
+                team=home, spread_line=spread_line,
+                predicted_margin=model_margin,
+                confidence=Confidence.MEDIUM if abs(model_margin - abs(spread_line)) > 2 else Confidence.LOW,
+                reasoning=f"{league.upper()} home margin: {model_margin:+.1f}. Market spread: {spread_line:+.1f}.",
+                model_name=f"{league.upper()} Baseline",
+            ))
+
+        # Tag all bets with league info
+        for b in bets:
+            b.league = league
 
         return bets
 
