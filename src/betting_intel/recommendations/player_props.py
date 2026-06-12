@@ -65,10 +65,8 @@ class PlayerPropEngine:
     No synthetic data, no hardcoded baselines, no random noise.
     """
 
-    def __init__(self, enable_x_signals: bool = True, seed: Optional[int] = None):
-        self.enable_x_signals = enable_x_signals
+    def __init__(self, seed: Optional[int] = None):
         self._seed = seed
-        self._signal_collector = None
 
         # Cached data (lazy loaded)
         self._players_by_team: dict[str, list[dict]] = {}
@@ -140,9 +138,17 @@ class PlayerPropEngine:
 
             for idx, player in enumerate(scored_players[:num_players]):
                 player_name = player.get("full_name", "Unknown Player")
-                player_pts = player.get("pts_season_avg", team_pts / 8)
-                player_reb = player.get("reb_season_avg", 4.0)
-                player_ast = player.get("ast_season_avg", 2.0)
+                player_pts = player.get("pts_season_avg", None)
+                player_reb = player.get("reb_season_avg", None)
+                player_ast = player.get("ast_season_avg", None)
+
+                # CRITICAL: Only generate player props when we have REAL season
+                # averages from nba_api LeagueLeaders. Never fall back to
+                # heuristic position multipliers (PG=0.18, SG=0.20, etc.) or
+                # team_pts/8 — those are made-up estimates that destroy accuracy.
+                if player_pts is None or player_reb is None or player_ast is None:
+                    # Cannot project this player without real stats — skip
+                    continue
 
                 # Apply home/away adjustment (data-driven: home teams score ~2.5% more)
                 home_adj = 1.025 if is_home else 0.975
@@ -238,39 +244,6 @@ class PlayerPropEngine:
             f"({len(home_players)} home + {len(away_players)} away players)"
         )
         return props
-
-    def predict_with_signals(
-        self,
-        home: str,
-        away: str,
-        league: str = "NBA",
-        game_id: str = "",
-        game_date: str = "",
-        num_players: int = 6,
-    ) -> list[BetSuggestion]:
-        """
-        Predict player props AND integrate Twitter/X signals.
-
-        Same as predict_for_game() with real-time signal integration.
-        """
-        props = self.predict_for_game(
-            home=home, away=away, league=league,
-            game_id=game_id, game_date=game_date,
-            num_players=num_players,
-        )
-
-        if not self.enable_x_signals or not props:
-            return props
-
-        try:
-            from betting_intel.data.x_signals import TwitterSignalCollector
-            if self._signal_collector is None:
-                self._signal_collector = TwitterSignalCollector()
-            adjusted = self._signal_collector.integrate_player_props(props)
-            return adjusted
-        except Exception as e:
-            logger.warning(f"X/Twitter signal integration failed: {e}")
-            return props
 
     # ── Data Loading ─────────────────────────────────────────────────────────
 

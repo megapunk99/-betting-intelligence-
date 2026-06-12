@@ -6,6 +6,10 @@ on:
     - cron: '0 8 * * 1'
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   retrain-models:
     runs-on: ubuntu-latest
@@ -17,118 +21,63 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.11'
+          cache: "pip"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e .
-          pip install xgboost lightgbm scikit-learn pandas numpy
 
-      - name: Retrain total points model
+      # Restore NBA database from seed workflow cache so the retraining
+      # script can load real game data via NBADataLoader.
+      - name: Restore NBA database cache
+        uses: actions/cache@v4
+        with:
+          path: data/nba_data.db
+          key: nba-data-test-${{ github.sha }}
+          restore-keys: |
+            nba-data-
+
+      - name: Retrain models (total + spread)
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
-        run: |
-          python -c "
-          import sys; sys.path.insert(0, 'src')
-          import warnings; warnings.filterwarnings('ignore')
-          import joblib
-          import pandas as pd
-          import numpy as np
-          from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
-          from sklearn.linear_model import Ridge
-          from sklearn.model_selection import TimeSeriesSplit
-          from sklearn.metrics import mean_absolute_error, r2_score
-
-          from betting_intel.data.loader import NBADataLoader
-          from betting_intel.data.features import FeatureEngineer
-
-          print('Loading data...')
-          loader = NBADataLoader()
-          fe = FeatureEngineer()
-
-          raw_df = loader.load_game_logs()
-          games_df = loader.build_game_dataset(raw_df)
-          raw_df = loader.compute_rest_days(raw_df)
-          feature_df = fe.build_all_features(games_df, raw_df)
-          feature_cols = fe.select_features(feature_df)
-
-          print(f'Features: {len(feature_cols)}')
-          print(f'Games: {len(feature_df)}')
-
-          # Total points model
-          X = feature_df[feature_cols].values
-          y_total = feature_df['total_points'].values
-          y_spread = feature_df['point_diff'].values
-
-          # Train/val split by date
-          split_idx = int(len(X) * 0.8)
-          X_train, X_val = X[:split_idx], X[split_idx:]
-          y_total_train, y_total_val = y_total[:split_idx], y_total[split_idx:]
-          y_spread_train, y_spread_val = y_spread[:split_idx], y_spread[split_idx:]
-
-          # Train ensemble
-          models = {
-              'gbr': GradientBoostingRegressor(n_estimators=200, max_depth=4, learning_rate=0.05),
-              'rfr': RandomForestRegressor(n_estimators=150, max_depth=6),
-              'ridge': Ridge(alpha=1.0),
-          }
-
-          # Total points
-          total_predictions = []
-          for name, model in models.items():
-              model.fit(X_train, y_total_train)
-              preds = model.predict(X_val)
-              total_predictions.append(preds)
-              mae = mean_absolute_error(y_total_val, preds)
-              print(f'  Total {name}: MAE={mae:.2f}')
-
-          ensemble_total = np.mean(total_predictions, axis=0)
-          ensemble_mae = mean_absolute_error(y_total_val, ensemble_total)
-          print(f'  Total Ensemble: MAE={ensemble_mae:.2f}')
-
-          # Save model
-          import os
-          os.makedirs('models', exist_ok=True)
-          joblib.dump({
-              'model_type': 'total_points_ensemble',
-              'models': {name: models[name] for name in models},
-              'feature_cols': feature_cols,
-              'val_mae': ensemble_mae,
-              'training_samples': len(X_train),
-              'training_date': pd.Timestamp.now().isoformat(),
-          }, 'models/total_model.pkl')
-          print('Total model saved to models/total_model.pkl')
-
-          # Spread model
-          spread_predictions = []
-          for name, model in models.items():
-              model.fit(X_train, y_spread_train)
-              preds = model.predict(X_val)
-              spread_predictions.append(preds)
-              mae = mean_absolute_error(y_spread_val, preds)
-              print(f'  Spread {name}: MAE={mae:.2f}')
-
-          ensemble_spread = np.mean(spread_predictions, axis=0)
-          ensemble_mae = mean_absolute_error(y_spread_val, ensemble_spread)
-          print(f'  Spread Ensemble: MAE={ensemble_mae:.2f}')
-
-          joblib.dump({
-              'model_type': 'spread_ensemble',
-              'models': {name: models[name] for name in models},
-              'feature_cols': feature_cols,
-              'val_mae': ensemble_mae,
-              'training_samples': len(X_train),
-              'training_date': pd.Timestamp.now().isoformat(),
-          }, 'models/spread_model.pkl')
-          print('Spread model saved to models/spread_model.pkl')
-
-          print('Retraining complete!')
-          "
+        run: python tools/retrain_all.py --mode weekly
 
       - name: Upload retrained models
         uses: actions/upload-artifact@v4
         with:
-          name: retrained-models
+          name: retrained-models-weekly-${{ github.run_id }}
           path: models/*.pkl
           retention-days: 90
+
+      # ── Slow-test validation (only on manual trigger) ────────────────
+      # Note: NBA database is already restored at the top of this job.
+      - name: Validate — check database has game data
+        id: db-check
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          python tools/check_db.py --min-rows 50 && echo "has_data=true" >> "$GITHUB_OUTPUT" || echo "has_data=false" >> "$GITHUB_OUTPUT"
+
+      - name: Validate — run slow tests on freshly retrained models
+        if: github.event_name == 'workflow_dispatch' && steps.db-check.outputs.has_data == 'true'
+        run: |
+          pytest -v \
+            --tb=short \
+            -m "slow" \
+            --durations=0 \
+            tests/ \
+            2>&1 | tee slow-test-output.txt
+
+      - name: Validate — skip (no NBA database)
+        if: github.event_name == 'workflow_dispatch' && steps.db-check.outputs.has_data != 'true'
+        run: |
+          echo "::notice::Slow tests skipped — NBA database not available. Run ci-seed-database.yml first or trigger weekly retraining after the nightly seed."
+
+      - name: Validate — upload test output on failure
+        if: failure() && github.event_name == 'workflow_dispatch' && steps.db-check.outputs.has_data == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: slow-test-output-weekly-retrain
+          path: slow-test-output.txt
+          retention-days: 30

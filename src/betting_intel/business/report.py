@@ -26,16 +26,126 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from betting_intel.betting.ev import (
-    ExpectedValueEngine,
-    american_to_decimal,
-    decimal_to_american,
-    american_to_implied_prob,
-    compute_vig_free_prob,
-)
-from betting_intel.betting.bet import BettingEngine, BetRecommendation
-from betting_intel.betting.clv import CLVTracker
-from betting_intel.market.comparison import ModelMarketComparison
+import math
+from dataclasses import dataclass
+from typing import Optional
+
+
+# ── Inline betting utilities (replaces deleted betting.ev, betting.bet modules) ──
+
+def _american_to_decimal(odds: float) -> float:
+    """Convert American odds to decimal."""
+    if odds > 0:
+        return 1.0 + odds / 100.0
+    else:
+        return 1.0 + 100.0 / abs(odds)
+
+
+def _decimal_to_american(decimal: float) -> float:
+    """Convert decimal odds to American."""
+    if decimal >= 2.0:
+        return (decimal - 1.0) * 100.0
+    else:
+        return -100.0 / (decimal - 1.0)
+
+
+def _american_to_implied_prob(odds: float) -> float:
+    """Convert American odds to implied probability."""
+    if odds > 0:
+        return 100.0 / (odds + 100.0)
+    else:
+        return abs(odds) / (abs(odds) + 100.0)
+
+
+def _compute_vig_free_prob(home_odds: float, away_odds: float) -> tuple[float, float]:
+    """Strip vig from two-way market odds."""
+    home_prob = _american_to_implied_prob(home_odds)
+    away_prob = _american_to_implied_prob(away_odds)
+    total = home_prob + away_prob
+    if total > 0:
+        return (home_prob / total, away_prob / total)
+    return (0.5, 0.5)
+
+
+@dataclass
+class _BetStake:
+    recommended_stake: float = 0.0
+    is_valid: bool = False
+
+
+@dataclass
+class _BetRecommendation:
+    stake: _BetStake = _BetStake()
+    expected_value: float = 0.0
+    edge_percentage: float = 0.0
+    is_actionable: bool = False
+
+
+class _EVResult:
+    """Result of an EV calculation."""
+    expected_value: float = 0.0
+    edge_percentage: float = 0.0
+    is_actionable: bool = False
+
+
+class _InlineExpectedValueEngine:
+    """Minimal EV calculator — replaces deleted betting.ev.ExpectedValueEngine."""
+
+    def __init__(self, min_edge_threshold: float = 0.02):
+        self.min_edge_threshold = min_edge_threshold
+
+    def calculate(
+        self,
+        model_probability: float,
+        market_odds_american: float,
+        opponent_odds_american: Optional[float] = None,
+    ) -> _EVResult:
+        decimal = _american_to_decimal(market_odds_american)
+        market_implied = 1.0 / decimal
+        edge = model_probability - market_implied
+        expected_value = model_probability * (decimal - 1.0) - (1.0 - model_probability)
+        result = _EVResult()
+        result.expected_value = expected_value
+        result.edge_percentage = edge
+        result.is_actionable = edge >= self.min_edge_threshold
+        return result
+
+
+class _InlineBettingEngine:
+    """Minimal betting engine — replaces deleted betting.bet.BettingEngine."""
+
+    def __init__(self, bankroll: float = 10_000.0, kelly_fraction: float = 0.25, min_edge: float = 0.02):
+        self.bankroll = bankroll
+        self.kelly_fraction = kelly_fraction
+        self.min_edge = min_edge
+
+    def create_bet(self, **kwargs) -> _BetRecommendation:
+        model_prob = kwargs.get("model_probability", 0.5)
+        odds_american = kwargs.get("odds_american", -110)
+        decimal = _american_to_decimal(odds_american)
+
+        # Full Kelly: f* = (bp - q) / b  where b = decimal - 1, q = 1-p
+        b = decimal - 1.0
+        if b <= 0 or model_prob <= 0 or model_prob >= 1:
+            return _BetRecommendation(stake=_BetStake(), expected_value=0.0, edge_percentage=0.0, is_actionable=False)
+
+        full_kelly = (b * model_prob - (1.0 - model_prob)) / b
+        if full_kelly <= 0:
+            return _BetRecommendation(stake=_BetStake(), expected_value=0.0, edge_percentage=0.0, is_actionable=False)
+
+        frac = full_kelly * self.kelly_fraction
+        frac = max(0.0, min(frac, 0.10))  # Cap at 10%
+        stake_amount = round(frac * self.bankroll, 2)
+
+        expected_value = model_prob * decimal - 1.0
+        edge = model_prob - (1.0 / decimal) if decimal > 1 else 0.0
+
+        return _BetRecommendation(
+            stake=_BetStake(recommended_stake=stake_amount, is_valid=stake_amount >= 10),
+            expected_value=expected_value,
+            edge_percentage=edge,
+            is_actionable=edge >= self.min_edge,
+        )
 
 logger = logging.getLogger(__name__)
 
@@ -326,12 +436,12 @@ class GameAnalysisGenerator:
         min_edge: float = 0.02,
         db_path: Optional[Path] = None,
     ):
-        self.betting_engine = BettingEngine(
+        self.betting_engine = _InlineBettingEngine(
             bankroll=bankroll,
             kelly_fraction=kelly_fraction,
             min_edge=min_edge,
         )
-        self.ev_engine = ExpectedValueEngine(min_edge_threshold=min_edge)
+        self.ev_engine = _InlineExpectedValueEngine(min_edge_threshold=min_edge)
         self.db_path = db_path
 
     def analyze_game(
@@ -448,9 +558,13 @@ class GameAnalysisGenerator:
             report.total_difference = round(model_predicted_total - market_total, 1)
 
             if over_odds and under_odds:
-                # Over probability
+                # PROPER probability: sigmoid instead of crude min(0.5 + diff*0.01, 0.72)
+                # The crude linear hack hard-clips at 0.72 and can cross 1.0 for large diffs
+                # Sigmoid correctly maps (-inf, +inf) → (0, 1) with proper saturation
+                import math
                 diff = model_predicted_total - market_total
-                over_prob = min(0.5 + abs(diff) * 0.01, 0.72) if diff > 0 else 0.5 - abs(diff) * 0.01
+                # k=0.015 calibrated for total points (market is efficient)
+                over_prob = 1.0 / (1.0 + math.exp(-0.015 * diff))
                 over_prob = max(0.28, min(0.72, over_prob))
 
                 ev_over = self.ev_engine.calculate(

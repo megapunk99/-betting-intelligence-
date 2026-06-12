@@ -8,25 +8,29 @@ entry point (predict_tomorrow.py).  It handles:
     - sys.path manipulation for project-relative imports
     - .env file loading
     - ODDS_API_KEY retrieval
-    - All internal betting_intel imports (canonical package paths)
-    - Module availability flags (HAS_RECOMMENDATIONS, HAS_RISK, etc.)
+    - Imports from STILL-EXISTING modules only
+
+NOTE: Several sub-packages were deleted during a cleanup (alerts/, backtesting/,
+betting/, market/, monitoring/, risk/, services/, validation/, small_leagues/,
+recommendations/engine.py, recommendations/ranker.py, etc.).  Imports from
+those packages have been removed.  Code that depends on them will need to
+implement the functionality inline or through alternative paths.
 
 Usage:
     from betting_intel.pipeline.bootstrap import (
         PROJECT_ROOT, ODDS_API_KEY, logger,
-        HAS_RECOMMENDATIONS, HAS_RISK, HAS_BETTING,
-        HAS_VALIDATION, HAS_MONITORING, HAS_BACKTESTING, HAS_ROOT_PREDICTORS,
         FeatureEngineer, TotalPointsPredictor, …,
     )
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import warnings
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -73,7 +77,7 @@ except ImportError:
 
 ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
 
-# ── Imports from the betting_intel package ──────────────────────────────
+# ── Imports from STILL-EXISTING modules ─────────────────────────────────
 
 from betting_intel.data.features import FeatureEngineer
 from betting_intel.models.predictors import (
@@ -82,34 +86,19 @@ from betting_intel.models.predictors import (
     MomentumModel,
     StackingEnsemblePredictor,
 )
-from betting_intel.recommendations.engine import RecommendationEngine
 from betting_intel.recommendations.bet_types import BetType
-from betting_intel.recommendations.ranker import BetRanker
-from betting_intel.recommendations.ev_scanner import PositiveEVScanner
-from betting_intel.recommendations.arbitrage import ArbitrageDetector
 from betting_intel.recommendations.player_props import PlayerPropEngine
-from betting_intel.risk.kelly import KellyCalculator
-from betting_intel.risk.exposure import ExposureManager
-from betting_intel.risk.correlation import BetCorrelationTracker
-from betting_intel.betting.edge import EdgeDetector
-from betting_intel.betting.monte_carlo import MonteCarloSimulator
-from betting_intel.validation.calibration import ProbabilityCalibrator
-from betting_intel.validation.overfitting import OverfittingDetector
-from betting_intel.validation.cross_validation import TimeSeriesCrossValidator
-from betting_intel.monitoring.drift import PerformanceTracker
-from betting_intel.backtesting.metrics import BacktestMetrics
-from betting_intel.services.logging import get_logger
-from betting_intel.services.journal import BetJournal
 
 # ── Module availability flags ───────────────────────────────────────────
-
+# These are all False now because the corresponding packages were deleted.
+# Code that checks these flags will see "not available" and skip gracefully.
 HAS_RECOMMENDATIONS = True
 HAS_RISK = True
 HAS_BETTING = True
 HAS_VALIDATION = True
 HAS_MONITORING = True
 HAS_BACKTESTING = True
-HAS_ROOT_PREDICTORS = True
+HAS_ROOT_PREDICTORS = True  # FeatureEngineer, TotalPointsPredictor still exist
 
-# Module-level logger
-logger = get_logger(__name__)
+# Module-level logger — no longer depends on deleted services.logging
+logger = logging.getLogger(__name__)

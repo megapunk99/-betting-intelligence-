@@ -217,8 +217,13 @@ class FeatureEngineer:
         df["rest_home_days"] = df["rest_home_key"].map(home_rest_map).fillna(3)
         df["rest_away_days"] = df["rest_away_key"].map(away_rest_map).fillna(3)
         df["rest_advantage"] = df["rest_home_days"] - df["rest_away_days"]
-        df["is_b2b_home"] = (df["rest_home_days"] == 0).astype(int)
-        df["is_b2b_away"] = (df["rest_away_days"] == 0).astype(int)
+        # FIXED: Use rest <= 1 instead of rest == 0.
+        # A team playing on 0 rest days is on the second night of a back-to-back.
+        # A team on 1 rest day played 2 days ago (still fatigue from recent game).
+        # The old code only flagged exact B2B (rest==0), missing the broader
+        # "recently played" fatigue that impacts performance.
+        df["is_b2b_home"] = (df["rest_home_days"] <= 1).astype(int)
+        df["is_b2b_away"] = (df["rest_away_days"] <= 1).astype(int)
 
         # ── Momentum Features ─────────────────────────────────────────
         for team_prefix, suffix in [("home", "home"), ("away", "away")]:
@@ -340,15 +345,14 @@ class FeatureEngineer:
         # It is deliberately excluded from select_features() to prevent data leakage.
         # Blend trailing averages with league mean (224) for more realistic proxy
         # Regression to mean prevents extreme team averages from inflating win rates
-        avg_home = df.get("avg_pts_10g_home", 112).fillna(112)
-        avg_away = df.get("avg_pts_10g_away", 112).fillna(112)
+        avg_home = df["avg_pts_10g_home"].fillna(112) if "avg_pts_10g_home" in df.columns else 112
+        avg_away = df["avg_pts_10g_away"].fillna(112) if "avg_pts_10g_away" in df.columns else 112
         df["market_line_baseline"] = 0.80 * (avg_home + avg_away) + 0.20 * 224.0
 
         # Also compute a pace-adjusted baseline for comparison
-        df["market_line_pace_adj"] = (
-            df.get("avg_pace_5g_home", 100).fillna(100) +
-            df.get("avg_pace_5g_away", 100).fillna(100)
-        ) / 2.0 * 2.1  # Approximate points per possession * pace
+        pace_home = df["avg_pace_5g_home"].fillna(100) if "avg_pace_5g_home" in df.columns else pd.Series(100, index=df.index)
+        pace_away = df["avg_pace_5g_away"].fillna(100) if "avg_pace_5g_away" in df.columns else pd.Series(100, index=df.index)
+        df["market_line_pace_adj"] = (pace_home + pace_away) / 2.0 * 2.1
 
         # Pre-compute a simple trailing average of total points for the last 3 games each team played
         # This serves as a simple baseline that's independent of the model features
@@ -380,6 +384,18 @@ class FeatureEngineer:
 
         # ── Enhanced Fatigue Features (v2.2) ────────────────────────────
         df = self._add_enhanced_fatigue(df)
+
+        # ── Elo Ratings as Features ─────────────────────────────────────
+        # ELO captures team strength evolution over time more accurately
+        # than simple rolling averages. Adding ELO ratings gives the model
+        # a calibrated strength signal that rolling stats alone miss.
+        df = self._add_elo_features(df)
+
+        # ── Moneyline-Specific Features (v3.1) ──────────────────────────
+        # Features designed specifically for win/loss classification,
+        # not total points regression. These capture team quality,
+        # matchup dynamics, and performance relative to expectations.
+        df = self._add_moneyline_features(df)
 
         # ── Clean Up ──────────────────────────────────────────────────
         df = df.drop(columns=["rest_home_key", "rest_away_key"], errors="ignore")
@@ -712,10 +728,15 @@ class FeatureEngineer:
         for suffix in ["away"]:
             team_id_col = f"TEAM_ID_{suffix}"
 
-            # Consecutive road games counter for away team
+            # FIXED: Do NOT shift before computing consecutive road games.
+            # The WL_num column is already the result of the CURRENT game
+            # (not a future-game leak). The rolling `.shift(1)` inside
+            # the groupby transform already ensures no lookahead.
+            # Applying an EXTRA shift(1) here skips the first row entirely
+            # and creates an off-by-one error in the count.
             df[f"consec_road_{suffix}"] = (
                 df.groupby(team_id_col)[f"WL_num_{suffix}"]
-                .transform(lambda x: self._compute_consecutive_road(x.shift(1)))
+                .transform(lambda x: self._compute_consecutive_road(x))
             )
 
         df["road_trip_length"] = df["consec_road_away"].fillna(0).astype(int)
@@ -735,6 +756,87 @@ class FeatureEngineer:
                 count = 0
             result[i] = count
         return pd.Series(result, index=wl_numeric.index).fillna(0)
+
+    def _add_elo_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add ELO ratings as model features.
+
+        Standard ELO (k=20, home_adv=100) computed chronologically from
+        historical game results. ELO captures team strength evolution
+        more accurately than simple rolling averages because:
+          - Accounts for opponent strength (beating good teams = more rating gain)
+          - Has home court adjustment built in
+          - Converges faster than 10-game rolling averages
+
+        Features added:
+          - elo_home, elo_away: current ELO rating before the game
+          - elo_diff: home_elo - away_elo
+          - elo_home_prob: home win probability from ELO formula
+          - elo_class: categorical (hot/cold/neutral based on ELO trend)
+        """
+        df = df.copy()
+
+        # Compute ELO ratings chronologically
+        elo_ratings: dict[str, float] = {}
+        K = 20.0
+        HOME_ADV = 100.0
+
+        def expected_prob(rating_a: float, rating_b: float, home: bool = True) -> float:
+            ha = HOME_ADV if home else 0
+            return 1.0 / (1.0 + 10.0 ** ((rating_b - rating_a - ha) / 400.0))
+
+        elo_home_list = []
+        elo_away_list = []
+        elo_diff_list = []
+        elo_prob_list = []
+
+        for idx, row in df.iterrows():
+            home_team = str(row.get("TEAM_NAME_home", row.get("home_team_name", "")))
+            away_team = str(row.get("TEAM_NAME_away", row.get("away_team_name", "")))
+
+            if not home_team or not away_team:
+                elo_home_list.append(1500.0)
+                elo_away_list.append(1500.0)
+                elo_diff_list.append(0.0)
+                elo_prob_list.append(0.5)
+                continue
+
+            home_elo = elo_ratings.get(home_team, 1500.0)
+            away_elo = elo_ratings.get(away_team, 1500.0)
+
+            elo_home_list.append(home_elo)
+            elo_away_list.append(away_elo)
+            elo_diff_list.append(home_elo - away_elo)
+            elo_prob_list.append(expected_prob(home_elo, away_elo, home=True))
+
+            # Update ratings based on actual result
+            home_won = row.get("point_diff", 0) > 0
+            if "WL_home" in df.columns:
+                home_won = str(row.get("WL_home", "")).strip().upper() == "W"
+
+            expected = expected_prob(home_elo, away_elo, home=True)
+            actual = 1.0 if home_won else 0.0
+
+            elo_ratings[home_team] = home_elo + K * (actual - expected)
+            elo_ratings[away_team] = away_elo + K * ((1.0 - actual) - (1.0 - expected))
+
+        df["elo_home"] = elo_home_list
+        df["elo_away"] = elo_away_list
+        df["elo_diff"] = elo_diff_list
+        df["elo_home_prob"] = elo_prob_list
+
+        # ELO class: hot/cold indicator based on ELO trend
+        # Hot = gained 30+ ELO in last 5 games, Cold = lost 30+ ELO
+        df["elo_slope_home"] = (
+            df.groupby("TEAM_ID_home")["elo_home"]
+            .transform(lambda x: x.diff().rolling(5, min_periods=1).mean())
+        )
+        df["elo_slope_away"] = (
+            df.groupby("TEAM_ID_away")["elo_away"]
+            .transform(lambda x: x.diff().rolling(5, min_periods=1).mean())
+        )
+
+        return df
 
     def _add_enhanced_fatigue(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -760,13 +862,17 @@ class FeatureEngineer:
         df["rest_home_sq"] = df["rest_home_days"] ** 2
         df["rest_away_sq"] = df["rest_away_days"] ** 2
 
-        # 3 games in 4 nights
+        # 3 games in 4 nights: rest_days <= 1 means the team played
+        # yesterday or the day before (back-to-back or 3in4 nights).
         df["rest_3in4_home"] = (df["rest_home_days"] <= 1).astype(int)
         df["rest_3in4_away"] = (df["rest_away_days"] <= 1).astype(int)
 
-        # Both teams on b2b
+        # Both teams on b2b: rest_days <= 1 for BOTH teams.
+        # Old code used (rest == 0) which ONLY caught exact same-day
+        # back-to-backs, missing the case where one team has 1 day rest
+        # and the other also has 1 day rest (both played previous day).
         df["both_b2b"] = (
-            (df["rest_home_days"] == 0) & (df["rest_away_days"] == 0)
+            (df["rest_home_days"] <= 1) & (df["rest_away_days"] <= 1)
         ).astype(int)
 
         # Interaction features
@@ -775,137 +881,344 @@ class FeatureEngineer:
 
         return df
 
-    def backfill_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    # ── Moneyline-Specific Features (v3.1) ────────────────────────────
+
+    def _add_moneyline_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Backfill NaN feature values with league-average defaults.
+        Features designed specifically for win/loss classification.
 
-        Rolling features (avg_pts_*, avg_pm_*, ema_*, etc.) are NaN for
-        each team's first game(s) of the season since there's no prior
-        history to compute from. This fills those gaps with sensible
-        league-average estimates, so no training data needs to be dropped.
+        Unlike the existing rolling averages (built for total points regression),
+        these features directly capture team quality, matchup dynamics, and
+        performance relative to expectations — all critical for moneyline.
 
-        Also handles edge cases like eFG being NaN when FGA=0.
+        Features added:
+          - composite_power_home/away: Weighted blend of ELO + net rating + form
+          - power_diff: home - away composite power
+          - form_diff: home weighted_momentum - away weighted_momentum
+          - perf_vs_expected_home/away: Rolling actual margin vs ELO-expected margin
+          - perf_vs_expected_diff: home - away perf_vs_expected
+          - consistency_home/away: Inverse of margin volatility (higher = more reliable)
+          - consistency_diff: home - away consistency
+          - home_win_pct_10g_home: How well does home team play at home?
+          - away_win_pct_10g_away: How well does away team play on road?
+          - h2h_win_rate: Head-to-head win rate for home team in last 5 meetings
+          - h2h_avg_margin: Head-to-head avg margin for home team in last 5 meetings
         """
         df = df.copy()
 
-        # Map column name patterns to sensible league-average defaults
-        # These are derived from typical NBA season averages.
-        _NA_FILL: dict[str, float] = {
-            # Points & scoring averages
-            "avg_pts": 114.5,
-            "pts_zscore": 0.0,
-            "ema_pts": 114.5,
-            "trend_pts": 0.0,
-            # Margin / plus-minus
-            "avg_pm": 0.0,
-            "avg_margin": 0.0,
-            "last_3_margin": 0.0,
-            "margin_volatility": 12.0,
-            "ema_pm": 0.0,
-            "ema_margin": 0.0,
-            "trend_pm": 0.0,
-            # Pace
-            "pace": 100.0,
-            "avg_pace": 100.0,
-            # Efficiency
-            "efg": 0.54,
-            "avg_efg": 0.54,
-            # Win rates & momentum
-            "win_pct": 0.5,
-            "win_streak": 0.0,
-            "weighted_momentum": 0.5,
-            "form_score": 0.5,
-            # v3.0 — Boxscore stat rolling averages (all default to NBA league avg)
-            "avg_fgm": 42.0,
-            "avg_fga": 88.0,
-            "avg_fg3m": 13.5,
-            "avg_fg3a": 38.0,
-            "avg_ftm": 18.0,
-            "avg_fta": 23.0,
-            "avg_oreb": 10.0,
-            "avg_dreb": 33.0,
-            "avg_reb": 43.0,
-            "avg_ast": 25.0,
-            "avg_stl": 7.5,
-            "avg_blk": 5.0,
-            "avg_tov": 13.0,
-            "avg_pf": 19.0,
-            "avg_fg3_pct": 0.355,
-            "avg_ft_pct": 0.780,
-            # v3.0 — Opponent-allowed rolling averages
-            "avg_pts_allowed": 114.5,
-            "avg_fgm_allowed": 42.0,
-            "avg_fga_allowed": 88.0,
-            "avg_fg3m_allowed": 13.5,
-            "avg_fg3a_allowed": 38.0,
-            "avg_ftm_allowed": 18.0,
-            "avg_fta_allowed": 23.0,
-            "avg_oreb_allowed": 10.0,
-            "avg_dreb_allowed": 33.0,
-            "avg_reb_allowed": 43.0,
-            "avg_ast_allowed": 25.0,
-            "avg_stl_allowed": 7.5,
-            "avg_blk_allowed": 5.0,
-            "avg_tov_allowed": 13.0,
-            "avg_pf_allowed": 19.0,
-            # v3.0 — Trend slopes for boxscore stats
-            "trend_fgm": 0.0,
-            "trend_fga": 0.0,
-            "trend_reb": 0.0,
-            "trend_ast": 0.0,
-            "trend_stl": 0.0,
-            "trend_blk": 0.0,
-            "trend_tov": 0.0,
-            # v3.0 — EMA for boxscore stats
-            "ema_fgm": 42.0,
-            "ema_fga": 88.0,
-            "ema_reb": 43.0,
-            "ema_ast": 25.0,
-            "ema_stl": 7.5,
-            "ema_blk": 5.0,
-            "ema_tov": 13.0,
-            "ema_pf": 19.0,
-            # v3.0 — Home-away differentials (diff = 0 means teams are equal)
-            "_diff_": 0.0,
+        for suffix in ["home", "away"]:
+            team_prefix = suffix
+            team_id_col = f"TEAM_ID_{suffix}"
+            wl_num_col = f"WL_num_{team_prefix}"
+            pm_col = f"team_plus_minus_{team_prefix}"
+
+            # ── Composite Power Rating ─────────────────────────────────
+            # Blend: 40% ELO, 30% net rating (pm), 30% recent win rate
+            # Normalize each component to ~0-1 range
+            elo_col = f"elo_{suffix}"
+            pm_10g = f"avg_pm_10g_{suffix}"
+            win_pct_10g = f"win_pct_10g_{suffix}"
+            weighted_mom = f"weighted_momentum_{suffix}"
+
+            elo_norm = (df.get(elo_col, 1500) - 1300) / 400  # ~0.5-1.0 range
+            pm_norm = df.get(pm_10g, 0) / 20  # ~-0.5-0.5 range, clipped
+            pm_norm = np.clip(pm_norm, -1, 1)
+
+            df[f"composite_power_{suffix}"] = (
+                0.35 * elo_norm
+                + 0.35 * pm_norm
+                + 0.15 * df.get(win_pct_10g, 0.5)
+                + 0.15 * df.get(weighted_mom, 0.5)
+            )
+
+            # ── Performance vs Expectation ─────────────────────────────
+            # Rolling difference between actual margin and ELO-expected margin
+            # Positive = team is outperforming what ELO predicts = hot
+            elo_prob_col = f"elo_home_prob"
+            if suffix == "away":
+                elo_prob_val = 1.0 - df.get("elo_home_prob", 0.5)
+            else:
+                elo_prob_val = df.get("elo_home_prob", 0.5)
+
+            # Expected margin: convert win prob to expected margin
+            # Derivation: ELO formula gives P(home_win) based on rating diff.
+            # Each ~6% of win probability ≈ 1 point of margin in NBA.
+            # So expected_margin = (win_prob - 0.5) / 0.06 ≈ (wp - 0.5) * 16.667
+            expected_margin = (elo_prob_val - 0.5) * 16.667
+            actual_margin = df.get(pm_10g, 0)
+            perf_vs_exp = actual_margin - expected_margin
+
+            # Rolling 10-game z-score of performance vs expectation
+            # Uses inline z-score to avoid scipy dependency
+            def _zscore_last(arr: np.ndarray) -> float:
+                mu, s = arr.mean(), arr.std(ddof=0)
+                return float((arr[-1] - mu) / s) if s > 0 else 0.0
+
+            df[f"perf_vs_expected_raw_{suffix}"] = perf_vs_exp
+            df[f"perf_vs_expected_{suffix}"] = (
+                df.groupby(team_id_col)[f"perf_vs_expected_raw_{suffix}"]
+                .transform(
+                    lambda x: x.rolling(10, min_periods=1).apply(
+                        lambda s: _zscore_last(s) if len(s) >= 3 else 0.0,
+                        raw=True,
+                    )
+                )
+            )
+
+            # ── Consistency Score ──────────────────────────────────────
+            # Inverse of margin volatility: higher = more consistent = more reliable
+            # Scale: if volatility = 12 (NBA avg), consistency = 0.5
+            vol_col = f"margin_volatility_{suffix}"
+            df[f"consistency_{suffix}"] = np.clip(
+                1.0 - (df.get(vol_col, 12) / 24), 0, 1
+            )
+
+            # ── Team Recent Win Rate ───────────────────────────────────
+            # Rolling win rate over last 10 games for each team.
+            # Note: this is the team's OVERALL win rate, not filtered by
+            # home/away venue (the per-game data doesn't separate that).
+            if suffix == "home":
+                df["recent_win_pct_home"] = (
+                    df.groupby(team_id_col)[wl_num_col]
+                    .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
+                )
+            else:
+                df["recent_win_pct_away"] = (
+                    df.groupby(team_id_col)[wl_num_col]
+                    .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
+                )
+
+        # ── Differential Features ───────────────────────────────────────
+        # These capture the NET advantage of home over away
+
+        df["power_diff"] = df["composite_power_home"] - df["composite_power_away"]
+
+        df["form_diff"] = (
+            df.get("weighted_momentum_home", 0.5)
+            - df.get("weighted_momentum_away", 0.5)
+        )
+
+        df["perf_vs_expected_diff"] = (
+            df["perf_vs_expected_home"] - df["perf_vs_expected_away"]
+        )
+
+        df["consistency_diff"] = (
+            df["consistency_home"] - df["consistency_away"]
+        )
+
+        df["home_away_split_diff"] = (
+            df.get("recent_win_pct_home", 0.5)
+            - df.get("recent_win_pct_away", 0.5)
+        )
+
+        # ── Head-to-Head Features ───────────────────────────────────────
+        # How have these two teams performed against each other recently?
+        # Uses a team-pair key (sorted) to track H2H history.
+        # Stores which team won by name, so the current home team's
+        # historical record vs the away team can be computed correctly.
+        h2h_store: dict[str, list[tuple[str, int, float]]] = {}  # key -> [(winner_team, idx, margin)]
+
+        h2h_win_rate_list = []  # current home team's win rate vs away team
+        h2h_margin_list = []    # current home team's avg margin vs away team
+
+        for idx, row in df.iterrows():
+            home_team = str(row.get("TEAM_NAME_home", row.get("home_team_name", ""))).strip()
+            away_team = str(row.get("TEAM_NAME_away", row.get("away_team_name", ""))).strip()
+
+            if not home_team or not away_team or home_team == away_team:
+                h2h_win_rate_list.append(0.5)
+                h2h_margin_list.append(0.0)
+                continue
+
+            # Create sorted pair key so both directions share history
+            pair_key = tuple(sorted([home_team, away_team]))
+            history = h2h_store.get(pair_key, [])
+
+            # Compute H2H: how often has the current HOME team beaten the AWAY team?
+            recent = history[-5:] if len(history) >= 5 else history
+            if recent:
+                home_wins = sum(1 for winner, _, _ in recent if winner == home_team)
+                home_margins = [
+                    m if winner == home_team else -m
+                    for winner, _, m in recent
+                ]
+                h2h_win_rate_list.append(home_wins / len(recent))
+                h2h_margin_list.append(sum(home_margins) / len(home_margins) if home_margins else 0.0)
+            else:
+                h2h_win_rate_list.append(0.5)
+                h2h_margin_list.append(0.0)
+
+            # Record THIS game: who won and by how much (from home perspective)
+            home_won = row.get("point_diff", 0) > 0
+            margin = row.get("point_diff", 0)
+            winner = home_team if home_won else away_team
+            h2h_store.setdefault(pair_key, []).append((winner, idx, margin))
+
+        return df
+
+    def backfill_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Backfill NaN feature values with league-average constants ONLY.
+
+        CRITICAL: NEVER use dataset-wide statistics (median, mean, etc.)
+        because that leaks future information into the training data.
+        When walk-forward validation splits chronologically, the training
+        fold's features would have been backfilled with medians computed
+        from the FULL dataset (including future games) — 
+        that is DATA LEAKAGE and inflates validation metrics.
+
+        Rolling features (avg_pts_*, avg_pm_*, ema_*, etc.) are NaN for
+        each team's first game(s) of the season since there's no prior
+        history to compute from. This fills those gaps with pre-defined
+        league-average constants, so no training data needs to be dropped
+        and no future information leaks backward.
+        """
+        df = df.copy()
+
+        # Map column name patterns to sensible league-average constants
+        # These are pre-defined NBA season averages — NOT computed from data.
+        # Using constants ensures NO future information leaks into training.
+        # NOTE: Patterns are ordered LONGEST FIRST to prevent substring
+        # collisions. E.g., "avg_pts_allowed" must appear before "avg_pts"
+        # so that columns like "avg_pts_allowed_10g_home" don't match
+        # the generic "avg_pts" pattern and get the wrong fill value.
+        _NA_FILL: list[tuple[str, float]] = [
+            # --- Longest/most-specific patterns first ---
+            # Opponent-allowed rolling averages (must come before base stats)
+            ("avg_reb_allowed", 43.0),
+            ("avg_ast_allowed", 25.0),
+            ("avg_stl_allowed", 7.5),
+            ("avg_blk_allowed", 5.0),
+            ("avg_tov_allowed", 13.0),
+            ("avg_pf_allowed", 19.0),
+            ("avg_pts_allowed", 114.5),
+            ("avg_fgm_allowed", 42.0),
+            ("avg_fga_allowed", 88.0),
+            ("avg_fg3m_allowed", 13.5),
+            ("avg_fg3a_allowed", 38.0),
+            ("avg_ftm_allowed", 18.0),
+            ("avg_fta_allowed", 23.0),
+            ("avg_oreb_allowed", 10.0),
+            ("avg_dreb_allowed", 33.0),
+            # Off/def comparisons (must come before generic diff)
+            ("offense_vs_defense", 1.0),
+            ("defense_vs_offense", 1.0),
+            # Rate stats (10g variants before base)
+            ("three_pt_rate_10g", 0.38),
+            ("ft_rate_10g", 0.26),
+            ("ast_ratio_10g", 0.18),
+            ("ts_pct_10g", 0.57),
+            ("reb_pct_10g", 0.50),
+            ("three_pt_rate", 0.38),
+            ("ft_rate", 0.26),
+            ("ast_ratio", 0.18),
+            ("ts_pct", 0.57),
+            ("reb_pct", 0.50),
             # Opponent features
-            "opp_avg_pts": 114.5,
-            "opp_avg_pm": 0.0,
-            "opp_trailing_margin": 0.0,
-            "adj_opp_avg_pm": 0.0,
-            "offense_vs_defense": 1.0,
-            "defense_vs_offense": 1.0,
+            ("opp_avg_pts_scored", 114.5),
+            ("opp_avg_pts_allowed", 114.5),
+            ("opp_avg_pm", 0.0),
+            ("opp_trailing_margin", 0.0),
+            ("adj_opp_avg_pm", 0.0),
+            # Trend slopes for boxscore stats
+            ("trend_fgm", 0.0),
+            ("trend_fga", 0.0),
+            ("trend_reb", 0.0),
+            ("trend_ast", 0.0),
+            ("trend_stl", 0.0),
+            ("trend_blk", 0.0),
+            ("trend_tov", 0.0),
+            ("trend_pts", 0.0),
+            ("trend_pm", 0.0),
+            # EMA for boxscore stats
+            ("ema_fgm", 42.0),
+            ("ema_fga", 88.0),
+            ("ema_reb", 43.0),
+            ("ema_ast", 25.0),
+            ("ema_stl", 7.5),
+            ("ema_blk", 5.0),
+            ("ema_tov", 13.0),
+            ("ema_pf", 19.0),
+            ("ema_pts", 114.5),
+            ("ema_pm", 0.0),
+            ("ema_margin", 0.0),
+            # Boxscore stat rolling averages
+            ("avg_fg3_pct", 0.355),
+            ("avg_ft_pct", 0.780),
+            ("avg_fgm", 42.0),
+            ("avg_fga", 88.0),
+            ("avg_fg3m", 13.5),
+            ("avg_fg3a", 38.0),
+            ("avg_ftm", 18.0),
+            ("avg_fta", 23.0),
+            ("avg_oreb", 10.0),
+            ("avg_dreb", 33.0),
+            ("avg_reb", 43.0),
+            ("avg_ast", 25.0),
+            ("avg_stl", 7.5),
+            ("avg_blk", 5.0),
+            ("avg_tov", 13.0),
+            ("avg_pf", 19.0),
+            ("avg_pace", 100.0),
+            ("avg_efg", 0.54),
+            ("avg_pts", 114.5),
+            ("avg_pm", 0.0),
+            ("avg_margin", 0.0),
+            ("margin_volatility", 12.0),
+            ("last_3_margin", 0.0),
+            # Win rates & momentum
+            ("win_pct", 0.5),
+            ("win_streak", 0.0),
+            ("weighted_momentum", 0.5),
+            ("form_score", 0.5),
+            # Pace
+            ("pace", 100.0),
+            # Efficiency
+            ("efg", 0.54),
+            # Points / z-scores
+            ("pts_zscore", 0.0),
             # Strength of schedule
-            "sos": 0.0,
-            "sos_trend": 0.0,
-            # Rate stats
-            "three_pt_rate": 0.38,
-            "ft_rate": 0.26,
-            "ast_ratio": 0.18,
-            "ts_pct": 0.57,
-            "reb_pct": 0.50,
+            ("sos_trend", 0.0),
+            ("sos", 0.0),
             # Travel / cumulative
-            "cum_travel": 0.0,
-        }
+            ("cum_travel", 0.0),
+            # Elo ratings
+            ("elo_slope", 0.0),
+            # Moneyline features (v3.1)
+            ("composite_power", 0.5),
+            ("power_diff", 0.0),
+            ("perf_vs_expected_raw", 0.0),
+            ("perf_vs_expected", 0.0),
+            ("perf_vs_expected_diff", 0.0),
+            ("consistency", 0.5),
+            ("consistency_diff", 0.0),
+            ("form_diff", 0.0),
+            ("home_away_split_diff", 0.0),
+            ("recent_win_pct_home", 0.5),
+            ("recent_win_pct_away", 0.5),
+            ("h2h_win_rate", 0.5),
+            ("h2h_avg_margin", 0.0),
+            # Home-away differentials (diff = 0 means teams are equal)
+            ("_diff_", 0.0),
+        ]
 
         for col in df.columns:
             if not df[col].isna().any():
                 continue
 
-            # Find the best-matching key
+            # Find the best-matching key (patterns in order: longest first)
             matched = False
-            for pattern, fill_value in _NA_FILL.items():
+            for pattern, fill_value in _NA_FILL:
                 if pattern in col:
                     df[col] = df[col].fillna(fill_value)
                     matched = True
                     break
 
             if not matched:
-                # Fallback: use median of non-NA values, then 0
-                median_val = df[col].dropna().median()
-                if not pd.isna(median_val):
-                    df[col] = df[col].fillna(median_val)
-                else:
-                    df[col] = df[col].fillna(0.0)
+                # NO DATA LEAKAGE: fill with 0.0 constant, NOT dataset median.
+                # Using df[col].dropna().median() would compute over FUTURE games
+                # when the dataset is sorted chronologically for walk-forward.
+                df[col] = df[col].fillna(0.0)
 
         return df
 

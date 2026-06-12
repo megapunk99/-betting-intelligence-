@@ -15,13 +15,12 @@ from fastapi.responses import JSONResponse, Response
 
 from betting_intel import __version__
 from betting_intel.api.routes import health, predict, backtest, alerts as alert_routes
+from betting_intel.api.routes.drift import router as drift
 from betting_intel.config import settings
 from betting_intel.db.connection import db_manager
-from betting_intel.services import logger, setup_logging
-from betting_intel.alerts.dispatcher import alert_dispatcher
-from betting_intel.alerts.telegram import TelegramBot
-from betting_intel.alerts.discord import DiscordWebhook
-from betting_intel.monitoring.metrics import metrics_endpoint
+import logging
+logger = logging.getLogger(__name__)
+# Alert system removed — was in deleted alerts/ package
 
 # WebSocket manager — initialized at app startup if live odds are enabled
 _odds_ws_manager = None
@@ -40,59 +39,15 @@ def get_league_registry():
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
-    setup_logging()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         """Application lifespan: startup and shutdown."""
-        logger.info("Starting API server", version=__version__)
+        logger.info(f"Starting API server v{__version__}")
         # Apply Alembic migrations to bring schema up to date
         db_manager.run_migrations()
 
-        # ── Initialize League Registry ────────────────────────────────
-        global _league_registry
-        try:
-            from betting_intel.data.small_leagues.league_registry import league_registry
-            _league_registry = league_registry
-            leagues = league_registry.list_leagues()
-            logger.info(
-                "League registry initialized",
-                leagues_available=len(leagues),
-                league_names=list(leagues.keys()),
-            )
-        except Exception as exc:
-            logger.warning(f"League registry init skipped: {exc}")
-
-        # ── Initialize Alert Channels ──────────────────────────────────
-        _alert_senders = []
-        try:
-            if settings.enable_alerts:
-                if settings.enable_telegram and settings.telegram_bot_token:
-                    bot = TelegramBot(
-                        token=settings.telegram_bot_token,
-                        chat_id=settings.telegram_chat_id or None,
-                    )
-                    alert_dispatcher.add_channel("telegram", bot)
-                    _alert_senders.append(bot)
-                    logger.info("Telegram alert channel registered")
-
-                if settings.enable_discord and settings.discord_webhook_url:
-                    webhook = DiscordWebhook(
-                        webhook_url=settings.discord_webhook_url,
-                    )
-                    alert_dispatcher.add_channel("discord", webhook)
-                    _alert_senders.append(webhook)
-                    logger.info("Discord alert channel registered")
-
-                # Apply threshold config
-                alert_dispatcher.config.min_edge_pct = settings.alert_min_edge_pct
-                alert_dispatcher.config.min_confidence = settings.alert_min_confidence
-                alert_dispatcher.config.min_stake = settings.alert_min_stake
-                alert_dispatcher.config.rate_limit_seconds = settings.alert_rate_limit_seconds
-        except Exception as exc:
-            logger.warning(f"Alert channel init skipped: {exc}")
-
-        # ── Initialize Live Odds Poller + WebSocket ───────────────────
+        # ── Init Live Odds Poller + WebSocket ─────────────────────────
         global _odds_ws_manager
         try:
             if settings.enable_live_odds and settings.odds_api_key and settings.odds_api_key != "your-api-key-here":
@@ -118,13 +73,6 @@ def create_app() -> FastAPI:
         if _odds_ws_manager:
             await _odds_ws_manager.stop()
             logger.info("Live odds WebSocket manager stopped")
-
-        # Close alert channel HTTP clients
-        for sender in _alert_senders:
-            try:
-                await sender.close()
-            except Exception as exc:
-                logger.debug(f"Error closing alert sender {sender.__class__.__name__}: {exc}")
 
         logger.info("Shutting down API server")
         db_manager.close()
@@ -180,6 +128,7 @@ def create_app() -> FastAPI:
     app.include_router(predict.router)
     app.include_router(backtest.router)
     app.include_router(alert_routes.router)
+    app.include_router(drift)
 
     # ── Prometheus Metrics Endpoint ──────────────────────────────────
     @app.get("/metrics")
@@ -189,8 +138,12 @@ def create_app() -> FastAPI:
         Returns metrics in Prometheus text format with the correct
         Content-Type header (text/plain; version=0.0.4).
         """
-        data, status_code, headers = metrics_endpoint()
-        return Response(content=data, status_code=status_code, headers=headers)
+        # Prometheus metrics endpoint removed — monitoring package was deleted
+        return Response(
+            content="# Prometheus metrics unavailable — monitoring package was removed during cleanup.\n",
+            status_code=200,
+            headers={"Content-Type": "text/plain; version=0.0.4"},
+        )
 
     # ── WebSocket Endpoint ───────────────────────────────────────────
     @app.websocket("/ws/odds")

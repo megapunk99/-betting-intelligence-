@@ -2,13 +2,17 @@
 Data loader: loads NBA game logs from SQLite and provides game-level views.
 """
 
+import logging
 import sqlite3
+
 import pandas as pd
 import numpy as np
 from pathlib import Path
 from typing import Optional, Tuple
 
 from betting_intel.config import DB_PATH, MAX_REST_DAYS
+
+logger = logging.getLogger(__name__)
 
 
 class NBADataLoader:
@@ -19,6 +23,9 @@ class NBADataLoader:
 
     def load_game_logs(self) -> pd.DataFrame:
         """Load raw game logs from SQLite."""
+        if not self.db_path or not self.db_path.exists():
+            logger.warning(f"Database not found at {self.db_path} — returning empty DataFrame")
+            return pd.DataFrame()
         conn = sqlite3.connect(str(self.db_path))
         query = """
         SELECT
@@ -54,6 +61,9 @@ class NBADataLoader:
         """
         if df is None:
             df = self.load_game_logs()
+
+        if df is None or df.empty:
+            return pd.DataFrame()
 
         # Parse home/away from MATCHUP
         df["IS_HOME"] = df["MATCHUP"].fillna("").str.contains("vs.").astype(int)
@@ -110,12 +120,14 @@ class NBADataLoader:
         Compute rest days for each team since their last game.
         Needs raw dataframe (not merged game dataset).
         """
+        if df is None or df.empty:
+            return pd.DataFrame()
         df = df.copy()
         df["GAME_DATE"] = pd.to_datetime(df["GAME_DATE"])
         df = df.sort_values(["TEAM_ID", "GAME_DATE"])
         df["rest_days"] = df.groupby("TEAM_ID")["GAME_DATE"].diff().dt.days
         df["rest_days"] = df["rest_days"].fillna(MAX_REST_DAYS).clip(0, MAX_REST_DAYS)
-        df["is_back_to_back"] = (df["rest_days"] == 0).astype(int)
+        df["is_back_to_back"] = (df["rest_days"] <= 1).astype(int)
         return df
 
 

@@ -57,7 +57,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     risk_grp.add_argument("--bankroll", type=float, default=1000.0, help="Starting bankroll for Kelly sizing")
     risk_grp.add_argument("--kelly-fraction", type=float, default=0.25, help="Kelly fraction (0.0-1.0)")
     risk_grp.add_argument("--max-exposure", type=float, default=0.20, help="Max exposure per game as fraction of bankroll")
-    risk_grp.add_argument("--min-edge", type=float, default=0.02, help="Minimum edge threshold (2% = 0.02)")
+    risk_grp.add_argument("--min-edge", type=float, default=0.02, help="Minimum edge threshold (2%% = 0.02)")
 
     # Output
     out_grp = parser.add_argument_group("Output Options")

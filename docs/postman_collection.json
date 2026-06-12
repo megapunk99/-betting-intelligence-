@@ -1,0 +1,260 @@
+{
+  "info": {
+    "name": "Betting Intelligence API",
+    "description": "AI-powered basketball betting recommendations API. All endpoints for odds, predictions, bets, signals, health, and payments.\n\n## Quick Start\n1. Set `base_url` variable (default: http://localhost:8000)\n2. Call `POST /api/live/refresh` to fetch fresh odds\n3. Call `GET /api/live/snapshot` to see all games with predictions\n4. Call `GET /api/health` to verify system status\n\n## Data Flow\n- **Live Predictions**: Refresh → Snapshot → Chart Data → Games\n- **Dashboard**: Refresh → Bets → Clear Picks\n- **Subscriptions**: Config → Create Checkout → Webhook",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "betting-intel"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Meta",
+      "description": "API metadata and discovery endpoints",
+      "item": [
+        {
+          "name": "GET /api — API Index",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api", "host": ["{{base_url}}"], "path": ["api"] },
+            "description": "Returns a live catalog of all available endpoints"
+          }
+        },
+        {
+          "name": "GET /openapi.json — OpenAPI Spec",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/openapi.json", "host": ["{{base_url}}"], "path": ["openapi.json"] },
+            "description": "Full OpenAPI 3.0 specification document"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "description": "Server health and readiness checks",
+      "item": [
+        {
+          "name": "GET /api/health/live — Liveness Probe",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/health/live", "host": ["{{base_url}}"], "path": ["api", "health", "live"] },
+            "description": "Lightweight live probe for load balancers / Docker"
+          }
+        },
+        {
+          "name": "GET /api/health/ready — Readiness Probe",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/health/ready", "host": ["{{base_url}}"], "path": ["api", "health", "ready"] },
+            "description": "Checks if DB and engine are available (returns 503 if not)"
+          }
+        },
+        {
+          "name": "GET /api/health — Full System Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/health", "host": ["{{base_url}}"], "path": ["api", "health"] },
+            "description": "Full system health — DB, API keys, circuit breakers, engine status"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Live Predictions",
+      "description": "Live odds, predictions, and refresh trigger",
+      "item": [
+        {
+          "name": "POST /api/live/refresh — Refresh Odds",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/live/refresh", "host": ["{{base_url}}"], "path": ["api", "live", "refresh"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" },
+            "description": "⚠️ MANUAL TRIGGER: Fetches fresh odds from TheOddsAPI or ESPN scraper. Only endpoint that calls external APIs."
+          }
+        },
+        {
+          "name": "GET /api/live/snapshot — Full Snapshot",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/live/snapshot", "host": ["{{base_url}}"], "path": ["api", "live", "snapshot"] },
+            "description": "Full live prediction snapshot with all games, odds, predictions, edges, confidence"
+          }
+        },
+        {
+          "name": "GET /api/live/chart-data — Chart Data",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/live/chart-data", "host": ["{{base_url}}"], "path": ["api", "live", "chart-data"] },
+            "description": "Pre-computed chart data — edges, confidence breakdown, direction counts (sub-100ms)"
+          }
+        },
+        {
+          "name": "GET /api/live/games — Live Games Only",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/live/games", "host": ["{{base_url}}"], "path": ["api", "live", "games"] },
+            "description": "Returns only games that are currently in-progress"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Data",
+      "description": "Bets, clear picks, and intelligence signals",
+      "item": [
+        {
+          "name": "GET /api/refresh — Refresh Dashboard",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/refresh", "host": ["{{base_url}}"], "path": ["api", "refresh"] },
+            "description": "Refresh cached dashboard data (recommendation engine)"
+          }
+        },
+        {
+          "name": "GET /api/bets — List Bets",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/bets?league=all&bet_type=all&min_edge=0&limit=50",
+              "host": ["{{base_url}}"], "path": ["api", "bets"],
+              "query": [
+                { "key": "league", "value": "all", "description": "Filter by league or 'all'" },
+                { "key": "bet_type", "value": "all", "description": "Filter by bet type or 'all'" },
+                { "key": "min_edge", "value": "0", "description": "Minimum edge percentage" },
+                { "key": "limit", "value": "50", "description": "Max results" }
+              ]
+            },
+            "description": "All bets with filtering — sorted by edge descending"
+          }
+        },
+        {
+          "name": "GET /api/clear-picks — Clear Picks",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/clear-picks", "host": ["{{base_url}}"], "path": ["api", "clear-picks"] },
+            "description": "High-confidence picks with clear scores and risk levels"
+          }
+        },
+        {
+          "name": "GET /api/signals — X/Twitter Signals",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/signals", "host": ["{{base_url}}"], "path": ["api", "signals"] },
+            "description": "X/Twitter intelligence signals from tracked NBA accounts"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "description": "Stripe subscription management",
+      "item": [
+        {
+          "name": "GET /api/stripe/config — Stripe Config",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/stripe/config", "host": ["{{base_url}}"], "path": ["api", "stripe", "config"] },
+            "description": "Returns Stripe publishable key and enabled status"
+          }
+        },
+        {
+          "name": "POST /api/stripe/create-checkout-session — Create Checkout",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/stripe/create-checkout-session", "host": ["{{base_url}}"], "path": ["api", "stripe", "create-checkout-session"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tier\": \"basic\",\n  \"interval\": \"month\",\n  \"user_id\": \"demo_user_123\"\n}"
+            },
+            "description": "Create a Stripe checkout session for subscription purchase"
+          }
+        },
+        {
+          "name": "POST /api/stripe/create-portal-session — Customer Portal",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/stripe/create-portal-session", "host": ["{{base_url}}"], "path": ["api", "stripe", "create-portal-session"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_id\": \"cus_example\",\n  \"return_url\": \"http://localhost:8000/subscribe/manage\"\n}"
+            },
+            "description": "Create Stripe customer portal session for managing subscriptions"
+          }
+        },
+        {
+          "name": "POST /api/stripe/webhook — Webhook",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/stripe/webhook", "host": ["{{base_url}}"], "path": ["api", "stripe", "webhook"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"checkout.session.completed\",\n  \"data\": {}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Stripe webhook handler for subscription lifecycle events"
+          }
+        }
+      ]
+    },
+    {
+      "name": "WebSocket",
+      "description": "Real-time WebSocket endpoints",
+      "item": [
+        {
+          "name": "WS /ws/live — Live Predictions Stream",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": [""], "type": "text/javascript" }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "ws://localhost:8000/ws/live", "host": ["ws://localhost:8000"], "path": ["ws", "live"] },
+            "description": "WebSocket: sends snapshot on connect. Send 'refresh' to re-send cached data, 'ping' for pong.",
+            "protocol": "ws"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pages",
+      "description": "HTML web pages",
+      "item": [
+        { "name": "GET / — Landing Page", "request": { "method": "GET", "url": { "raw": "{{base_url}}/", "host": ["{{base_url}}"], "path": [""] } } },
+        { "name": "GET /dashboard — Dashboard", "request": { "method": "GET", "url": { "raw": "{{base_url}}/dashboard", "host": ["{{base_url}}"], "path": ["dashboard"] } } },
+        { "name": "GET /live — Live Games", "request": { "method": "GET", "url": { "raw": "{{base_url}}/live", "host": ["{{base_url}}"], "path": ["live"] } } },
+        { "name": "GET /pre-match-prediction — Pre-Match", "request": { "method": "GET", "url": { "raw": "{{base_url}}/pre-match-prediction", "host": ["{{base_url}}"], "path": ["pre-match-prediction"] } } },
+        { "name": "GET /todays-card — Today's Card", "request": { "method": "GET", "url": { "raw": "{{base_url}}/todays-card", "host": ["{{base_url}}"], "path": ["todays-card"] } } },
+        { "name": "GET /tomorrow — Tomorrow's Card", "request": { "method": "GET", "url": { "raw": "{{base_url}}/tomorrow", "host": ["{{base_url}}"], "path": ["tomorrow"] } } },
+        { "name": "GET /all-bets — All Bets", "request": { "method": "GET", "url": { "raw": "{{base_url}}/all-bets", "host": ["{{base_url}}"], "path": ["all-bets"] } } },
+        { "name": "GET /clear-picks — Clear Picks", "request": { "method": "GET", "url": { "raw": "{{base_url}}/clear-picks?league=all&bet_type=all&min_edge=0", "host": ["{{base_url}}"], "path": ["clear-picks"] } } },
+        { "name": "GET /player-props — Player Props", "request": { "method": "GET", "url": { "raw": "{{base_url}}/player-props?home=Spurs&away=Thunder&league=NBA", "host": ["{{base_url}}"], "path": ["player-props"] } } },
+        { "name": "GET /signals — X/Twitter Signals", "request": { "method": "GET", "url": { "raw": "{{base_url}}/signals", "host": ["{{base_url}}"], "path": ["signals"] } } },
+        { "name": "GET /subscribe/success — Sub Success", "request": { "method": "GET", "url": { "raw": "{{base_url}}/subscribe/success", "host": ["{{base_url}}"], "path": ["subscribe", "success"] } } },
+        { "name": "GET /subscribe/cancel — Sub Cancel", "request": { "method": "GET", "url": { "raw": "{{base_url}}/subscribe/cancel", "host": ["{{base_url}}"], "path": ["subscribe", "cancel"] } } },
+        { "name": "GET /subscribe/manage — Sub Manage", "request": { "method": "GET", "url": { "raw": "{{base_url}}/subscribe/manage", "host": ["{{base_url}}"], "path": ["subscribe", "manage"] } } },
+        { "name": "GET /privacy — Privacy Policy", "request": { "method": "GET", "url": { "raw": "{{base_url}}/privacy", "host": ["{{base_url}}"], "path": ["privacy"] } } },
+        { "name": "GET /terms — Terms of Service", "request": { "method": "GET", "url": { "raw": "{{base_url}}/terms", "host": ["{{base_url}}"], "path": ["terms"] } } }
+      ]
+    },
+    {
+      "name": "SEO",
+      "description": "SEO-related endpoints",
+      "item": [
+        { "name": "GET /robots.txt", "request": { "method": "GET", "url": { "raw": "{{base_url}}/robots.txt", "host": ["{{base_url}}"], "path": ["robots.txt"] } } },
+        { "name": "GET /sitemap.xml", "request": { "method": "GET", "url": { "raw": "{{base_url}}/sitemap.xml", "host": ["{{base_url}}"], "path": ["sitemap.xml"] } } }
+      ]
+    }
+  ]
+}

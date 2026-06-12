@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import tempfile
 from pathlib import Path
 
@@ -10,6 +11,14 @@ import pandas as pd
 import pytest
 
 from betting_intel.config import Settings
+
+# Set a test API key so that web.auth API key middleware allows test requests.
+# This MUST be set before any module that imports web.app is loaded.
+os.environ.setdefault("API_KEY", "test-api-key-for-integration-tests")
+TEST_API_KEY = os.environ["API_KEY"]
+
+# Default headers to include in all TestClient-based integration tests
+TEST_HEADERS = {"X-API-Key": TEST_API_KEY}
 
 
 @pytest.fixture

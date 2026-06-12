@@ -19,6 +19,7 @@ We cover every major basketball betting market:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
@@ -32,7 +33,9 @@ class BetType(str, Enum):
     TOTAL_POINTS = "total_points"
     TEAM_TOTAL = "team_total"
     FIRST_QUARTER_WINNER = "first_quarter_winner"
+    QUARTER_TOTAL = "quarter_total"
     FIRST_HALF_TOTAL = "first_half_total"
+    SECOND_HALF_TOTAL = "second_half_total"
     PLAYER_POINTS = "player_points"
     PLAYER_REBOUNDS = "player_rebounds"
     PLAYER_ASSISTS = "player_assists"
@@ -46,7 +49,9 @@ class BetType(str, Enum):
             "total_points": "Total Points O/U",
             "team_total": "Team Total O/U",
             "first_quarter_winner": "1st Quarter Winner",
+            "quarter_total": "Quarter Total",
             "first_half_total": "1st Half Total",
+            "second_half_total": "2nd Half Total",
             "player_points": "Player Points",
             "player_rebounds": "Player Rebounds",
             "player_assists": "Player Assists",
@@ -61,7 +66,9 @@ class BetType(str, Enum):
             "total_points": "\U0001F3AF",
             "team_total": "\U0001F4C8",
             "first_quarter_winner": "\U0001F525",
+            "quarter_total": "\U0001F4CA",
             "first_half_total": "\U0001F3C0",
+            "second_half_total": "\U0001F3C0",
             "player_points": "\U0001F4B0",
             "player_rebounds": "\U0001F4B0",
             "player_assists": "\U0001F4B0",
@@ -244,9 +251,15 @@ def SpreadBet(
     # If team is underdog (positive spread line), they need to not lose by more than the spread
     covers = (predicted_margin > spread_line) if spread_line < 0 else (predicted_margin > -spread_line)
 
-    # Simple win probability estimate based on how far predicted margin is from spread
+    # PROPER probability: sigmoid function calibrated for spread betting
+    # k=0.03 means 10pt margin diff → ~58% confidence (not the crude linear 70%)
+    # Sigmoid correctly saturates at extremes instead of hard-clipping at 0.85
+    # CRITICAL: No floor below 0.50 — a zero-edge bet must have win_prob ~0.50.
+    # The sigmoid naturally passes through 0.5 at diff=0, so we let it breathe.
+    # Previously had max(0.50, ...) which clamped even the smallest edge to 50%.
     diff = abs(predicted_margin - abs(spread_line))
-    win_prob = min(0.5 + diff * 0.02, 0.85)
+    win_prob = 1.0 / (1.0 + math.exp(-0.03 * diff)) if diff > 0 else 0.5
+    win_prob = max(0.01, min(0.95, win_prob))
 
     market_implied = 0.5  # Spreads are typically ~50/50 (-110 both sides)
     edge = win_prob - market_implied
@@ -283,13 +296,18 @@ def TotalBet(
     **kwargs,
 ) -> BetSuggestion:
     """Create a total points over/under bet suggestion."""
+    diff = abs(predicted_total - market_total)
+    # PROPER sigmoid: k=0.015 calibrated for total points
+    # 10pt diff → ~54% confidence (market is efficient, edges are small)
+    # CRITICAL: No floor below 0.50 — sigmoid gives 0.5 at diff=0 naturally.
+    # Previously had max(0.50, ...) which hid the true probability from the model.
+    win_prob = 1.0 / (1.0 + math.exp(-0.015 * diff)) if diff > 0 else 0.5
+    win_prob = max(0.01, min(0.92, win_prob))
     if side.upper() == "OVER":
         diff = predicted_total - market_total
-        win_prob = min(0.5 + abs(diff) * 0.01, 0.75)
         label = f"Pred: {predicted_total:.0f}"
     else:
         diff = market_total - predicted_total
-        win_prob = min(0.5 + abs(diff) * 0.01, 0.75)
         label = f"Pred: {predicted_total:.0f}"
 
     edge = win_prob - 0.5  # Market typically prices O/U at ~50/50
@@ -324,13 +342,15 @@ def TeamTotalBet(
     **kwargs,
 ) -> BetSuggestion:
     """Create a team total over/under bet suggestion."""
+    diff = abs(predicted_team_total - market_team_total)
+    # Team totals have higher variance — use slightly steeper k
+    win_prob = 1.0 / (1.0 + math.exp(-0.025 * diff)) if diff > 0 else 0.5
+    win_prob = max(0.01, min(0.92, win_prob))
     if side.upper() == "OVER":
         diff = predicted_team_total - market_team_total
-        win_prob = min(0.5 + abs(diff) * 0.015, 0.72)
         label = f"Pred: {predicted_team_total:.0f}"
     else:
         diff = market_team_total - predicted_team_total
-        win_prob = min(0.5 + abs(diff) * 0.015, 0.72)
         label = f"Pred: {predicted_team_total:.0f}"
 
     edge = win_prob - 0.5
@@ -349,6 +369,50 @@ def TeamTotalBet(
         edge_pct=edge,
         expected_value=ev,
         win_probability=win_prob,
+        **kwargs,
+    )
+
+
+def QuarterTotalBet(
+    game_id: str,
+    game_date: str,
+    matchup: str,
+    side: str,  # "OVER" or "UNDER"
+    market_quarter_total: float,
+    predicted_quarter_total: float,
+    quarter: int = 1,
+    league: str = "NBA",
+    **kwargs,
+) -> BetSuggestion:
+    """Create a quarter total points bet suggestion."""
+    diff = abs(predicted_quarter_total - market_quarter_total)
+    # Quarter totals are noisier — use k=0.04
+    win_prob = 1.0 / (1.0 + math.exp(-0.04 * diff)) if diff > 0 else 0.5
+    win_prob = max(0.01, min(0.92, win_prob))
+    if side.upper() == "OVER":
+        label = f"Pred: {predicted_quarter_total:.0f}"
+    else:
+        label = f"Pred: {predicted_quarter_total:.0f}"
+
+    edge = win_prob - 0.5
+    ev = (win_prob * 0.91) - ((1 - win_prob) * 1.0)
+
+    ordinal = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}.get(quarter, f"{quarter}th")
+
+    return BetSuggestion(
+        game_id=game_id,
+        game_date=game_date,
+        matchup=matchup,
+        league=league,
+        bet_type=BetType.QUARTER_TOTAL,
+        bet_side=f"{ordinal} Qtr {side} {market_quarter_total:.0f}",
+        market_line=market_quarter_total,
+        predicted_value=predicted_quarter_total,
+        predicted_label=label,
+        edge_pct=edge,
+        expected_value=ev,
+        win_probability=win_prob,
+        tags=["quarter_total"],
         **kwargs,
     )
 
@@ -399,13 +463,14 @@ def HalfTotalBet(
     **kwargs,
 ) -> BetSuggestion:
     """Create a first half total bet suggestion."""
+    diff = abs(predicted_half_total - market_half_total)
+    win_prob = 1.0 / (1.0 + math.exp(-0.02 * diff)) if diff > 0 else 0.5
+    win_prob = max(0.01, min(0.92, win_prob))
     if side.upper() == "OVER":
         diff = predicted_half_total - market_half_total
-        win_prob = min(0.5 + abs(diff) * 0.015, 0.72)
         label = f"Pred: {predicted_half_total:.0f}"
     else:
         diff = market_half_total - predicted_half_total
-        win_prob = min(0.5 + abs(diff) * 0.015, 0.72)
         label = f"Pred: {predicted_half_total:.0f}"
 
     edge = win_prob - 0.5
@@ -441,13 +506,15 @@ def PlayerPropBet(
     **kwargs,
 ) -> BetSuggestion:
     """Create a player prop bet suggestion."""
+    diff = abs(predicted_value - market_line)
+    # Player props are noisy — use gentle k=0.04
+    win_prob = 1.0 / (1.0 + math.exp(-0.04 * diff)) if diff > 0 else 0.5
+    win_prob = max(0.01, min(0.90, win_prob))
     if side.upper() == "OVER":
         diff = predicted_value - market_line
-        win_prob = min(0.5 + abs(diff) * 0.03, 0.72)
         label = f"Pred: {predicted_value:.1f}"
     else:
         diff = market_line - predicted_value
-        win_prob = min(0.5 + abs(diff) * 0.03, 0.72)
         label = f"Pred: {predicted_value:.1f}"
 
     edge = win_prob - 0.5

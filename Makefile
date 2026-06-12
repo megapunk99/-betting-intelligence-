@@ -1,4 +1,9 @@
-.PHONY: install dev test lint clean run-api run-pipeline docker-build docker-up db-init db-migrate refresh-data refresh-data-fast refresh-data-backfill verify-data
+.PHONY: install dev test test-slow test-fast lint format clean clean-output \
+  ci yaml-validate typecheck \
+  run-api run-pipeline \
+  docker-build docker-up docker-down docker-logs \
+  db-upgrade db-downgrade db-migrate db-history db-current \
+  refresh-data refresh-data-fast refresh-data-backfill verify-data help
 
 # ── Installation ──────────────────────────────────────────────────────────
 install:
@@ -25,6 +30,23 @@ lint:
 format:
 	ruff format src/ tests/
 	ruff check --fix src/ tests/
+
+# ── CI Checks (mirrors .github/workflows/ci.yml locally) ───────────────
+ci: yaml-validate lint typecheck test-fast
+	@echo "✅ All CI checks passed"
+
+yaml-validate:
+	@echo "🔍 Validating YAML workflow files..."
+	@for f in .github/workflows/*.yml; do \
+		python -c "import yaml, sys; yaml.safe_load(open('$$f', encoding='utf-8')); sys.stderr.write('  ✓ ' + '$$f' + '\n')" 2>&1 || \
+		(echo "  ✗ $$f — INVALID" && exit 1); \
+	done
+	@echo "✅ All YAML files valid"
+
+typecheck:
+	@echo "🔍 Running mypy type checker..."
+	mypy src/betting_intel/ --ignore-missing-imports --warn-unused-ignores
+	@echo "✅ Type check complete"
 
 # ── Running ───────────────────────────────────────────────────────────────
 run-pipeline:
@@ -93,7 +115,14 @@ help:
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test        Run all tests with coverage"
-	@echo "  make test-fast   Run fast tests only"
+	@echo "  make test-fast   Run fast tests only (excludes @pytest.mark.slow)"
+	@echo "  make test-slow   Run slow tests only"
+	@echo ""
+	@echo "CI Checks (local):"
+	@echo "  make ci              Run all CI checks: YAML → Ruff → mypy → pytest"
+	@echo "  make yaml-validate   Validate all .github/workflows/*.yml files"
+	@echo "  make lint            Run ruff linter + format check"
+	@echo "  make typecheck       Run mypy type checker"
 	@echo ""
 	@echo "Running:"
 	@echo "  make run-pipeline   Execute full data pipeline"

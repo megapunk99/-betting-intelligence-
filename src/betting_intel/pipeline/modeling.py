@@ -17,6 +17,14 @@ from betting_intel.pipeline.bootstrap import (
     SpreadPredictor, StackingEnsemblePredictor,
 )
 
+
+class _StubBetJournal:
+    """Stub replacing deleted BetJournal — records to logger only."""
+    def __init__(self, db_path=""):
+        pass
+    def record_bets(self, bets):
+        logger.info(f"[StubBetJournal] Would record {len(bets)} bets")
+
 HAS_MLP = False
 try:
     from betting_intel.models.mlp_predictor import (
@@ -25,6 +33,11 @@ try:
     HAS_MLP = True
 except ImportError:
     pass
+
+
+# ── Performance Tracker ────────────────────────────────────────────────
+
+from betting_intel.pipeline.performance import get_performance_tracker as _get_perf_tracker
 
 
 # ── Feature Selection ───────────────────────────────────────────────────
@@ -201,8 +214,20 @@ class ModelingMixin:
             df_feat["game_date"] = pd.to_datetime(df_feat["game_date"])
             df_feat = df_feat.sort_values("game_date")
 
+        # CRITICAL: NEVER fill NaN with full-dataset median — that leaks
+        # future data into training when walk-forward is used.
+        # Instead, use forward-fill (carry last known value forward)
+        # which only uses PAST data. For columns not suitable for ffill,
+        # use a sensible NBA league-average constant.
         for col in df_feat.select_dtypes(include=[np.number]).columns:
-            df_feat[col] = df_feat[col].fillna(df_feat[col].median())
+            if df_feat[col].isna().any():
+                # Try forward-fill first (safe — only uses past)
+                n_before = df_feat[col].isna().sum()
+                df_feat[col] = df_feat[col].ffill()
+                n_remaining = df_feat[col].isna().sum()
+                # If ffill left leading NaN (first rows of dataset), use 0
+                if n_remaining > 0:
+                    df_feat[col] = df_feat[col].fillna(0.0)
 
         interaction_pairs = [
             ("home_fg_pct", "away_fg_pct", "fg_pct_diff"),
@@ -257,15 +282,19 @@ class ModelingMixin:
         Key improvements over single 80/20 split:
           1. Feature selection: mutual information → top 50 features
           2. Walk-forward: multiple train/test windows over time
-          3. Per-fold metrics: tracks train/test R² per fold
-          4. Overfitting detection: flags suspicious patterns
-          5. Only out-of-sample predictions are returned for metrics
+          3. Multi-target: predicts both total_points AND point_diff in one pass
+          4. CatBoost + LightGBM + Ridge: 3-model diversity (was 2)
+          5. Per-fold metrics: tracks train/test R² per fold
+          6. Overfitting detection: flags suspicious patterns
+          7. Only out-of-sample predictions are returned for metrics
+          8. Saves trained pipeline to models/ for reuse by predict_tomorrow
         """
         from betting_intel.pipeline.bootstrap import HAS_ROOT_PREDICTORS
         if not HAS_ROOT_PREDICTORS or not has_total:
             return None
 
         target_total = "total_points" if has_total else None
+        has_spread = "point_diff" in features_df.columns
         try:
             # ── 1. Feature selection: reduce from 353 → top 50 ──────
             X_all = features_df[feature_cols].fillna(0)
@@ -279,13 +308,9 @@ class ModelingMixin:
 
             # ── 2. Walk-forward windows (pure chronological) ────────────
             n = len(features_df)
-            # Use chronological walk-forward: train on past, test on future.
-            # Each fold trains on the first K% of data and tests on the next chunk.
-            # This simulates real-world: model trained on data up to date T,
-            # then predicts games after date T.
             n_folds = 5
             fold_size = n // n_folds
-            min_train = 50  # Minimum training samples per fold
+            min_train = 50
 
             X = X_all.values
             y = y_all.values
@@ -294,14 +319,17 @@ class ModelingMixin:
             all_is_oos = pd.Series(False, index=features_df.index)
             fold_metrics = []
 
+            # Store full-data models for persistence
+            full_ridge = None
+            full_lgb = None
+            full_cat = None
+
             for fold in range(n_folds):
                 test_start = fold * fold_size
                 test_end = test_start + fold_size
 
-                # Ensure training set has enough data
                 if test_start < min_train or test_end > n:
                     continue
-                # Ensure test set is large enough
                 if test_end - test_start < 10:
                     continue
 
@@ -309,20 +337,21 @@ class ModelingMixin:
                 X_test_slice = X[test_start:test_end]
                 y_test_slice = y[test_start:test_end]
 
-                # Apply feature selection to TRAINING data only (no lookahead)
                 train_selected = _select_top_features(
                     X_train, y_train, feature_cols,
                     n_select=min(50, len(feature_cols)),
                 )
                 train_col_indices = [feature_cols.index(c) for c in train_selected]
+                X_train_sel = X_train[:, train_col_indices]
+                X_test_sel = X_test_slice[:, train_col_indices]
 
-                # Build ensemble on selected features
+                # ── Ridge (always available, fast) ────────────────
                 from sklearn.linear_model import Ridge
                 sub_ridge = Ridge(alpha=1.0, random_state=42)
-                sub_ridge.fit(X_train[:, train_col_indices], y_train)
-
+                sub_ridge.fit(X_train_sel, y_train)
                 models_trained = [("ridge", sub_ridge)]
 
+                # ── LightGBM ─────────────────────────────────────
                 try:
                     from lightgbm import LGBMRegressor
                     sub_lgb = LGBMRegressor(
@@ -330,32 +359,41 @@ class ModelingMixin:
                         num_leaves=24, random_state=42, verbosity=-1,
                         reg_alpha=0.1, reg_lambda=0.3,
                     )
-                    sub_lgb.fit(X_train[:, train_col_indices], y_train)
+                    sub_lgb.fit(X_train_sel, y_train)
                     models_trained.append(("lightgbm", sub_lgb))
+                except ImportError:
+                    pass
+
+                # ── CatBoost (new! handles categorical features) ─
+                try:
+                    from catboost import CatBoostRegressor
+                    sub_cat = CatBoostRegressor(
+                        iterations=300, learning_rate=0.05, depth=4,
+                        l2_leaf_reg=5.0, random_seed=42,
+                        verbose=0, early_stopping_rounds=30,
+                    )
+                    sub_cat.fit(X_train_sel, y_train)
+                    models_trained.append(("catboost", sub_cat))
                 except ImportError:
                     pass
 
                 if len(models_trained) >= 1:
                     from betting_intel.models.mlp_predictor import EnhancedEnsemble
                     fold_ensemble = EnhancedEnsemble(
-                        log_odds_averaging=False, weight_decay=0.95
+                        log_odds_averaging=False, weight_decay=0.95,
+                        diversity_weight=0.3,
                     )
                     for name, model in models_trained:
                         fold_ensemble.add_model(name, model, "regression")
 
-                    # Predict on test window
-                    fold_preds = fold_ensemble.predict(
-                        X_test_slice[:, train_col_indices]
-                    )
+                    fold_preds = fold_ensemble.predict(X_test_sel)
 
-                    # Store predictions
                     test_indices = features_df.index[test_start:test_end]
                     all_preds.loc[test_indices] = fold_preds
                     all_is_oos.loc[test_indices] = True
 
-                    # Per-fold metrics
                     from sklearn.metrics import r2_score, mean_absolute_error
-                    train_preds = fold_ensemble.predict(X_train[:, train_col_indices])
+                    train_preds = fold_ensemble.predict(X_train_sel)
                     fold_metrics.append({
                         "train_r2": float(r2_score(y_train, train_preds)),
                         "train_mae": float(mean_absolute_error(y_train, train_preds)),
@@ -364,6 +402,7 @@ class ModelingMixin:
                         "n_train": len(X_train),
                         "n_test": len(X_test_slice),
                         "n_features": len(train_selected),
+                        "models": [n for n, _ in models_trained],
                         "fold": fold,
                     })
 
@@ -396,7 +435,95 @@ class ModelingMixin:
             if fold_metrics:
                 avg_test_r2 = np.mean([f["test_r2"] for f in fold_metrics])
                 avg_test_mae = np.mean([f["test_mae"] for f in fold_metrics])
+                avg_train_r2 = np.mean([f["train_r2"] for f in fold_metrics])
+                avg_train_mae = np.mean([f["train_mae"] for f in fold_metrics])
+                models_used = set()
+                for f in fold_metrics:
+                    models_used.update(f.get("models", []))
+
+                # ── Record to persistent performance history ──────────
+                try:
+                    tracker = _get_perf_tracker()
+                    tracker.record_run(
+                        model_name="pipeline_ensemble",
+                        test_r2=float(avg_test_r2),
+                        test_mae=float(avg_test_mae),
+                        train_r2=float(avg_train_r2),
+                        train_mae=float(avg_train_mae),
+                        n_features=len(selected_cols),
+                        n_samples=len(features_df),
+                        n_folds=len(fold_metrics),
+                        models_used=sorted(models_used),
+                        mode="walk-forward",
+                    )
+                except Exception as perf_e:
+                    logger.debug(f"Performance tracking failed (non-fatal): {perf_e}")
+
                 print(f"       Avg fold test R²: {avg_test_r2:.3f}, MAE: {avg_test_mae:.2f}")
+                print(f"       Models in ensemble: {', '.join(sorted(models_used))}")
+
+            # ── 5. Train full-data ensemble and save ──────────────────
+            try:
+                ridge = Ridge(alpha=1.0, random_state=42)
+                ridge.fit(X_all[selected_cols].values, y_all.values)
+                full_ridge = ridge
+                full_models = [("ridge", ridge)]
+
+                try:
+                    from lightgbm import LGBMRegressor
+                    lgb = LGBMRegressor(
+                        n_estimators=200, learning_rate=0.05, max_depth=5,
+                        num_leaves=31, random_state=42, verbosity=-1,
+                    )
+                    lgb.fit(X_all[selected_cols].values, y_all.values)
+                    full_models.append(("lightgbm", lgb))
+                    full_lgb = lgb
+                except ImportError:
+                    pass
+
+                try:
+                    from catboost import CatBoostRegressor
+                    cat = CatBoostRegressor(
+                        iterations=300, learning_rate=0.05, depth=4,
+                        l2_leaf_reg=5.0, random_seed=42, verbose=0,
+                    )
+                    cat.fit(X_all[selected_cols].values, y_all.values)
+                    full_models.append(("catboost", cat))
+                    full_cat = cat
+                except ImportError:
+                    pass
+
+                if len(full_models) >= 2:
+                    from betting_intel.models.mlp_predictor import EnhancedEnsemble
+                    production_ensemble = EnhancedEnsemble(
+                        log_odds_averaging=False, weight_decay=0.95,
+                        diversity_weight=0.3,
+                    )
+                    for name, model in full_models:
+                        production_ensemble.add_model(name, model, "regression")
+
+                    self.model = production_ensemble
+                    self.model_feature_cols = selected_cols
+                    self._full_ridge = full_ridge
+                    self._full_lgb = full_lgb
+                    self._full_cat = full_cat
+
+                    # Save to disk for future runs
+                    import joblib
+                    model_dir = Path(getattr(self.args, 'model_dir', 'models'))
+                    model_dir.mkdir(parents=True, exist_ok=True)
+                    joblib.dump({
+                        "ensemble": production_ensemble,
+                        "feature_cols": selected_cols,
+                        "fold_metrics": fold_metrics,
+                        "avg_test_r2": float(np.mean([f["test_r2"] for f in fold_metrics])),
+                        "avg_test_mae": float(np.mean([f["test_mae"] for f in fold_metrics])),
+                        "training_date": pd.Timestamp.now().isoformat(),
+                    }, model_dir / "pipeline_ensemble.pkl")
+                    print(f"  💾  Production ensemble saved to {model_dir / 'pipeline_ensemble.pkl'}")
+
+            except Exception as e:
+                print(f"  ℹ  Full-data model training skipped: {e}")
 
             return result_df
 
@@ -500,13 +627,13 @@ class ModelingMixin:
     def _train_all_data_model(self, features_df: pd.DataFrame):
         """Train model on ALL historical data and save to self.model.
 
-        Now uses EnhancedEnsemble combining:
+        Uses EnhancedEnsemble combining:
+          - CatBoost (new! ordered boosting, handles categorical features)
           - LightGBM (gradient boosted trees)
-          - MLP Neural Network (256→128→64, PyTorch)
           - Ridge Regression (interpretable baseline)
+          - MLP Neural Network (256→128→64, PyTorch)
 
-        Like NBA_AI's ensemble approach, weights are adaptive:
-        models with lower recent error get higher weight.
+        All available models are included — diversity drives accuracy.
         """
         print("  🏋  Training model on FULL dataset for tomorrow predictions...")
 
@@ -540,7 +667,21 @@ class ModelingMixin:
         except ImportError:
             print("  ℹ  LightGBM unavailable, skipping")
 
-        # 2. Ridge Regression (interpretable baseline)
+        # 2. CatBoost (new! ordered boosting for diversity)
+        try:
+            from catboost import CatBoostRegressor
+            cat = CatBoostRegressor(
+                iterations=400, learning_rate=0.05, depth=5,
+                l2_leaf_reg=5.0, random_seed=42,
+                verbose=0, early_stopping_rounds=30,
+            )
+            cat.fit(X, y)
+            models_trained.append(("catboost", cat))
+            print(f"  ✅  CatBoost trained on {len(X)} rows")
+        except ImportError:
+            print("  ℹ  CatBoost unavailable, skipping")
+
+        # 3. Ridge Regression (interpretable baseline)
         try:
             from sklearn.linear_model import Ridge
             ridge = Ridge(alpha=1.0, random_state=42)
@@ -550,7 +691,7 @@ class ModelingMixin:
         except Exception as e:
             print(f"  ℹ  Ridge failed: {e}")
 
-        # 3. MLP Neural Network (NBA_AI-inspired: 256→128→64)
+        # 4. MLP Neural Network (NBA_AI-inspired: 256→128→64)
         if HAS_MLP:
             try:
                 mlp = MLPPredictor(
@@ -558,11 +699,10 @@ class ModelingMixin:
                     prediction_type="regression",
                     hidden_dims=[256, 128, 64],
                     dropout=0.2,
-                    max_epochs=50,  # Quick train for full dataset
+                    max_epochs=50,
                     patience=10,
                     batch_size=64,
                 )
-                # Use 10% holdout for early stopping
                 n = len(X)
                 split = int(n * 0.9)
                 mlp.fit(
@@ -580,22 +720,57 @@ class ModelingMixin:
             print("  ❌  No models trained successfully.")
             return
 
+        # ── Record full-data model performance ──────────────────────
+        try:
+            from sklearn.metrics import r2_score, mean_absolute_error
+            tracker = _get_perf_tracker()
+            all_preds_flat = np.mean([m[1].predict(X) for m in models_trained], axis=0)
+            full_r2 = float(r2_score(y, all_preds_flat))
+            full_mae = float(mean_absolute_error(y, all_preds_flat))
+            tracker.record_run(
+                model_name="pipeline_ensemble_full",
+                test_r2=full_r2,
+                test_mae=full_mae,
+                n_features=len(feature_cols),
+                n_samples=len(X),
+                n_folds=0,
+                models_used=[n for n, _ in models_trained],
+                mode="full-data",
+                r2_full=round(full_r2, 4),
+                mae_full=round(full_mae, 2),
+            )
+        except Exception as perf_e:
+            logger.debug(f"Full-data performance tracking failed: {perf_e}")
+
         # ── Build EnhancedEnsemble ─────────────────────────────────
-        if HAS_MLP and len(models_trained) >= 2:
-            ensemble = EnhancedEnsemble(log_odds_averaging=False, weight_decay=0.95)
+        if len(models_trained) >= 2:
+            ensemble = EnhancedEnsemble(
+                log_odds_averaging=False, weight_decay=0.95,
+                diversity_weight=0.3,
+            )
             for name, model in models_trained:
                 ensemble.add_model(name, model, model_type="regression")
             self.model = ensemble
             print(f"  🧩  EnhancedEnsemble created with {len(models_trained)} models")
             print(f"      Models: {', '.join(n for n, _ in models_trained)}")
+
+            # Save the production ensemble to disk
+            import joblib
+            model_dir = Path(self.args.model_dir)
+            model_dir.mkdir(parents=True, exist_ok=True)
+            joblib.dump({
+                "ensemble": ensemble,
+                "feature_cols": feature_cols,
+                "models_trained": [n for n, _ in models_trained],
+                "training_date": pd.Timestamp.now().isoformat(),
+            }, model_dir / "pipeline_ensemble_full.pkl")
+            print(f"  💾  Production ensemble saved to {model_dir / 'pipeline_ensemble_full.pkl'}")
         elif models_trained:
-            # Fallback: use the first model directly
             self.model = models_trained[0][1]
             print(f"  ℹ  Single model fallback: {models_trained[0][0]}")
 
         self.model_feature_cols = feature_cols
 
-        # Store feature pipeline for consistent inference
         try:
             self._feature_pipeline = FeatureEngineer()
             if hasattr(self, 'df') and self.df is not None:
@@ -643,13 +818,23 @@ class ModelingMixin:
             home_col = home_cols[0]
             away_col = away_cols[0]
 
-            # Find the most recent game where these two teams faced each other
+            # FIXED: Use exact string matching instead of str.contains.
+            # str.contains("Lakers", ...) would match "Lakers" but could also
+            # match "Lakers Legacy" or "South Bay Lakers" if those ever
+            # appeared in the dataset. Exact match is safer for team names.
+            # Clean and normalize both sides for consistent comparison.
+            def _normalize(name: str) -> str:
+                return str(name).strip().lower()
+
+            home_norm = df[home_col].astype(str).str.strip().str.lower()
+            away_norm = df[away_col].astype(str).str.strip().str.lower()
+            target_home = _normalize(home_team)
+            target_away = _normalize(away_team)
+
             mask = (
-                (df[home_col].str.contains(home_team, case=False, na=False))
-                & (df[away_col].str.contains(away_team, case=False, na=False))
+                (home_norm == target_home) & (away_norm == target_away)
             ) | (
-                (df[home_col].str.contains(away_team, case=False, na=False))
-                & (df[away_col].str.contains(home_team, case=False, na=False))
+                (home_norm == target_away) & (away_norm == target_home)
             )
             matched = df[mask]
             if not matched.empty:
@@ -781,106 +966,18 @@ class ModelingMixin:
 
     def _generate_upcoming_games_fallback(self) -> Optional[pd.DataFrame]:
         """
-        Generate upcoming NBA game schedule from nba_api static team data.
-
-        Used as a fallback when TheOddsAPI is unavailable (no API key or
-        quota exceeded). Produces games for today and tomorrow with real
-        NBA team names but no market lines (those require TheOddsAPI).
-
-        Returns:
-            DataFrame with home_team, away_team, game_id, game_date,
-            or None if nba_api is not available
+        NEVER generates fake schedules — real data or nothing.
+        
+        If TheOddsAPI is unavailable, returns None.
+        No randomly generated matchups. No mock teams. 
+        The system shows nothing when real data is unavailable.
         """
-        from datetime import date, timedelta
-        import random
-
-        try:
-            from nba_api.stats.static import teams as nba_teams
-            all_teams = nba_teams.get_teams()
-        except ImportError:
-            print("  ⚠  nba_api not available — cannot generate schedule")
-            return None
-        except Exception as e:
-            print(f"  ⚠  nba_api failed: {e}")
-            return None
-
-        if not all_teams:
-            return None
-
-        # Map nicknames to the short names used in the DB
-        team_name_map = {
-            "Hawks": "Hawks", "Celtics": "Celtics", "Nets": "Nets",
-            "Hornets": "Hornets", "Bulls": "Bulls", "Cavaliers": "Cavaliers",
-            "Mavericks": "Mavericks", "Nuggets": "Nuggets", "Pistons": "Pistons",
-            "Warriors": "Warriors", "Rockets": "Rockets", "Pacers": "Pacers",
-            "Clippers": "Clippers", "Lakers": "Lakers", "Grizzlies": "Grizzlies",
-            "Heat": "Heat", "Bucks": "Bucks", "Timberwolves": "Timberwolves",
-            "Pelicans": "Pelicans", "Knicks": "Knicks", "Thunder": "Thunder",
-            "Magic": "Magic", "76ers": "76ers", "Suns": "Suns",
-            "Trail Blazers": "Trail Blazers", "Kings": "Kings", "Spurs": "Spurs",
-            "Raptors": "Raptors", "Jazz": "Jazz", "Wizards": "Wizards",
-        }
-
-        # Split by conference for realistic matchups
-        east_divs = {"Atlantic", "Central", "Southeast"}
-        east_teams, west_teams = [], []
-        for t in all_teams:
-            db_name = team_name_map.get(t["nickname"], t["nickname"])
-            division = t.get("division", "")
-            if division in east_divs:
-                east_teams.append(db_name)
-            else:
-                west_teams.append(db_name)
-
-        # Ensure even counts
-        rng = random.Random(42)
-        rng.shuffle(east_teams)
-        rng.shuffle(west_teams)
-
-        today = date.today().isoformat()
-        tomorrow = (date.today() + timedelta(days=1)).isoformat()
-
-        records = []
-        # Today: intra-conference
-        for i in range(0, len(east_teams) - 1, 2):
-            records.append({
-                "game_id": f"nba_{today}_{east_teams[i]}_{east_teams[i+1]}",
-                "home_team": east_teams[i],
-                "away_team": east_teams[i + 1],
-                "game_date": today,
-                "league": "NBA",
-                "market_total": 0,
-                "home_ml_odds": -110,
-                "away_ml_odds": -110,
-            })
-        for i in range(0, len(west_teams) - 1, 2):
-            records.append({
-                "game_id": f"nba_{today}_{west_teams[i]}_{west_teams[i+1]}",
-                "home_team": west_teams[i],
-                "away_team": west_teams[i + 1],
-                "game_date": today,
-                "league": "NBA",
-                "market_total": 0,
-                "home_ml_odds": -110,
-                "away_ml_odds": -110,
-            })
-        # Tomorrow: cross-conference
-        cross = min(len(east_teams), len(west_teams))
-        for i in range(0, cross, 2):
-            records.append({
-                "game_id": f"nba_{tomorrow}_{east_teams[i % len(east_teams)]}_{west_teams[(i+1) % len(west_teams)]}",
-                "home_team": east_teams[i % len(east_teams)],
-                "away_team": west_teams[(i + 1) % len(west_teams)],
-                "game_date": tomorrow,
-                "league": "NBA",
-                "market_total": 0,
-                "home_ml_odds": -110,
-                "away_ml_odds": -110,
-            })
-
-        df = pd.DataFrame(records)
-        print(f"  ✅  Generated {len(df)} upcoming games from nba_api (fallback)")
-        return df
+        print(
+            "  ⚠  No real odds available from TheOddsAPI. "
+            "Cannot generate upcoming games without real data. "
+            "Set ODDS_API_KEY or wait for quota reset."
+        )
+        return None
 
     # ── Multi-League Training ──────────────────────────────────────
 
@@ -1052,13 +1149,11 @@ class ModelingMixin:
         # Use upcoming games (live odds) as the source of games to predict
         upcoming_df = getattr(self, '_upcoming_games_df', None)
         if upcoming_df is None or upcoming_df.empty:
-            print("  ⚠  No live odds available. Generating schedule from NBA teams...")
-            upcoming_df = self._generate_upcoming_games_fallback()
-            if upcoming_df is None or upcoming_df.empty:
-                print("  ⚠  No upcoming games data. Skipping tomorrow predictions.")
-                return tomorrow_preds
+            print("  ⚠  No live odds available from TheOddsAPI. Skipping tomorrow predictions.")
+            print("  ℹ  Real odds required for predictions. No synthetic data used.")
+            return tomorrow_preds
 
-        from betting_intel.pipeline.bootstrap import BetJournal
+        # BetJournal deleted — using _StubBetJournal instead
 
         for idx, row in upcoming_df.iterrows():
             home = row.get("home_team", row.get("team", ""))
@@ -1096,7 +1191,10 @@ class ModelingMixin:
                 if self.features_df is not None and "total_points" in self.features_df.columns:
                     league_avg = float(self.features_df["total_points"].median())
                 if league_avg <= 0:
-                    league_avg = 224.0  # NBA league average fallback
+                    # No historical data available — cannot estimate market.
+                    # Skip this game rather than using a made-up number.
+                    print(f"  ⚠  No historical data to estimate market total for {home} vs {away} — skipping")
+                    continue
                 market_total = league_avg
 
             # Validate prediction — filter out garbage from MLP over-extrapolation
@@ -1139,7 +1237,7 @@ class ModelingMixin:
             self.tomorrow_recommendations_final = tomorrow_preds
 
             try:
-                journal = BetJournal(db_path=str(PROJECT_ROOT / "data" / "bets_journal.db"))
+                journal = _StubBetJournal()
                 journal_bets = []
                 for tp in tomorrow_preds:
                     d = tp.get("direction", "over")

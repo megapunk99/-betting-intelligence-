@@ -133,7 +133,14 @@ class ELOModel(BaseModel):
         for _, game in games_df.iterrows():
             home_team = game.get("TEAM_NAME_home", "")
             away_team = game.get("TEAM_NAME_away", "")
-            home_won = game.get("point_diff", 0) > 0 or game.get("WL_home", 0) == 1
+
+            # CRITICAL FIX: WL_home is a string ("W"/"L"), not 0/1.
+            # The old code compared against int 1 which NEVER matched.
+            wl_raw = game.get("WL_home", "")
+            if isinstance(wl_raw, str):
+                home_won = wl_raw.strip().upper() == "W"
+            else:
+                home_won = bool(game.get("point_diff", 0) > 0)
 
             if home_team and away_team:
                 self.update_ratings(home_team, away_team, home_won, home=True)
@@ -147,10 +154,15 @@ class ELOModel(BaseModel):
 
         prob = self.expected_prob(home_elo, away_elo, home=True)
 
-        # Confidence based on number of games played
-        home_games = sum(1 for t, r in self.ratings.items()
-                        if t == home_team and r != 1500.0)
-        confidence = min(0.3 + home_games * 0.02, 0.9)
+        # Confidence based on total games played by ALL teams (proxy for
+        # how established the ratings are overall, not just per-team).
+        # If we've seen < 10 games total, ratings are unreliable.
+        n_ratings = len(self.ratings)
+        base_confidence = min(0.3 + n_ratings * 0.01, 0.85)
+        # Edge case: if neither team has played before, ELO knows nothing
+        if home_elo == 1500.0 and away_elo == 1500.0:
+            base_confidence = 0.15
+        confidence = base_confidence
 
         return ModelPrediction(
             name="elo",

@@ -109,6 +109,9 @@ data/ats_history.json
 data/pipeline_history.json
 data/predictions/*.jsonl
 
+# Generated audit / log files
+audit_lines.txt
+
 # Pipeline & engine export artifacts
 models/saved/engine_ensemble.*
 models/saved/pipeline_predictions.*

@@ -377,12 +377,6 @@ class OddsIngestionEngine:
                     (game_id,)
                 ).fetchall()
 
-            if not records:
-                records = conn.execute(
-                    "SELECT * FROM odds WHERE game_id = ? ORDER BY timestamp DESC LIMIT 50",
-                    (game_id,)
-                ).fetchall()
-
         if not records:
             return None
 
@@ -489,9 +483,9 @@ class OddsIngestionEngine:
                          market: Optional[str] = None,
                          sportsbook: Optional[str] = None,
                          limit: int = 100) -> List[dict]:
-        """Get the full time-series history of odds for a game."""
+        """Get the full time-series history of odds for a game (newest first)."""
         query = "SELECT * FROM odds WHERE game_id = ?"
-        params = [game_id]
+        params: list[Any] = [game_id]
 
         if market:
             query += " AND market = ?"
@@ -500,9 +494,10 @@ class OddsIngestionEngine:
             query += " AND sportsbook = ?"
             params.append(sportsbook)
 
-        query += " ORDER BY timestamp ASC"
+        query += " ORDER BY timestamp DESC"
         if limit:
-            query += f" LIMIT {limit}"
+            query += " LIMIT ?"
+            params.append(limit)
 
         with self._connect() as conn:
             rows = conn.execute(query, params).fetchall()

@@ -1,4 +1,4 @@
-"""Data loading, feature engineering, data integrity, injury scraping, live data, and X/Twitter signal intelligence."""
+"""Data loading, feature engineering, data integrity, injury scraping, and live data."""
 
 from betting_intel.data.loader import NBADataLoader
 from betting_intel.data.features import FeatureEngineer
@@ -30,15 +30,7 @@ from betting_intel.data.nba_accounts import (
     BEAT_REPORTERS,
     INJURY_TRACKERS,
 )
-from betting_intel.data.x_signals import (
-    TwitterSignalCollector,
-    PlayerSignal,
-    SignalConfidence,
-    NitterScraper,
-    TweetSignalParser,
-    SignalIntegrator,
-)
-
+from betting_intel.data.draftkings_scraper import DraftKingsScraper
 __all__ = [
     "NBADataLoader",
     "FeatureEngineer",
@@ -59,7 +51,7 @@ __all__ = [
     "LiveDataGateway",
     "LiveSnapshot",
     "MultiSportsbookComparator",
-    # X/Twitter Intelligence
+    "DraftKingsScraper",
     "NBAAccount",
     "AccountRole",
     "SignalType",
@@ -69,10 +61,4 @@ __all__ = [
     "NATIONAL_INSIDERS",
     "BEAT_REPORTERS",
     "INJURY_TRACKERS",
-    "TwitterSignalCollector",
-    "PlayerSignal",
-    "SignalConfidence",
-    "NitterScraper",
-    "TweetSignalParser",
-    "SignalIntegrator",
 ]

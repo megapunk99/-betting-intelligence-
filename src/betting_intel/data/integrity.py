@@ -11,10 +11,14 @@ Key features:
 
 import pandas as pd
 import numpy as np
+import re as re_module
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, date
 from pathlib import Path
+
+# ── Safe identifier pattern (used in SQL injection prevention) ────────────
+_ALLOWED_IDENTIFIER = re_module.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
 # ── Data Freshness ─────────────────────────────────────────────────────────
@@ -114,14 +118,17 @@ class DataFreshnessChecker:
             conn = sqlite3.connect(str(db_path))
 
             for table in table_names:
+                if not _ALLOWED_IDENTIFIER.match(table) or not _ALLOWED_IDENTIFIER.match(date_column):
+                    continue
+
                 try:
-                    cursor = conn.execute(f"SELECT COUNT(*) FROM {table}")
+                    cursor = conn.execute(f"SELECT COUNT(*) FROM [{table}]")
                     n_records = cursor.fetchone()[0]
                     total_records += n_records
 
                     if n_records > 0:
                         cursor = conn.execute(
-                            f"SELECT MAX({date_column}) FROM {table}"
+                            f"SELECT MAX([{date_column}]) FROM [{table}]"
                         )
                         result = cursor.fetchone()[0]
                         if result:
@@ -277,8 +284,7 @@ class FeatureFreshnessAnalyzer:
 
         # Rolling features — check window size and missing count
         for pattern, source_type in self.rolling_patterns:
-            import re
-            match = re.match(pattern, feature_name)
+            match = re_module.match(pattern, feature_name)
             if match:
                 window = int(match.group(1))
                 if feature_name in df.columns:

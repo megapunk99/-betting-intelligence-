@@ -20,7 +20,8 @@ from datetime import datetime
 import click
 
 from betting_intel.config import settings
-from betting_intel.services import logger, setup_logging
+import logging
+logger = logging.getLogger(__name__)
 
 
 # ── Main CLI Group ─────────────────────────────────────────────────────────
@@ -31,7 +32,11 @@ from betting_intel.services import logger, setup_logging
 def cli(verbose: bool, log_file: str | None):
     """Betting Intelligence System - Professional basketball betting analytics."""
     level = "DEBUG" if verbose else settings.log_level
-    setup_logging(level=level, log_file=Path(log_file) if log_file else None)
+    logging.basicConfig(
+        level=getattr(logging, level.upper(), logging.INFO),
+        format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
+        filename=str(log_file) if log_file else None,
+    )
 
 
 # ── Pipeline Commands ─────────────────────────────────────────────────────
@@ -204,9 +209,8 @@ def db_check():
         sys.exit(1)
 
 
-# ── Dashboard Command ─────────────────────────────────────────────────────
-@cli.command()
-@click.option("--port", default=8501, help="Streamlit port
+# ── Web Commands ─────────────────────────────────────────────────────────
+@cli.group()
 def web():
     """Web app (FastAPI) commands."""
     pass
@@ -250,7 +254,7 @@ def web_start(host: str, port: int, reload: bool):
     )
 
 
-# ── Small League Commands ──────────────────────────────────────────────
+# ── Small League Commands (stub — small_leagues package was deleted)
 @cli.group()
 def small_leagues():
     """Small-league data management commands."""
@@ -259,137 +263,26 @@ def small_leagues():
 
 @small_leagues.command("list")
 def small_leagues_list():
-    """List available small leagues with metadata."""
-    from betting_intel.data.small_leagues import SmallLeagueIngestion, LEAGUE_METADATA
-
-    click.echo("\nAvailable Small Leagues:")
-    click.echo("=" * 60)
-    for key, meta in LEAGUE_METADATA.items():
-        click.echo(f"\n  {meta['name']} ({key})")
-        click.echo(f"    Country: {meta['country']}  |  Tier: {meta['tier']}")
-        click.echo(f"    Teams: {meta['num_teams']}  |  Season: {meta['typical_season_months']}")
-        click.echo(f"    Data: {meta['data_source']}")
-        click.echo(f"    Note: {meta['market_notes']}")
-    click.echo("")
+    """List available small leagues (unavailable — package deleted)."""
+    click.echo("small_leagues package was deleted during cleanup. Re-create betting_intel/data/small_leagues/ to re-enable.")
 
 
 @small_leagues.command("fetch")
-@click.argument("league", required=False)
-@click.option("--historical", is_flag=True, help="Fetch historical games")
-@click.option("--upcoming", is_flag=True, help="Fetch upcoming games")
-@click.option("--limit", default=20, help="Max upcoming games to fetch")
-@click.option("--output", "-o", type=click.Path(), help="Output JSON file path")
-def small_leagues_fetch(league: str | None, historical: bool, upcoming: bool, limit: int, output: str | None):
-    """Fetch small-league game data.
-
-    Examples:
-        betting-intel small-leagues fetch lnb_pro_b --historical
-        betting-intel small-leagues fetch cebl --upcoming --limit 10
-        betting-intel small-leagues fetch --upcoming --output fixtures.json
-    """
-    from betting_intel.data.small_leagues import SmallLeagueIngestion
-
-    ing = SmallLeagueIngestion()
-
-    leagues_to_fetch = [league] if league else list(ing.SOURCES.keys())
-
-    results = {}
-    for lkey in leagues_to_fetch:
-        click.echo(f"\nFetching {lkey}...")
-        try:
-            if historical:
-                df = ing.load_historical(lkey)
-                click.echo(f"  Historical: {len(df)} rows")
-                if not df.empty:
-                    click.echo(f"  Date range: {df['date'].min()} to {df['date'].max()}")
-                    click.echo(f"  Teams: {df['team_name'].nunique()}")
-                results[f"{lkey}_historical"] = {
-                    "count": len(df),
-                    "columns": list(df.columns),
-                    "sample": df.head(3).to_dict(orient="records") if not df.empty else [],
-                }
-
-            if upcoming:
-                df = ing.load_upcoming(lkey, limit=limit)
-                click.echo(f"  Upcoming: {len(df)} games")
-                if not df.empty:
-                    click.echo(f"  Games: {df['team_name'].value_counts().to_dict()}")
-                results[f"{lkey}_upcoming"] = {
-                    "count": len(df),
-                    "columns": list(df.columns),
-                    "games": df.to_dict(orient="records") if not df.empty else [],
-                }
-        except Exception as e:
-            click.echo(f"  Error: {e}", err=True)
-            results[f"{lkey}_error"] = str(e)
-
-    if output:
-        Path(output).write_text(json.dumps(results, indent=2, default=str))
-        click.echo(f"\nResults written to {output}")
-    click.echo("\nDone.")
+def small_leagues_fetch():
+    """Fetch small-league game data (unavailable — package deleted)."""
+    click.echo("small_leagues package was deleted during cleanup. Re-create betting_intel/data/small_leagues/ to re-enable.")
 
 
 @small_leagues.command("teams")
-@click.argument("league")
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
-def small_leagues_teams(league: str, json_output: bool):
-    """List teams for a small league."""
-    from betting_intel.data.small_leagues import SmallLeagueIngestion
-
-    ing = SmallLeagueIngestion()
-    try:
-        teams = ing.get_teams(league)
-    except ValueError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-
-    if teams.empty:
-        click.echo(f"No teams found for '{league}'.")
-        return
-
-    if json_output:
-        click.echo(teams.to_json(orient="records", indent=2))
-    else:
-        click.echo(f"\n{'Team Name':<30} {'ID':<15} {'Country':<12}")
-        click.echo("-" * 60)
-        for _, row in teams.iterrows():
-            click.echo(f"{row.get('team_name', ''):<30} {str(row.get('team_id', '')):<15} {row.get('country', ''):<12}")
-        click.echo(f"\nTotal: {len(teams)} teams")
+def small_leagues_teams(league: str = ""):
+    """List teams for a small league (unavailable — package deleted)."""
+    click.echo("small_leagues package was deleted during cleanup. Re-create betting_intel/data/small_leagues/ to re-enable.")
 
 
 @small_leagues.command("bridge")
-@click.argument("league")
-@click.option("--output", "-o", type=click.Path(), help="Output CSV file path")
-def small_leagues_bridge(league: str, output: str | None):
-    """Bridge small-league data to NBA-pipeline format and display summary."""
-    from betting_intel.data.small_leagues import SmallLeagueIngestion
-    from betting_intel.data.small_leagues.unified_bridge import SmallLeagueBridge
-
-    ing = SmallLeagueIngestion()
-    bridge = SmallLeagueBridge()
-
-    try:
-        df = ing.load_historical(league)
-    except ValueError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-
-    if df.empty:
-        click.echo(f"No data for '{league}'. Try 'betting-intel small-leagues fetch {league} --historical' first.")
-        return
-
-    click.echo(f"\nBridging {league}: {len(df)} rows")
-    bridged = bridge.bridge_dataframe(df)
-    click.echo(f"Bridged: {len(bridged)} rows ({len(df) - len(bridged)} filtered)")
-
-    total_games = bridged["game_id"].nunique()
-    total_teams = bridged["team_name"].nunique()
-    avg_pts = bridged["team_score"].mean()
-    click.echo(f"  Games: {total_games}  |  Teams: {total_teams}  |  Avg PTS: {avg_pts:.1f}")
-
-    if output:
-        bridged.to_csv(output, index=False)
-        click.echo(f"Written to {output}")
+def small_leagues_bridge(league: str = ""):
+    """Bridge small-league data to NBA-pipeline format (unavailable)."""
+    click.echo("small_leagues package was deleted during cleanup. Re-create betting_intel/data/small_leagues/ to re-enable.")
 
 
 # ── Recommendations Commands ───────────────────────────────────────────
@@ -428,171 +321,22 @@ def _format_action(bet) -> str:
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 def recommendations_list(league: str, bet_type: str, min_edge: float, clear_only: bool, limit: int, json_output: bool):
     """List betting recommendations across all markets."""
-    from betting_intel.recommendations import RecommendationEngine
-
-    engine = RecommendationEngine(min_edge_threshold=min_edge)
-
-    with click.progressbar(length=1, label="Generating recommendations") as bar:
-        all_bets = engine.generate_all_bets()
-        bar.update(1)
-
-    if clear_only:
-        clear_picks = engine.get_clear_picks(threshold=min_edge)
-        display_bets = [c.bet for c in clear_picks]
-    else:
-        display_bets = all_bets
-
-    # Filter by league
-    if league.lower() != "all":
-        display_bets = [b for b in display_bets if b.league.lower() == league.lower()]
-
-    # Filter by bet type
-    if bet_type.lower() != "all":
-        type_map = {"moneyline": "moneyline", "spread": "spread", "total": "total_points", "props": "player"}
-        mapped = type_map.get(bet_type.lower(), bet_type.lower())
-        display_bets = [b for b in display_bets if mapped in b.bet_type.value or mapped in b.bet_type.display_name().lower()]
-
-    display_bets = display_bets[:limit]
-
-    if json_output:
-        click.echo(json.dumps([b.as_dict() for b in display_bets], indent=2))
-        return
-
-    if not display_bets:
-        click.echo("No recommendations found matching your criteria.")
-        return
-
-    summary = engine.get_summary()
-    click.echo(f"\n{'=' * 80}")
-    click.echo(f"  BETTING RECOMMENDATIONS — EXACT BETS")
-    click.echo(f"  {summary['total_bets']} bets evaluated, {summary['clear_picks']} clear picks, {summary['games_available']} games")
-    click.echo(f"{'=' * 80}")
-
-    for i, bet in enumerate(display_bets, 1):
-        cp = "★" if bet.is_clear_pick else " "
-        edge_str = f"edge: {bet.edge_pct:.1%}" if bet.edge_pct > 0 else ""
-        action = _format_action(bet)
-        click.echo(f"  {cp} #{i:<2} {action:<50} {edge_str}")
-
-    total_stake = sum(b.stake_dollars for b in display_bets)
-    click.echo(f"\n  Total exposure: ${total_stake:.0f} | Bankroll: ${summary['bankroll']:,.0f}")
-    click.echo()
+    click.echo("RecommendationEngine unavailable — recommendations/engine.py was deleted during cleanup.")
+    return
 
 
 @recommendations.command("todays-card")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 def recommendations_todays_card(json_output: bool):
     """Show today's betting card with exact bets to place."""
-    from betting_intel.recommendations import RecommendationEngine
-
-    engine = RecommendationEngine()
-
-    with click.progressbar(length=3, label="Loading today's card") as bar:
-        all_bets = engine.generate_all_bets()
-        bar.update(1)
-        todays_bets = engine.get_todays_card()
-        bar.update(1)
-        summary = engine.get_summary()
-        bar.update(1)
-
-    if json_output:
-        click.echo(json.dumps({
-            "summary": summary,
-            "bets": [b.as_dict() for b in todays_bets],
-        }, indent=2))
-        return
-
-    click.echo(f"\n{'=' * 80}")
-    click.echo(f"  TODAY'S BETTING CARD — PLACE THESE BETS")
-    click.echo(f"  {datetime.now().strftime('%A, %B %d, %Y')}")
-    click.echo(f"{'=' * 80}")
-
-    # Group by game
-    games = {}
-    for bet in todays_bets:
-        key = (bet.matchup, bet.league)
-        if key not in games:
-            games[key] = []
-        games[key].append(bet)
-
-    for (matchup, league), game_bets in games.items():
-        click.echo(f"\n  {matchup}")
-        click.echo(f"  {'─' * 40}")
-        for bet in game_bets:
-            cp = "★" if bet.is_clear_pick else " "
-            action = _format_action(bet)
-            click.echo(f"  {cp} {action}")
+    click.echo("RecommendationEngine unavailable — recommendations/engine.py was deleted during cleanup.")
 
 
 @recommendations.command("tomorrow")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 def recommendations_tomorrow(json_output: bool):
     """Show tomorrow's predictions with exact bets to place — one-day-ahead."""
-    from betting_intel.recommendations import RecommendationEngine
-
-    engine = RecommendationEngine()
-
-    with click.progressbar(length=3, label="Loading tomorrow's card") as bar:
-        all_bets = engine.generate_all_bets()
-        bar.update(1)
-        tomorrow_bets = engine.get_tomorrows_card()
-        bar.update(1)
-        summary = engine.get_summary()
-        bar.update(1)
-
-    if json_output:
-        click.echo(json.dumps({
-            "summary": summary,
-            "bets": [b.as_dict() for b in tomorrow_bets],
-        }, indent=2))
-        return
-
-    tomorrow_date = (datetime.now() + __import__("datetime").timedelta(days=1)).strftime("%Y-%m-%d")
-
-    click.echo(f"\n{'=' * 80}")
-    click.echo(f"  TOMORROW'S BETTING CARD — {tomorrow_date}")
-    click.echo(f"  One-day-ahead predictions — place these bets")
-    click.echo(f"{'=' * 80}")
-
-    # Group by game
-    games = {}
-    for bet in tomorrow_bets:
-        key = (bet.matchup, bet.league)
-        if key not in games:
-            games[key] = []
-        games[key].append(bet)
-
-    if not games:
-        click.echo("\n  No games scheduled for tomorrow.")
-        click.echo()
-        return
-
-    total_stake = 0
-    for (matchup, league), game_bets in games.items():
-        best_bet = max(game_bets, key=lambda b: b.edge_pct)
-        game_stake = sum(b.stake_dollars for b in game_bets)
-        total_stake += game_stake
-
-        click.echo(f"\n  {'─' * 60}")
-        click.echo(f"  {matchup} ({league})")
-        click.echo(f"  {'─' * 60}")
-
-        # Prime play highlighted
-        cp = "★" if best_bet.is_clear_pick else "▶"
-        action = _format_action(best_bet)
-        click.echo(f"  {cp} PRIME PLAY: {action}")
-        click.echo(f"     Edge: {best_bet.edge_pct:.1%} | Confidence: {best_bet.confidence.value} | Stake: ${best_bet.stake_dollars:.0f}")
-
-        # Other bets
-        for bet in game_bets:
-            if bet != best_bet:
-                action = _format_action(bet)
-                click.echo(f"     {action}")
-
-    click.echo(f"\n  {'═' * 60}")
-    click.echo(f"  TOMORROW'S TOTAL EXPOSURE: ${total_stake:,.0f}")
-    click.echo(f"  {len(tomorrow_bets)} bets across {len(games)} games")
-    click.echo()
+    click.echo("RecommendationEngine unavailable — recommendations/engine.py was deleted during cleanup.")
 
 
 @recommendations.command("clear-picks")
@@ -600,41 +344,213 @@ def recommendations_tomorrow(json_output: bool):
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 def recommendations_clear_picks(min_edge: float, json_output: bool):
     """Show only the clear picks — the exact bets to place RIGHT NOW."""
-    from betting_intel.recommendations import RecommendationEngine
+    click.echo("RecommendationEngine unavailable — recommendations/engine.py was deleted during cleanup.")
 
-    engine = RecommendationEngine()
-    clear_picks = engine.get_clear_picks(threshold=min_edge)
+
+# ── Analytics Commands ────────────────────────────────────────────────────
+@cli.group()
+def analytics():
+    """Performance analytics, P&L tracking, and alerts."""
+    pass
+
+
+@analytics.command("resolve")
+def analytics_resolve():
+    """Resolve pending predictions against actual game results.
+
+    Loads all logged predictions, matches them against actual scores
+    from the NBA database, and computes W/L/PUSH with P&L.
+    """
+    from betting_intel.analytics.tracker import ResultsTracker
+    tracker = ResultsTracker()
+    n = tracker.resolve_all()
+    click.echo(f"Resolved {n} predictions against actual results")
+
+
+@analytics.command("report")
+@click.option("--save", is_flag=True, help="Save report to disk")
+def analytics_report(save: bool):
+    """Generate and display the performance report.
+
+    Shows total P&L, ROI, win rate, strategy breakdown, and
+    alerts for underperforming strategies.
+    """
+    from betting_intel.analytics.tracker import ResultsTracker
+    tracker = ResultsTracker()
+    tracker.resolve_all()
+    report = tracker.generate_report()
+
+    click.echo(f"\n{'=' * 60}")
+    click.echo(f"  PERFORMANCE REPORT — {report.generated_at[:19]}")
+    click.echo(f"{'=' * 60}")
+    click.echo(f"  Total bets:    {report.total_bets}")
+    click.echo(f"  Total stake:   ${report.total_stake:.2f}")
+    click.echo(f"  Total profit:  ${report.total_profit:.2f}")
+    click.echo(f"  Overall ROI:   {report.overall_roi:.2%}")
+    click.echo(f"  Win rate:      {report.overall_win_rate:.2%}")
+    click.echo(f"  Resolved:      {report.n_resolved}")
+    click.echo(f"  Unresolved:    {report.n_unresolved}")
+    click.echo()
+
+    if report.strategies:
+        click.echo(f"  {'Strategy':<40} {'Bets':<6} {'Wins':<6} {'P&L':<10} {'ROI':<8}")
+        click.echo(f"  {'-' * 70}")
+        for s in report.strategies:
+            marker = "⚠ " if s.is_alerted else "  "
+            roi_str = f"{s.roi:.1%}" if s.roi >= 0 else click.style(f"{s.roi:.1%}", fg="red")
+            pnl_str = f"+${s.total_profit:.0f}" if s.total_profit >= 0 else click.style(f"-${abs(s.total_profit):.0f}", fg="red")
+            click.echo(f"  {marker}{s.strategy_name:<38} {s.n_bets:<6} {s.wins:<6} {pnl_str:<10} {roi_str:<8}")
+
+    if report.alerted_strategies:
+        click.echo()
+        click.echo(click.style(f"  ⚠  {len(report.alerted_strategies)} STRATEGY ALERT(S) BELOW -5% ROI:", fg="red"))
+        for s in report.alerted_strategies:
+            click.echo(f"      {s.strategy_name}: ROI={s.roi:.1%} ({s.n_bets} bets, P&L=${s.total_profit:.0f})")
+
+    if save:
+        path = tracker.save_report(report)
+        click.echo(f"\n  Report saved to: {path}")
+
+    click.echo(f"{'=' * 60}\n")
+
+
+@analytics.command("check-alerts")
+def analytics_check_alerts():
+    """Check all strategies for underperformance and dispatch alerts.
+
+    Sends Slack webhook and/or email alerts for any strategy that has
+    fallen below the -5% ROI threshold over the trailing 30 days.
+    """
+    from betting_intel.analytics.tracker import ResultsTracker
+    from betting_intel.analytics.alerting import AlertDispatcher
+
+    tracker = ResultsTracker()
+    tracker.resolve_all()
+    report = tracker.generate_report()
+
+    alerts = tracker.check_alerts(report)
+    if alerts:
+        click.echo(click.style(f"\n⚠  {len(alerts)} strategy alert(s) triggered:", fg="red"))
+        for a in alerts:
+            click.echo(f"     {a.strategy_name}: ROI={a.roi:.1%} ({a.n_bets} bets, P&L=${a.total_profit:.0f})")
+
+        # Dispatch via configured channels
+        dispatcher = AlertDispatcher()
+        if dispatcher.is_enabled():
+            results = dispatcher.dispatch_alerts(alerts)
+            for name, channels in results.items():
+                statuses = []
+                if channels.get("slack"):
+                    statuses.append("Slack ✓")
+                if channels.get("email"):
+                    statuses.append("Email ✓")
+                click.echo(f"     {name}: {', '.join(statuses) if statuses else 'No channels configured'}")
+        else:
+            click.echo("  No alert channels configured. Set SLACK_WEBHOOK_URL or SMTP_* env vars.")
+    else:
+        click.echo("✅ No alerts — all strategies above -5% ROI threshold")
+
+
+@analytics.command("summary")
+def analytics_summary():
+    """Generate a concise Markdown summary for CI/CD job summaries (GitHub Actions).
+
+    Outputs GitHub-flavored Markdown with key P&L metrics and strategy breakdown.
+    Pipe to $GITHUB_STEP_SUMMARY in workflows.
+    """
+    from betting_intel.analytics.tracker import ResultsTracker
+
+    tracker = ResultsTracker()
+    tracker.resolve_all()
+    report = tracker.generate_report()
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    click.echo(f"## \uD83D\uDCCA Daily P&L Summary — {today}")
+    click.echo()
+
+    # Overall metrics table
+    roi_color = "green" if report.overall_roi >= 0 else "red"
+    pnl_color = "green" if report.total_profit >= 0 else "red"
+    click.echo("| Metric | Value |")
+    click.echo("|--------|-------|")
+    click.echo(f"| Total Bets | {report.total_bets} |")
+    click.echo(f"| Total Stake | ${report.total_stake:,.2f} |")
+    click.echo(f"| **Total P&L** | **<span style='color:{pnl_color}'>${report.total_profit:+,.2f}</span>** |")
+    click.echo(f"| **Overall ROI** | **<span style='color:{roi_color}'>{report.overall_roi:+.2%}</span>** |")
+    click.echo(f"| Win Rate | {report.overall_win_rate:.1%} |")
+    click.echo(f"| Resolved | {report.n_resolved} |")
+    click.echo(f"| Unresolved | {report.n_unresolved} |")
+    click.echo()
+
+    # Strategy breakdown
+    if report.strategies:
+        click.echo("### Strategy Breakdown")
+        click.echo()
+        click.echo("| Strategy | Bets | Wins | P&L | ROI |")
+        click.echo("|----------|------|------|-----|-----|")
+        for s in report.strategies:
+            pnl_color = "green" if s.total_profit >= 0 else "red"
+            roi_color = "green" if s.roi >= 0 else "red"
+            marker = "\u26a0\ufe0f " if s.is_alerted else ""
+            click.echo(f"| {marker}{s.strategy_name} | {s.n_bets} | {s.wins} | <span style='color:{pnl_color}'>${s.total_profit:+,.0f}</span> | <span style='color:{roi_color}'>{s.roi:+.1%}</span> |")
+        click.echo()
+
+    # Alerts
+    if report.alerted_strategies:
+        click.echo("### \u26a0\ufe0f Underperforming Strategies")
+        click.echo()
+        for s in report.alerted_strategies:
+            click.echo(f"- **{s.strategy_name}**: ROI={s.roi:.1%}, {s.n_bets} bets, P&L=${s.total_profit:+,.0f}")
+        click.echo()
+
+    # Daily P&L (last 7 days)
+    if report.daily_pnl:
+        click.echo("### Last 7 Days P&L")
+        click.echo()
+        last_7 = report.daily_pnl[-7:] if len(report.daily_pnl) > 7 else report.daily_pnl
+        for day in last_7:
+            emoji = "\U0001f7e2" if day["profit"] >= 0 else "\U0001f534"
+            sign = "+" if day["profit"] >= 0 else ""
+            click.echo(f"{emoji} {day['date']}: {sign}${day['profit']:,.0f} ({day['n_bets']} bet{'s' if day['n_bets'] != 1 else ''})")
+        click.echo()
+
+    click.echo(f"*Generated {datetime.now().strftime('%Y-%m-%d %H:%M UTC')}*")
+
+
+@analytics.command("dashboard")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+def analytics_dashboard(json_output: bool):
+    """Display the full P&L dashboard — summary, strategy breakdown, recent bets."""
+    from betting_intel.analytics.tracker import ResultsTracker
+
+    tracker = ResultsTracker()
+    data = tracker.get_dashboard_data()
 
     if json_output:
-        click.echo(json.dumps([c.as_dict() for c in clear_picks], indent=2))
+        import json as _json
+        click.echo(_json.dumps(data, indent=2, default=str))
         return
 
-    if not clear_picks:
-        click.echo("No clear picks found at this threshold.")
-        return
+    overall = data.get("overall", {})
+    click.echo(f"\n{'=' * 60}")
+    click.echo(f"  P&L DASHBOARD — {data.get('generated_at', '')[:19]}")
+    click.echo(f"{'=' * 60}")
+    click.echo(f"  Total Bets:   {overall.get('total_bets', 0)}")
+    click.echo(f"  Total Stake:  ${overall.get('total_stake', 0):.2f}")
+    click.echo(f"  Total P&L:    ${overall.get('total_profit', 0):.2f}")
+    click.echo(f"  Overall ROI:  {overall.get('overall_roi', 0):.2%}")
+    click.echo(f"  Win Rate:     {overall.get('overall_win_rate', 0):.2%}")
+    click.echo(f"  Resolved:     {overall.get('n_resolved', 0)}")
+    click.echo(f"  Unresolved:   {overall.get('n_unresolved', 0)}")
 
-    click.echo(f"\n{'★' * 80}")
-    click.echo(f"  CLEAR PICKS — PLACE THESE BETS")
-    click.echo(f"  {len(clear_picks)} high-confidence opportunities identified")
-    click.echo(f"{'★' * 80}")
+    alerted = data.get("alerted_strategies", [])
+    if alerted:
+        click.echo()
+        click.echo(click.style(f"  ⚠  {len(alerted)} ALERT(S):", fg="red"))
+        for a in alerted:
+            click.echo(f"      {a['strategy_name']}: ROI={a['roi']:.1%} (${a['total_profit']:.0f})")
 
-    for i, cp in enumerate(clear_picks, 1):
-        bet = cp.bet
-        risk_color = {"CONSERVATIVE": "safe", "MODERATE": "moderate", "AGGRESSIVE": "aggressive"}.get(cp.risk_level, "unknown")
-        click.echo(f"\n  ★ PICK #{i} — {cp.risk_level} ({cp.clear_score:.0f}/100 confidence)")
-        click.echo(f"  {'─' * 50}")
-        click.echo(f"  \033[1mPLACE: ${bet.stake_dollars:.0f} on {bet.bet_side}\033[0m")
-        click.echo(f"  Game:     {bet.matchup} ({bet.league})")
-        click.echo(f"  Market:   {bet.bet_type.display_name()}")
-        for reason in cp.reasons:
-            click.echo(f"  → {reason}")
-
-    total_stake = sum(c.bet.stake_dollars for c in clear_picks)
-    avg_edge = sum(c.bet.edge_pct for c in clear_picks) / len(clear_picks)
-    click.echo(f"\n  {'─' * 50}")
-    click.echo(f"  TOTAL TO BET: ${total_stake:.0f} across {len(clear_picks)} bets")
-    click.echo(f"  AVG EDGE:     {avg_edge:.1%}")
-    click.echo()
+    click.echo(f"{'=' * 60}\n")
 
 
 @recommendations.command("player-props")

@@ -1,0 +1,27 @@
+{
+  "generated_at": "2026-06-09T18:09:30.386950+00:00",
+  "model_name": "Ultimate 3-Model Ensemble",
+  "metrics": {
+    "totals_cv_mae": 9.699214368175063,
+    "winprob_accuracy": 0.9022556390977443,
+    "winprob_brier": 0.10450486829141906,
+    "spread_cv_mae": 7.036986372096762
+  },
+  "n_games": 1,
+  "n_recommendations": 1,
+  "total_stake": 113.0,
+  "recommendations": [
+    {
+      "game_date": "2026-06-11",
+      "matchup": "Spurs @ Knicks",
+      "type": "MONEYLINE",
+      "bet": "ML Knicks (-125)",
+      "model_line": 0.576,
+      "market_line": 0.532,
+      "edge_pct": 0.0432,
+      "confidence": "medium",
+      "stake": 113.0,
+      "reasoning": "Model-backed: Knicks win prob 57.6% vs market 53.2% (+4.3% edge)"
+    }
+  ]
+}

@@ -9,7 +9,9 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from betting_intel.config import settings
-from betting_intel.services import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def run_migrations(database_url: Optional[str] = None) -> bool:
@@ -44,7 +46,7 @@ def run_migrations(database_url: Optional[str] = None) -> bool:
         return True
 
     except Exception as exc:
-        logger.error("Alembic migrations failed", error=str(exc))
+        logger.error("Alembic migrations failed: %s", exc)
         return False
 
 
@@ -72,7 +74,7 @@ class DatabaseManager:
                 max_overflow=10,
                 echo=False,
             )
-            logger.debug("Database engine created", url=self.database_url)
+            logger.debug("Database engine created: %s", self.database_url)
         return self._engine
 
     @property

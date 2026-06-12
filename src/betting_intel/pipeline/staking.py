@@ -13,9 +13,12 @@ import pandas as pd
 from betting_intel.pipeline.bootstrap import (
     logger,
     HAS_RECOMMENDATIONS,
-    RecommendationEngine, BetRanker, PlayerPropEngine,
-    PositiveEVScanner, ArbitrageDetector,
+    PlayerPropEngine,
 )
+from betting_intel.recommendations.engine import RecommendationEngine
+from betting_intel.recommendations.ranker import BetRanker
+from betting_intel.recommendations.ev_scanner import PositiveEVScanner
+from betting_intel.recommendations.arbitrage import ArbitrageDetector
 
 
 class StakingMixin:

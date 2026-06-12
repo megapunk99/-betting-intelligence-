@@ -6,6 +6,10 @@ on:
     - cron: '0 10 1 * *'
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   full-retrain:
     runs-on: ubuntu-latest
@@ -17,116 +21,38 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.11'
+          cache: "pip"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e .
-          pip install xgboost lightgbm scikit-learn pandas numpy
           pip install matplotlib seaborn  # For report generation
+
+      # Restore NBA database from seed workflow cache so the retraining
+      # script can load real game data via NBADataLoader.
+      - name: Restore NBA database cache
+        uses: actions/cache@v4
+        with:
+          path: data/nba_data.db
+          key: nba-data-test-${{ github.sha }}
+          restore-keys: |
+            nba-data-
 
       - name: Backup current models
         run: |
           mkdir -p models/backup
           cp models/*.pkl models/backup/ 2>/dev/null || echo "No existing models to backup"
 
-      - name: Retrain all models
+      - name: Retrain all models (total + spread + win prob)
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
           NBA_API_KEY: ${{ secrets.NBA_API_KEY }}
-        run: |
-          python tools/retrain_all.py || python -c "
-          import sys; sys.path.insert(0, 'src')
-          import warnings; warnings.filterwarnings('ignore')
-          import joblib
-          import pandas as pd
-          import numpy as np
-          from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
-          from sklearn.linear_model import Ridge, LogisticRegression
-          from sklearn.calibration import CalibratedClassifierCV
-          from sklearn.metrics import mean_absolute_error, r2_score, brier_score_loss
-          from datetime import datetime
+        run: python tools/retrain_all.py --mode monthly
 
-          from betting_intel.data.loader import NBADataLoader
-          from betting_intel.data.features import FeatureEngineer
-          from betting_intel.models.ensemble import build_ensemble
-          from betting_intel.validation.calibration import ProbabilityCalibrator
-
-          print('=' * 60)
-          print(f'FULL RETRAINING — {datetime.now().isoformat()}')
-          print('=' * 60)
-
-          loader = NBADataLoader()
-          fe = FeatureEngineer()
-          raw_df = loader.load_game_logs()
-          games_df = loader.build_game_dataset(raw_df)
-          feature_df = fe.build_all_features(games_df, raw_df)
-          feature_cols = fe.select_features(feature_df)
-
-          print(f'Features: {len(feature_cols)}, Games: {len(feature_df)}')
-
-          # Train all models
-          X = feature_df[feature_cols].values
-          y_total = feature_df['total_points'].values
-          y_spread = feature_df['point_diff'].values
-          y_win = (feature_df['point_diff'].values > 0).astype(int)
-
-          # Time-based split
-          split_idx = int(len(X) * 0.8)
-          X_train, X_val = X[:split_idx], X[split_idx:]
-
-          results = {}
-          for target_name, y_train, y_val in [
-              ('total', y_total[:split_idx], y_total[split_idx:]),
-              ('spread', y_spread[:split_idx], y_spread[split_idx:]),
-          ]:
-              models = {
-                  'gbr': GradientBoostingRegressor(n_estimators=200, max_depth=4, learning_rate=0.05),
-                  'rfr': RandomForestRegressor(n_estimators=150, max_depth=6),
-                  'ridge': Ridge(alpha=1.0),
-              }
-              preds = []
-              for name, model in models.items():
-                  model.fit(X_train, y_train)
-                  p = model.predict(X_val)
-                  preds.append(p)
-              ensemble = np.mean(preds, axis=0)
-              mae = mean_absolute_error(y_val, ensemble)
-              r2 = r2_score(y_val, ensemble)
-              results[target_name] = {'mae': mae, 'r2': r2}
-
-          # Win model (classification)
-          clf = LogisticRegression(max_iter=1000, C=1.0)
-          clf.fit(X_train, y_win)
-          calibrated = CalibratedClassifierCV(clf, cv=3, method='sigmoid')
-          calibrated.fit(X_train, y_win)
-          win_probs = calibrated.predict_proba(X_val)[:, 1]
-          brier = brier_score_loss(y_win[split_idx:], win_probs)
-          results['win'] = {'brier': brier}
-
-          print(f'\\nResults:')
-          for target, metrics in results.items():
-              print(f'  {target}: {metrics}')
-
-          # Save all models
-          import os; os.makedirs('models', exist_ok=True)
-          joblib.dump({
-              'models': ['gbr', 'rfr', 'ridge'],
-              'feature_cols': feature_cols,
-              'results': results,
-              'training_date': datetime.now().isoformat(),
-          }, 'models/total_model.pkl')
-          print('\\nModels saved to models/')
-          "
-
-      - name: Run calibration
-        run: |
-          python -c "
-          import sys; sys.path.insert(0, 'src')
-          from betting_intel.validation.calibration import ProbabilityCalibrator, PlattCalibrator, IsotonicCalibrator
-          print('Calibration modules verified')
-          "
+      - name: Run calibration check
+        run: python -c "from betting_intel.validation.calibration import ProbabilityCalibrator, PlattCalibrator, IsotonicCalibrator; print('Calibration modules verified')"
 
       - name: Generate retraining report
         run: |
@@ -147,3 +73,34 @@ jobs:
             models/*.pkl
             report.md
           retention-days: 90
+
+      # ── Slow-test validation (only on manual trigger) ────────────────
+      # Note: NBA database is already restored at the top of this job.
+      - name: Validate — check database has game data
+        id: db-check
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          python tools/check_db.py --min-rows 50 && echo "has_data=true" >> "$GITHUB_OUTPUT" || echo "has_data=false" >> "$GITHUB_OUTPUT"
+
+      - name: Validate — run slow tests on freshly retrained models
+        if: github.event_name == 'workflow_dispatch' && steps.db-check.outputs.has_data == 'true'
+        run: |
+          pytest -v \
+            --tb=short \
+            -m "slow" \
+            --durations=0 \
+            tests/ \
+            2>&1 | tee slow-test-output.txt
+
+      - name: Validate — skip (no NBA database)
+        if: github.event_name == 'workflow_dispatch' && steps.db-check.outputs.has_data != 'true'
+        run: |
+          echo "::notice::Slow tests skipped — NBA database not available. Run ci-seed-database.yml first or trigger monthly retraining after the nightly seed."
+
+      - name: Validate — upload test output on failure
+        if: failure() && github.event_name == 'workflow_dispatch' && steps.db-check.outputs.has_data == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: slow-test-output-monthly-retrain
+          path: slow-test-output.txt
+          retention-days: 30

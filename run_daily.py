@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import os
 import sys
 from datetime import datetime, timezone
@@ -186,11 +187,15 @@ def main():
                             home_margin = home_games["PLUS_MINUS"].mean() if len(home_games) > 0 else 0
                             away_margin = away_games["PLUS_MINUS"].mean() if len(away_games) > 0 else 0
 
+                            # PROPER probability: sigmoid instead of crude 0.5 + margin*0.01
+                            # The crude linear hack could give P>1 for margins >50
+                            raw_prob = 1.0 / (1.0 + math.exp(-home_margin * 0.08))
+                            home_win_prob = max(0.25, min(0.75, raw_prob))
                             report = generator.analyze_game(
                                 home_team=home,
                                 away_team=away,
                                 game_date=today,
-                                model_home_win_prob=0.5 + home_margin * 0.01,
+                                model_home_win_prob=home_win_prob,
                                 model_predicted_total=home_pts + away_pts,
                                 model_predicted_margin=home_margin - away_margin,
                                 home_ml_odds=-120 if home_margin > 0 else +110,

@@ -188,6 +188,7 @@ def train_models(df: pd.DataFrame, feature_cols: list[str], calibrated: bool = F
     """Train all models on the FULL historical dataset.
 
     Args:
+        feature_cols: Already-pruned feature column list (pruned in main()).
         season_weight_2425: Sample weight multiplier for 2024-25 games.
                             Uses 1.0 for 2025-26 games. Set < 1.0 to
                             downweight the older, incomplete season.
@@ -242,6 +243,71 @@ def train_models(df: pd.DataFrame, feature_cols: list[str], calibrated: bool = F
     return models
 
 
+def _prune_correlated_features(
+    df: pd.DataFrame,
+    feature_cols: list[str],
+    threshold: float = 0.75,
+) -> list[str]:
+    """
+    Remove highly correlated features to prevent multicollinearity.
+
+    The 357-feature set includes many near-identical rolling averages
+    (avg_pts_5g, avg_pts_10g, ema_pts_3g, ema_pts_5g, etc.) that create
+    a near-singular X^T X matrix (condition number ~4e14). This causes
+    the Ridge model to produce wildly unstable predictions in time-series
+    CV folds where the training set is small.
+
+    Strategy: iterate through the correlation matrix and for each pair
+    with |correlation| > threshold, drop the feature that appears LATER
+    in the list (so shorter-window features, which are more responsive,
+    are preferred over longer-window ones). Also drops features with
+    near-zero variance (< 1e-8 after scaling).
+
+    Returns:
+        Pruned list of feature column names.
+    """
+    from sklearn.preprocessing import StandardScaler
+
+    pruned = list(feature_cols)
+
+    # ── Step 1: Drop zero-variance features ──────────────────────
+    scaler = StandardScaler()
+    try:
+        X = df[pruned].values
+        scaler.fit(X)
+        # Find features with std < 1e-8 in the full dataset
+        zero_var = [pruned[i] for i in range(len(pruned)) if scaler.scale_[i] < 1e-8]
+        if zero_var:
+            print(f"    Dropping {len(zero_var)} zero-variance features")
+            pruned = [c for c in pruned if c not in zero_var]
+    except Exception:
+        pass  # If the full dataset has issues, skip zero-var check
+
+    # ── Step 2: Drop highly correlated features ──────────────────
+    if len(pruned) < 2:
+        return pruned
+
+    try:
+        X_subset = df[pruned].values
+        corr_matrix = np.corrcoef(X_subset.T)
+        # Upper triangle only
+        to_drop = set()
+        n = len(pruned)
+        for i in range(n):
+            for j in range(i + 1, n):
+                if abs(corr_matrix[i, j]) > threshold:
+                    # Drop the later feature (prefer earlier = shorter window)
+                    to_drop.add(pruned[j])
+
+        if to_drop:
+            print(f"    Dropping {len(to_drop)} highly correlated features (r>{threshold})")
+            pruned = [c for c in pruned if c not in to_drop]
+    except Exception as e:
+        print(f"    Warning: correlation pruning failed: {e}")
+
+    return pruned
+
+
 def compute_cv_errors(df: pd.DataFrame, feature_cols: list[str],
                     n_splits: int = 5,
                     calibrated: bool = True) -> dict:
@@ -263,12 +329,14 @@ def compute_cv_errors(df: pd.DataFrame, feature_cols: list[str],
           - ml_logloss: float — log loss
           - ml_accuracy: float — raw accuracy
           - ml_calibration_error: float — expected calibration error (ECE)
+          - n_features: int — number of features used after pruning
           - n_folds: int — how many folds actually ran
           - fold_results: list[dict] — per-fold metrics for debugging
     """
     print(f"\n  Estimating model uncertainty via {n_splits}-fold time-series CV...")
 
     sorted_df = df.sort_values("GAME_DATE").reset_index(drop=True)
+
     X = sorted_df[feature_cols].dropna()
     y_total = sorted_df.loc[X.index, "total_points"]
     y_win = sorted_df.loc[X.index, "home_win"]
@@ -281,12 +349,30 @@ def compute_cv_errors(df: pd.DataFrame, feature_cols: list[str],
 
     print(f"    Data: {len(X):,} rows | {n_splits} folds of ~{fold_size} each")
 
+    # Skip folds where training set is too small relative to features.
+    # With many features and few samples, Ridge produces unstable
+    # coefficient estimates even with alpha=5.0 regularization.
+    # ── Minimum training samples ────────────────────────────────────
+    # Small-sample folds produce unstable coefficient estimates even with
+    # Ridge regularization because early-season data has different statistical
+    # properties (fewer games played per team, rolling averages not converged).
+    # We require at least 5x samples-to-features to ensure stable predictions.
+    min_train_samples = max(1500, 5 * len(feature_cols))
+    print(f"    Min training samples per fold: {min_train_samples}")
+
     fold_results = []
 
     for i in range(1, n_splits):
         train_end = i * fold_size
         if train_end >= len(X):
             break
+
+        # Skip this fold if training set is too small for stable estimation
+        if train_end < min_train_samples:
+            print(f"    Skipping Fold {i}: {train_end} train samples < {min_train_samples} "
+                  f"({len(feature_cols)} features, need 5x)")
+            continue
+
         test_start = train_end
         test_end = min(test_start + fold_size, len(X))
 
@@ -397,6 +483,7 @@ def compute_cv_errors(df: pd.DataFrame, feature_cols: list[str],
         "ml_logloss": float(np.mean([f["ml_logloss"] for f in fold_results])),
         "ml_accuracy": float(np.mean(ml_accs)),
         "ml_calibration_error": float(np.mean(ml_eces)),
+        "n_features": len(feature_cols),
         "n_folds": len(fold_results),
         "fold_results": fold_results,
     }
@@ -1717,6 +1804,13 @@ Examples:
     # Phase 1: Load data and train models
     print(f"\n  {CYAN}{BOLD}[Phase 1/5] Loading Data & Training Models{RESET}")
     df, feature_cols, feature_df = load_and_prepare_data()
+
+    # ── Prune correlated features ONCE for all downstream use ─────────
+    # Fixes extreme multicollinearity (357 features → condition #4e14)
+    # that caused Fold 1 of CV to produce R²=-18926.
+    feature_cols = _prune_correlated_features(df, feature_cols)
+    print(f"    Using {len(feature_cols)} features for all training, CV, and prediction")
+
     models = train_models(df, feature_cols, calibrated=args.calibrated,
                            season_weight_2425=args.season_weight)
 

@@ -16,7 +16,9 @@ import joblib
 import numpy as np
 
 from betting_intel.config import settings
-from betting_intel.services import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ModelRegistry:
@@ -37,7 +39,7 @@ class ModelRegistry:
                 with open(self._registry_file) as f:
                     return json.load(f)
             except Exception as e:
-                logger.warning("Failed to load model registry, starting fresh", error=str(e))
+                logger.warning("Failed to load model registry, starting fresh: %s", e)
         return {"models": {}, "versions": []}
 
     def _save_registry(self):
@@ -102,13 +104,7 @@ class ModelRegistry:
         )
         self._save_registry()
 
-        logger.info(
-            "Model saved",
-            model_name=model_name,
-            version=version,
-            path=str(model_path),
-            features=len(feature_cols),
-        )
+        logger.info("Model saved: model=%s version=%s path=%s features=%d", model_name, version, model_path, len(feature_cols))
         return version
 
     def load(self, model_name: str, version: Optional[str] = None) -> tuple[Any, dict]:
@@ -145,12 +141,7 @@ class ModelRegistry:
             with open(metadata_path) as f:
                 metadata = json.load(f)
 
-        logger.info(
-            "Model loaded",
-            model_name=model_name,
-            version=version,
-            features=len(metadata.get("feature_cols", [])),
-        )
+        logger.info("Model loaded: model=%s version=%s features=%d", model_name, version, len(metadata.get("feature_cols", [])))
         return model, metadata
 
     def list_models(self) -> list[dict]:

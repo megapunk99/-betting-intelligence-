@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "betting-intel"
-version = "0.2.0"
-description = "Professional-grade betting intelligence system for basketball market inefficiency detection"
+version = "0.3.0"
+description = "Basketball betting intelligence — market inefficiency detection, live predictions, and web dashboard"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -14,30 +14,36 @@ authors = [
 ]
 
 dependencies = [
+    # Core data
     "numpy>=1.24",
     "pandas>=2.0",
-    "scikit-learn>=1.3",
-    "xgboost>=2.0",
-    "lightgbm>=4.0",
     "scipy>=1.11",
-    "statsmodels>=0.14",
-    "SQLAlchemy>=2.0",
-    "alembic>=1.13",
     "joblib>=1.3",
-    "click>=8.1",
     "python-dotenv>=1.0",
     "pydantic>=2.5",
     "pydantic-settings>=2.1",
+
+    # ML
+    "scikit-learn>=1.3",
+    "xgboost>=2.0",
+    "lightgbm>=4.0",
+
+    # Web server
     "fastapi>=0.109",
     "uvicorn[standard]>=0.27",
-    "loguru>=0.7",
-    "prometheus-client>=0.19",
-    "httpx>=0.26",
     "jinja2>=3.1",
-    "aiofiles>=23.2",
     "python-multipart>=0.0.6",
-    "aiosqlite>=0.19",
-    "psycopg2-binary>=2.9",
+    "aiofiles>=23.2",
+
+    # Database
+    "SQLAlchemy>=2.0",
+    "alembic>=1.13",
+
+    # CLI
+    "click>=8.1",
+
+    # HTTP client
+    "httpx>=0.26",
 ]
 
 [project.optional-dependencies]
@@ -45,12 +51,9 @@ dev = [
     "pytest>=8.0",
     "pytest-cov>=4.1",
     "pytest-asyncio>=0.23",
-    "httpx>=0.26",
-]
-
-dashboard = [
-    "streamlit>=1.28",
-    "plotly>=5.18",
+    "ruff>=0.3",
+    "mypy>=1.8",
+    "nba-api>=1.4",
 ]
 
 [project.scripts]

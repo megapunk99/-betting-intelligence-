@@ -19,8 +19,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from betting_intel.data.loader import NBADataLoader
 from betting_intel.data.features import FeatureEngineer
-from betting_intel.backtesting.engine import WalkForwardEngine, BacktestResult
 from betting_intel.models.predictors import TotalPointsPredictor
+
+# WalkForwardEngine and BacktestResult removed — backtesting package was deleted
 
 # ── Load data ───────────────────────────────────────────────────────
 print("=" * 65)
@@ -29,7 +30,6 @@ print("=" * 65)
 
 loader = NBADataLoader()
 fe = FeatureEngineer()
-engine = WalkForwardEngine(train_window=200, step=20, min_train=50)
 
 raw_df = loader.load_game_logs()
 games_df = loader.build_game_dataset(raw_df)

@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 
 from betting_intel.pipeline.bootstrap import (
-    PROJECT_ROOT, logger, BetJournal,
+    PROJECT_ROOT, logger,
 )
 from betting_intel.pipeline.data_loading import DataLoadingMixin
 from betting_intel.pipeline.modeling import ModelingMixin
@@ -28,15 +28,51 @@ from betting_intel.pipeline.risk_analysis import RiskAnalysisMixin
 from betting_intel.pipeline.validation import ValidationMixin
 from betting_intel.pipeline.reporting import ReportingMixin
 
-# NBA_AI-inspired pipeline monitoring (optional)
-HAS_PIPELINE_MONITOR = False
-try:
-    from betting_intel.monitoring.pipeline_monitor import (
-        PipelineMonitor, ATSTracker,
-    )
-    HAS_PIPELINE_MONITOR = True
-except ImportError:
-    pass
+# ── Inline Pipeline Monitor ──────────────────────────────────────────────
+# Lightweight replacement for deleted monitoring package.
+
+class _InlinePipelineMonitor:
+    """Prints stage-level timing to console during pipeline runs."""
+    def __init__(self):
+        self._start_times = {}
+    def start_run(self, mode="historical", season="Current"):
+        import time
+        run_id = f"run_{int(time.time())}"
+        self._start_times[run_id] = time.time()
+        logger.info(f"Pipeline {run_id} started — mode={mode}, season={season}")
+        return run_id
+    def record_stage(self, run_id, stage_name, status="ok", duration=0.0, **kwargs):
+        extra = " | ".join(f"{k}={v}" for k, v in kwargs.items() if v)
+        logger.info(f"  Stage {stage_name}: {status} ({duration:.1f}s) {extra}")
+    def complete_run(self, run_id, status="success", games=0, predictions=0, metrics=None):
+        import time
+        elapsed = time.time() - self._start_times.get(run_id, time.time())
+        logger.info(f"Pipeline {run_id} {status}: {games} games, {predictions} preds, {elapsed:.1f}s")
+
+class _InlineATSTracker:
+    """Tracks ATS (against the spread) prediction records."""
+    def __init__(self):
+        self._records = []
+    def record_prediction(self, game_id="", game_date="", matchup="",
+                          model_name="", predicted_spread=0.0,
+                          vegas_spread=0.0, actual_margin=0.0):
+        # Determine ATS result: compare model prediction error vs Vegas error
+        pred_error = abs(predicted_spread - actual_margin)
+        vegas_error = abs(vegas_spread - actual_margin)
+        result = "WIN" if pred_error < vegas_error else ("LOSS" if pred_error > vegas_error else "PUSH")
+        self._records.append({
+            "game_id": game_id, "model_name": model_name, "result": result,
+        })
+    def get_summary(self, model_name="pipeline_ensemble"):
+        recs = [r for r in self._records if r["model_name"] == model_name]
+        wins = sum(1 for r in recs if r["result"] == "WIN")
+        losses = sum(1 for r in recs if r["result"] == "LOSS")
+        pushes = sum(1 for r in recs if r["result"] == "PUSH")
+        total = wins + losses
+        return {
+            "wins": wins, "losses": losses, "pushes": pushes,
+            "win_rate": round(wins / total, 4) if total > 0 else 0.0,
+        }
 
 
 class PredictionPipeline(
@@ -80,26 +116,20 @@ class PredictionPipeline(
         self.model_feature_cols: List[str] = []
         self.tomorrow_recommendations_final: List[Dict[str, Any]] = []
         self._upcoming_games_df: Optional[pd.DataFrame] = None
-        self.bet_journal: Optional[BetJournal] = None
+        self.bet_journal: Optional[Any] = None
         self._feature_pipeline = None
         self._pipeline_raw_df: Optional[pd.DataFrame] = None
 
         # NBA_AI-inspired pipeline & ATS monitoring
-        self.pipeline_monitor: Optional[PipelineMonitor] = None
-        self.ats_tracker: Optional[ATSTracker] = None
-        self._pipeline_run_id: Optional[str] = None
-        if HAS_PIPELINE_MONITOR:
-            self.pipeline_monitor = PipelineMonitor(
-                history_path=PROJECT_ROOT / "data" / "pipeline_history.json"
-            )
-            self.ats_tracker = ATSTracker(
-                history_path=PROJECT_ROOT / "data" / "ats_history.json"
-            )
+        self.pipeline_monitor = _InlinePipelineMonitor()
+        self.ats_tracker = _InlineATSTracker()
+        self._pipeline_run_id = None
 
-    def _init_journal(self) -> BetJournal:
-        """Lazy-initialize the bet journal."""
+    def _init_journal(self):
+        """Lazy-initialize the bet journal (stub — BetJournal deleted)."""
         if self.bet_journal is None:
-            self.bet_journal = BetJournal(db_path=str(PROJECT_ROOT / "data" / "bets_journal.db"))
+            from betting_intel.pipeline.modeling import _StubBetJournal
+            self.bet_journal = _StubBetJournal()
         return self.bet_journal
 
     # ── Orchestrator ───────────────────────────────────────────────
@@ -231,6 +261,8 @@ class PredictionPipeline(
             )
 
         return self.results
+
+    # ── ATS & Live Mode Helpers ─────────────────────────────────────
 
     def _track_ats_performance(self):
         """Track ATS performance if actual results are available."""

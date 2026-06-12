@@ -1,819 +1,600 @@
 """
-FastAPI web application for Betting Intelligence.
-A proper web GUI replacing the Streamlit dashboard.
+Betting Intelligence — Web Dashboard.
+
+A FastAPI app that loads predictions from forward_test_results.json
+and the LivePredictionEngine for real-time odds.
 
 Run:
-    betting-intel web start
-    # or
     uvicorn web.app:app --reload --port 8000
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import sys
-from datetime import datetime, date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any
-import asyncio
-from typing import Any
+from threading import Lock
+from typing import Any, Optional
 
 from dotenv import load_dotenv
-
-# Load .env into process environment BEFORE importing other modules
-# This ensures os.getenv() works for Stripe keys in API routes
 load_dotenv()
 
-from fastapi import FastAPI, Request, Query
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 logger = logging.getLogger(__name__)
 
-# ── App Setup ──────────────────────────────────────────────────────────────
-
 HERE = Path(__file__).resolve().parent
 PROJECT_ROOT = HERE.parent
-
-# Add src/ to path so betting_intel.* imports work when running as script
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-app = FastAPI(
-    title="Betting Intelligence",
-    description="AI-powered basketball betting recommendations",
-    version="0.2.0",
-)
+FORWARD_TEST_JSON = PROJECT_ROOT / "data" / "forward_test_results.json"
 
-# Mount static files
+# ── App ──────────────────────────────────────────────────────────────────
+
+app = FastAPI(title="Betting Intelligence", version="0.3.0")
+
 static_dir = HERE / "static"
 static_dir.mkdir(parents=True, exist_ok=True)
 (static_dir / "css").mkdir(exist_ok=True)
+(static_dir / "js").mkdir(exist_ok=True)
+
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-
-# Templates
 templates = Jinja2Templates(directory=str(HERE / "templates"))
+templates.env.globals["api_key"] = os.getenv("API_KEY", "change-me-to-a-random-secret")
 
 
-# ── Engine Integration ─────────────────────────────────────────────────────
+# ── Live Prediction Engine Singleton ────────────────────────────────────
 
-# Simple TTL cache: regenerates data every 30 seconds
-_cache: dict[str, Any] = {"data": None, "timestamp": 0.0}
-CACHE_TTL = 30.0  # seconds
-
-
-def _now():
-    import time
-    return time.time()
+_engine_lock = Lock()
+_live_engine: Optional["LivePredictionEngine"] = None
 
 
-def get_engine():
-    """Lazy-load the recommendation engine."""
-    from betting_intel.recommendations import RecommendationEngine
-    return RecommendationEngine()
+def get_live_engine() -> "LivePredictionEngine":
+    """Get or create the singleton LivePredictionEngine instance."""
+    global _live_engine
+    if _live_engine is None:
+        with _engine_lock:
+            if _live_engine is None:
+                from betting_intel.live.engine import LivePredictionEngine
+                _live_engine = LivePredictionEngine()
+    return _live_engine
 
 
-def load_dashboard_data(force_refresh: bool = False):
-    """Load all data needed for the dashboard with 30s TTL caching."""
-    now = _now()
-    if not force_refresh and _cache["data"] is not None and (now - _cache["timestamp"]) < CACHE_TTL:
-        return _cache["data"]
+# ── Helper: LiveGame → bet dict ─────────────────────────────────────────
 
-    engine = get_engine()
-    all_bets = engine.generate_all_bets()
-    clear_picks = engine.get_clear_picks()
-    summary = engine.get_summary()
-    todays = engine.get_todays_card()
+def _livegame_to_bet(game: Any) -> dict:
+    """Convert a LiveGame (or dict) to a bet dict for API responses."""
+    if hasattr(game, "to_dict"):
+        g = game.to_dict()
+        # Properties like 'matchup' are not included in asdict() — compute them explicitly
+        matchup = getattr(game, "matchup", f"{getattr(game, 'away_team_short', '?')} @ {getattr(game, 'home_team_short', '?')}")
+        direction = getattr(game, "direction", g.get("direction", "neutral")) or "neutral"
+        confidence = getattr(game, "confidence", g.get("confidence", "low")) or "low"
+        edge_pct = getattr(game, "edge_pct", g.get("edge_pct", 0.0)) or 0.0
+        predicted_total = getattr(game, "predicted_total", g.get("predicted_total"))
+        market_total = getattr(game, "market_total", g.get("market_total"))
+    else:
+        g = game
+        matchup = g.get("matchup", f"{g.get('away_team_short', '?')} @ {g.get('home_team_short', '?')}")
+        direction = g.get("direction", "neutral") or "neutral"
+        confidence = g.get("confidence", "low") or "low"
+        edge_pct = g.get("edge_pct", 0.0) or 0.0
+        predicted_total = g.get("predicted_total")
+        market_total = g.get("market_total")
 
-    # Group today's bets by game
-    games = {}
-    for bet in todays:
-        key = bet.matchup
-        if key not in games:
-            games[key] = {"league": bet.league, "bets": []}
-        games[key]["bets"].append(bet)
+    return {
+        "game_id": g.get("game_id", ""),
+        "game_date": g.get("game_date", ""),
+        "matchup": matchup,
+        "home_team": g.get("home_team", ""),
+        "away_team": g.get("away_team", ""),
+        "league": "NBA",
+        "bet_type": "total",
+        "bet_type_display": "Total",
+        "bet_side": f"Total {'OVER' if direction == 'over' else 'UNDER'} {market_total or ''}",
+        "edge_pct": edge_pct,
+        "stake_dollars": 0.0,
+        "confidence": confidence,
+        "edge_confidence": confidence,
+        "is_clear_pick": False,
+        "reasoning": f"Model predicts {predicted_total or '?'} vs market {market_total or '?'}",
+        "model_name": "pipeline_ensemble",
+        "sport_key": g.get("sport_key", "basketball_nba"),
+        "sport_title": "NBA",
+        "commence_time": g.get("commence_time", ""),
+        "home_team_short": g.get("home_team_short", ""),
+        "away_team_short": g.get("away_team_short", ""),
+        "home_ml": g.get("home_ml"),
+        "away_ml": g.get("away_ml"),
+        "market_total": market_total,
+        "predicted_total": predicted_total,
+        "direction": direction,
+        "n_books_ml": g.get("n_books_ml", 0),
+        "n_books_total": g.get("n_books_total", 0),
+    }
 
-    data = {
-        "all_bets": all_bets,
-        "clear_picks": clear_picks,
-        "summary": summary,
-        "todays_bets": todays,
-        "games": games,
+
+def _livegame_to_clear_pick(game: Any) -> dict:
+    """Convert a LiveGame to a clear-pick dict for API responses."""
+    bet = _livegame_to_bet(game)
+    return {
+        "bet": bet,
+        "clear_score": abs(bet.get("edge_pct", 0) or 0) * 100,
+        "risk_level": "low" if abs(bet.get("edge_pct", 0) or 0) > 0.05 else "medium",
+        "reasons": [
+            f"Predicted total: {bet.get('predicted_total')}",
+            f"Market total: {bet.get('market_total')}",
+            f"Edge: {bet.get('edge_pct', 0):.1%}",
+        ],
+    }
+
+
+# ── Data Loading (from forward_test_results.json) ──────────────────────
+
+def load_predictions() -> dict:
+    """Load predictions from forward_test_results.json. Returns empty data on failure."""
+    empty = {
+        "bets": [], "clear_picks": [], "summary": {},
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    }
-    _cache["data"] = data
-    _cache["timestamp"] = now
-    return data
-
-
-def bet_to_dict(bet) -> dict:
-    """Convert a BetSuggestion to a plain dict for templates."""
-    return {
-        "game_id": bet.game_id,
-        "game_date": bet.game_date,
-        "matchup": bet.matchup,
-        "league": bet.league,
-        "bet_type": bet.bet_type.value,
-        "bet_type_display": bet.bet_type.display_name(),
-        "bet_type_icon": bet.bet_type.icon(),
-        "bet_side": bet.bet_side,
-        "action": bet.action,
-        "edge_pct": round(bet.edge_pct * 100, 1),  # percentage
-        "stake_dollars": round(bet.stake_dollars, 0),
-        "kelly_fraction": round(bet.kelly_fraction, 4),
-        "win_probability": round(bet.win_probability, 3),
-        "confidence": bet.confidence.value,
-        "is_clear_pick": bet.is_clear_pick,
-        "reasoning": bet.reasoning,
-        "model_name": bet.model_name,
-        "tags": bet.tags,
-        "market_line": bet.market_line,
-        "predicted_value": round(bet.predicted_value, 1),
+        "n_bets": 0, "n_games": 0, "n_clear": 0,
     }
 
+    if not FORWARD_TEST_JSON.exists():
+        return empty
 
-# ── Routes ─────────────────────────────────────────────────────────────────
-
-
-
-async def _safe_load_dashboard() -> dict:
-    """Load dashboard data with a 30-second timeout. Returns empty defaults on failure."""
     try:
-        data = await asyncio.wait_for(
-            asyncio.to_thread(load_dashboard_data),
-            timeout=15.0
-        )
-        if isinstance(data, dict):
-            return data
-    except asyncio.TimeoutError:
-        print("  [WARN] Dashboard data load timed out (30s)")
-    except Exception as e:
-        print(f"  [WARN] Dashboard data load failed: {e}")
-    # Complete fallback with all fields expected by templates
+        with open(FORWARD_TEST_JSON) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning(f"Failed to load predictions: {e}")
+        return empty
+
+    bets = data.get("all_bets", [])
+    clear = [b for b in bets if b.get("is_clear_pick", False)]
+    summary = data.get("summary", {})
+    games = len(set(b.get("matchup", "") for b in bets))
+
+    avg_edge = summary.get("avg_edge", 0)
+    avg_edge_str = f"{avg_edge:.1%}" if avg_edge else "—"
+
     return {
-        "summary": {
-            "total_bets": 0, "total_stake": 0.0, "total_collected": 0.0,
-            "clear_picks": 0, "games_available": 0, "freshness_seconds": 0,
-            "active_signals": 0, "by_type": {}, "nitter_available": False,
-        },
-        "clear_picks": [],
-        "todays_bets": [],
-        "games": {},
-        "generated_at": "",
+        "bets": bets,
+        "clear_picks": clear[:10],
+        "summary": summary,
+        "avg_edge": avg_edge_str,
+        "generated_at": data.get("generated_at", ""),
+        "n_bets": len(bets),
+        "n_games": games,
+        "n_clear": len(clear),
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  LIVE ENGINE ROUTES
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@app.post("/api/live/refresh")
+async def live_refresh():
+    """Force-refresh live predictions from odds sources."""
+    try:
+        engine = get_live_engine()
+        snapshot = engine.refresh_now()
+        return JSONResponse(content={
+            "n_total": snapshot.n_total,
+            "n_today": snapshot.n_today,
+            "n_tomorrow": snapshot.n_tomorrow,
+            "n_live": snapshot.n_live,
+            "fresh_odds": snapshot.fresh_odds,
+            "refreshed": True,
+            "generated_at": snapshot.generated_at,
+        })
+    except Exception as e:
+        logger.error(f"Live refresh failed: {e}")
+        return JSONResponse(content={
+            "n_total": 0, "n_today": 0, "n_tomorrow": 0,
+            "n_live": 0, "fresh_odds": False, "refreshed": False,
+            "error": str(e),
+        })
+
+
+@app.get("/api/live/snapshot")
+async def live_snapshot():
+    """Get the current live prediction snapshot."""
+    try:
+        engine = get_live_engine()
+        snapshot = engine.get_snapshot(force_refresh=False)
+        return JSONResponse(content=snapshot.to_dict())
+    except Exception as e:
+        logger.error(f"Snapshot failed: {e}")
+        return JSONResponse(content={
+            "n_total": 0, "n_today": 0, "n_tomorrow": 0, "n_live": 0,
+            "fresh_odds": False, "next_two_days": [],
+            "live_games": [], "today_games": [], "tomorrow_games": [],
+            "generated_at": datetime.now().isoformat(),
+        })
+
+
+@app.get("/api/live/chart-data")
+async def live_chart_data():
+    """Get pre-computed chart data for the dashboard."""
+    try:
+        engine = get_live_engine()
+        snapshot = engine.get_snapshot(force_refresh=False)
+        if snapshot.chart_data:
+            return JSONResponse(content=snapshot.chart_data)
+        return JSONResponse(content={
+            "n_total": 0, "n_today": 0, "n_tomorrow": 0,
+            "edges": [], "confidence_breakdown": {},
+            "direction_breakdown": {},
+            "generated_at": datetime.now().isoformat(),
+            "fresh_odds": False,
+        })
+    except Exception as e:
+        logger.error(f"Chart data failed: {e}")
+        return JSONResponse(content={
+            "n_total": 0, "edges": [], "confidence_breakdown": {},
+            "direction_breakdown": {},
+            "generated_at": datetime.now().isoformat(),
+            "fresh_odds": False,
+        })
+
+
+@app.get("/api/live/games")
+async def live_games():
+    """Get the list of live games."""
+    try:
+        engine = get_live_engine()
+        games = engine.get_live_games(force_refresh=False)
+        return JSONResponse(content=[g.to_dict() for g in games])
+    except Exception as e:
+        logger.error(f"Live games failed: {e}")
+        return JSONResponse(content=[])
+
+
+@app.post("/api/live/clear-cache")
+async def live_clear_cache():
+    """Clear all cached predictions and odds."""
+    try:
+        engine = get_live_engine()
+        engine.clear_cache()
+        return JSONResponse(content={"cleared": True})
+    except Exception as e:
+        logger.error(f"Clear cache failed: {e}")
+        return JSONResponse(content={"cleared": False, "error": str(e)})
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  HTML PAGE ROUTES
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _games_context() -> dict:
+    """Build template context from live engine games."""
+    try:
+        engine = get_live_engine()
+        # Use get_next_two_days to get games from the snapshot
+        games = engine.get_next_two_days(force_refresh=False)
+        logger.debug(f"_games_context: {len(games)} games from engine")
+        bets = [_livegame_to_bet(g) for g in games]
+        clear = [_livegame_to_bet(g) for g in games
+                 if abs((g.edge_pct or 0)) > 0.03]
+        return {
+            "bets": bets,
+            "clear_picks": clear[:10],
+            "summary": {
+                "n_games": len(games),
+                "n_bets": len(bets),
+                "n_clear": len(clear),
+            },
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "n_bets": len(bets),
+            "n_games": len(games),
+            "n_clear": len(clear),
+            "today": date.today().isoformat(),
+        }
+    except Exception as e:
+        logger.warning(f"_games_context failed: {e}")
+        return {
+            "bets": [], "clear_picks": [], "summary": {},
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "n_bets": 0, "n_games": 0, "n_clear": 0,
+            "today": date.today().isoformat(),
+        }
+
 
 @app.get("/", response_class=HTMLResponse)
-async def landing_page(request: Request):
-    """Landing / marketing page with pricing tiers."""
-    return templates.TemplateResponse(
-        request,
-        "landing.html",
-        {},
-    )
+async def dashboard(request: Request):
+    """Main dashboard — shows predictions from forward_test_results.json."""
+    data = load_predictions()
+    return templates.TemplateResponse(request, "index.html", {
+        "bets": data["bets"],
+        "clear_picks": data["clear_picks"],
+        "summary": data["summary"],
+        "generated_at": data["generated_at"],
+        "n_bets": data["n_bets"],
+        "n_games": data["n_games"],
+        "n_clear": data["n_clear"],
+        "today": date.today().isoformat(),
+    })
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request):
-    """Main dashboard page."""
-    data = await _safe_load_dashboard()
-    return templates.TemplateResponse(
-        request,
-        "index.html",
-        {
-            "summary": data["summary"],
-            "clear_picks": data["clear_picks"],
-            "todays_bets": data["todays_bets"],
-            "games": data["games"],
-            "generated_at": data["generated_at"],
-            "today": date.today().isoformat(),
-        },
-    )
+async def dashboard_page(request: Request):
+    """Dashboard page showing today's games from live engine."""
+    ctx = _games_context()
+    return templates.TemplateResponse(request, "index.html", ctx)
 
 
-@app.get("/clear-picks", response_class=HTMLResponse)
-async def clear_picks_page(
-    request: Request,
-    league: str = "all",
-    bet_type: str = "all",
-    min_edge: float = 0.0,
-):
-    """Clear picks page with HTMX filtering."""
-    data = await _safe_load_dashboard()
-    picks = data["clear_picks"]
-
-    # Filter
-    filtered = []
-    for cp in picks:
-        bet = cp.bet
-        if league != "all" and bet.league.lower() != league.lower():
-            continue
-        if bet_type != "all" and bet.bet_type.value != bet_type:
-            continue
-        if bet.edge_pct < min_edge:
-            continue
-        filtered.append(cp)
-
-    leagues = sorted(set(cp.bet.league for cp in picks))
-    types = sorted(set(cp.bet.bet_type.value for cp in picks))
-
-    # Check if HTMX request (partial update)
-    is_htmx = request.headers.get("HX-Request") == "true"
-
-    template = "partials/clear_picks_list.html" if is_htmx else "clear_picks.html"
-    return templates.TemplateResponse(
-        request,
-        template,
-        {
-            "clear_picks": filtered,
-            "leagues": leagues,
-            "types": types,
-            "selected_league": league,
-            "selected_type": bet_type,
-            "min_edge": min_edge,
-            "summary": data["summary"],
-            "generated_at": data["generated_at"],
-        },
-    )
-
-
-@app.get("/all-bets", response_class=HTMLResponse)
-async def all_bets_page(
-    request: Request,
-    league: str = "all",
-    bet_type: str = "all",
-    min_edge: float = 0.0,
-    sort_by: str = "edge",
-):
-    """All bets page with sorting and filtering."""
-    data = await _safe_load_dashboard()
-    bets = data["all_bets"]
-
-    # Filter
-    if league != "all":
-        bets = [b for b in bets if b.league.lower() == league.lower()]
-    if bet_type != "all":
-        bets = [b for b in bets if b.bet_type.value == bet_type]
-    if min_edge > 0:
-        bets = [b for b in bets if b.edge_pct >= min_edge]
-
-    # Sort
-    if sort_by == "edge":
-        bets.sort(key=lambda b: b.edge_pct, reverse=True)
-    elif sort_by == "stake":
-        bets.sort(key=lambda b: b.stake_dollars, reverse=True)
-    elif sort_by == "confidence":
-        bets.sort(key=lambda b: b.confidence.numeric(), reverse=True)
-
-    leagues = sorted(set(b.league for b in data["all_bets"]))
-    types = sorted(set(b.bet_type.value for b in data["all_bets"]))
-
-    is_htmx = request.headers.get("HX-Request") == "true"
-    template = "partials/bets_table.html" if is_htmx else "all_bets.html"
-
-    return templates.TemplateResponse(
-        request,
-        template,
-        {
-            "bets": [bet_to_dict(b) for b in bets],
-            "leagues": leagues,
-            "types": types,
-            "selected_league": league,
-            "selected_type": bet_type,
-            "min_edge": min_edge,
-            "sort_by": sort_by,
-            "total": len(bets),
-            "summary": data["summary"],
-            "generated_at": data["generated_at"],
-        },
-    )
+@app.get("/live", response_class=HTMLResponse)
+async def live_page(request: Request):
+    """Live games page."""
+    ctx = _games_context()
+    return templates.TemplateResponse(request, "index.html", ctx)
 
 
 @app.get("/todays-card", response_class=HTMLResponse)
-async def todays_card_page(request: Request):
+async def todays_card(request: Request):
     """Today's betting card."""
-    data = await _safe_load_dashboard()
-    return templates.TemplateResponse(
-        request,
-        "todays_card.html",
-        {
-            "games": data["games"],
-            "todays_bets": data["todays_bets"],
-            "summary": data["summary"],
-            "generated_at": data["generated_at"],
-            "today": date.today().isoformat(),
-        },
-    )
+    ctx = _games_context()
+    return templates.TemplateResponse(request, "index.html", ctx)
 
 
 @app.get("/tomorrow", response_class=HTMLResponse)
 async def tomorrow_page(request: Request):
-    """Tomorrow's betting card — one-day-ahead predictions."""
-    engine = get_engine()
-    tomorrow_bets = engine.get_tomorrows_card()
-    summary = engine.get_summary()
+    """Tomorrow's predictions page."""
+    ctx = _games_context()
+    return templates.TemplateResponse(request, "index.html", ctx)
 
-    # Group by game
-    games = {}
-    for bet in tomorrow_bets:
-        key = bet.matchup
-        if key not in games:
-            games[key] = {"league": bet.league, "series": "", "bets": []}
-        games[key]["bets"].append(bet)
 
-    tomorrow_date = (date.today() + timedelta(days=1)).isoformat()
+@app.get("/pre-match-prediction", response_class=HTMLResponse)
+async def pre_match_prediction(request: Request):
+    """Pre-match prediction page."""
+    ctx = _games_context()
+    return templates.TemplateResponse(request, "index.html", ctx)
 
-    return templates.TemplateResponse(
-        request,
-        "tomorrow.html",
-        {
-            "games": games,
-            "tomorrow_bets": tomorrow_bets,
-            "summary": summary,
+
+@app.get("/all-bets", response_class=HTMLResponse)
+async def all_bets_page(request: Request):
+    """All bets page."""
+    ctx = _games_context()
+    return templates.TemplateResponse(request, "index.html", ctx)
+
+
+@app.get("/clear-picks", response_class=HTMLResponse)
+async def clear_picks_page(request: Request):
+    """Clear picks page."""
+    ctx = _games_context()
+    return templates.TemplateResponse(request, "index.html", ctx)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  FUTURE PREDICTIONS ROUTE
+# ═══════════════════════════════════════════════════════════════════════════
+
+_future_predictor = None
+_future_predictor_lock = Lock()
+
+
+def get_future_predictor() -> Optional[Any]:
+    """Get or create the FutureGamePredictor singleton."""
+    global _future_predictor
+    if _future_predictor is None:
+        with _future_predictor_lock:
+            if _future_predictor is None:
+                try:
+                    from betting_intel.live.future_predictor import FutureGamePredictor
+                    predictor = FutureGamePredictor()
+                    predictor.load()
+                    _future_predictor = predictor
+                except Exception as e:
+                    logger.warning(f"Failed to load FutureGamePredictor: {e}")
+                    return None
+    return _future_predictor
+
+
+@app.get("/api/future-predictions")
+async def api_future_predictions(num_games: int = 6):
+    """JSON API — returns AI-predicted future games with quarter/half breakdowns."""
+    try:
+        predictor = get_future_predictor()
+        if predictor is None:
+            return JSONResponse(content={
+                "predictions": [],
+                "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "status": "unavailable",
+                "message": "FutureGamePredictor failed to load — check NBA database and model files",
+            })
+        preds = predictor.predict_upcoming_games(num_games=max(1, min(num_games, 30)))
+        return JSONResponse(content={
+            "predictions": preds,
+            "n_predictions": len(preds),
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "tomorrow": tomorrow_date,
-            "today": date.today().isoformat(),
-        },
-    )
-
-
-@app.get("/player-props", response_class=HTMLResponse)
-async def player_props_page(
-    request: Request,
-    home: str = "Spurs",
-    away: str = "Thunder",
-    league: str = "NBA",
-):
-    """Player props page."""
-    from betting_intel.recommendations.player_props import PlayerPropEngine
-
-    engine = PlayerPropEngine()
-    props = engine.predict_for_game(home=home, away=away, league=league)
-    props_dicts = [bet_to_dict(p) for p in props]
-
-    # Group by team
-    home_props = [p for p in props_dicts if home in p["bet_side"]]
-    away_props = [p for p in props_dicts if away in p["bet_side"]]
-
-    return templates.TemplateResponse(
-        request,
-        "player_props.html",
-        {
-            "home_team": home,
-            "away_team": away,
-            "league": league,
-            "home_props": home_props,
-            "away_props": away_props,
-            "total": len(props),
+            "status": "ok",
+        })
+    except Exception as e:
+        logger.error(f"Future predictions API failed: {e}")
+        return JSONResponse(content={
+            "predictions": [],
+            "n_predictions": 0,
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        },
-    )
+            "status": "error",
+            "error": str(e),
+        })
 
 
-@app.get("/api/refresh")
-async def api_refresh():
-    """Refresh cached data and return summary JSON."""
-    data = load_dashboard_data(force_refresh=True)
+@app.get("/future-predictions", response_class=HTMLResponse)
+async def future_predictions_page(request: Request):
+    """Future predictions page — AI-generated game predictions with quarter/half breakdowns."""
+    try:
+        predictor = get_future_predictor()
+        if predictor:
+            try:
+                preds = predictor.predict_upcoming_games(num_games=20)
+            except Exception:
+                preds = []
+        else:
+            preds = []
+    except Exception:
+        preds = []
+
+    return templates.TemplateResponse(request, "future_predictions.html", {
+        "predictions": preds,
+        "n_predictions": len(preds),
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "today": date.today().isoformat(),
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  JSON API ROUTES
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@app.get("/api/predictions")
+async def api_predictions(limit: int = 50, min_edge: float = 0.0):
+    """JSON API — returns predictions sorted by edge descending."""
+    data = load_predictions()
+    bets = data["bets"]
+    if min_edge > 0:
+        bets = [b for b in bets if abs(b.get("edge_pct", 0)) >= min_edge]
+    bets.sort(key=lambda b: abs(b.get("edge_pct", 0)), reverse=True)
     return JSONResponse(content={
-        "total_bets": data["summary"]["total_bets"],
-        "clear_picks": data["summary"]["clear_picks"],
-        "games_available": data["summary"]["games_available"],
-        "avg_edge": round(data["summary"]["avg_edge"] * 100, 1),
-        "total_stake": round(data["summary"]["total_stake"], 0),
+        "n_bets": len(bets[:limit]),
         "generated_at": data["generated_at"],
+        "bets": bets[:limit],
     })
 
 
 @app.get("/api/bets")
-async def api_bets(
-    league: str = "all",
-    bet_type: str = "all",
-    min_edge: float = 0.0,
-    limit: int = 50,
-):
-    """JSON API for bets."""
-    data = await _safe_load_dashboard()
-    bets = data["all_bets"]
-    if league != "all":
-        bets = [b for b in bets if b.league.lower() == league.lower()]
-    if bet_type != "all":
-        bets = [b for b in bets if b.bet_type.value == bet_type]
-    if min_edge > 0:
-        bets = [b for b in bets if b.edge_pct >= min_edge]
-    bets.sort(key=lambda b: b.edge_pct, reverse=True)
-    return JSONResponse(content=[bet_to_dict(b) for b in bets[:limit]])
-
-
-@app.get("/signals", response_class=HTMLResponse)
-async def signals_page(request: Request):
-    """X/Twitter intelligence signals page."""
-    from betting_intel.data.x_signals import TwitterSignalCollector
-
-    collector = TwitterSignalCollector()
-    collector.collect_all()
-    signals = collector.get_recent_signals(limit=40)
-    summary = collector.get_summary_stats()
-    team_alerts = collector.get_team_alerts()
-    most_impactful = [s.to_dict() for s in collector.get_most_impactful_signals(limit=10)]
-
-    # Get account counts
-    from betting_intel.data.nba_accounts import (
-        get_all_accounts, get_accounts_by_role, AccountRole
-    )
-    all_accounts = get_all_accounts()
-    insider_count = len(get_accounts_by_role(AccountRole.INSIDER))
-    beat_count = len(get_accounts_by_role(AccountRole.BEAT_REPORTER))
-    tracker_count = len(get_accounts_by_role(AccountRole.INJURY_TRACKER))
-
-    return templates.TemplateResponse(
-        request,
-        "signals.html",
-        {
-            "signals": signals,
-            "summary": summary,
-            "team_alerts": team_alerts,
-            "most_impactful": most_impactful,
-            "account_count": len(all_accounts),
-            "insider_count": insider_count,
-            "beat_count": beat_count,
-            "tracker_count": tracker_count,
-            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        },
-    )
-
-
-@app.get("/api/signals")
-async def api_signals():
-    """JSON API for X/Twitter signals."""
-    from betting_intel.data.x_signals import TwitterSignalCollector
-    collector = TwitterSignalCollector()
-    collector.collect_all()
-    return JSONResponse(content={
-        "signals": collector.get_recent_signals(limit=20),
-        "summary": collector.get_summary_stats(),
-        "team_alerts": {
-            team: [s.to_dict() for s in sigs]
-            for team, sigs in collector.get_team_alerts().items()
-        },
-    })
+async def api_bets():
+    """JSON API — returns all bets from the live engine as a flat list."""
+    try:
+        engine = get_live_engine()
+        games = engine.get_next_two_days(force_refresh=False)
+        return JSONResponse(content=[_livegame_to_bet(g) for g in games])
+    except Exception:
+        return JSONResponse(content=[])
 
 
 @app.get("/api/clear-picks")
 async def api_clear_picks():
-    """JSON API for clear picks."""
-    data = await _safe_load_dashboard()
-    return JSONResponse(content=[
-        {
-            "bet": bet_to_dict(cp.bet),
-            "clear_score": round(cp.clear_score, 1),
-            "risk_level": cp.risk_level,
-            "reasons": cp.reasons,
-        }
-        for cp in data["clear_picks"]
-    ])
+    """JSON API — returns clear picks from the live engine."""
+    try:
+        engine = get_live_engine()
+        games = engine.get_next_two_days(force_refresh=False)
+        picks = []
+        for g in games:
+            edge = abs(g.edge_pct or 0)
+            if edge > 0.03:  # Only strong edges
+                picks.append(_livegame_to_clear_pick(g))
+        return JSONResponse(content=picks)
+    except Exception:
+        return JSONResponse(content=[])
 
 
-# ── Stripe Integration ────────────────────────────────────────────────────
+@app.get("/api/refresh")
+async def api_refresh():
+    """JSON API — refresh predictions and return summary."""
+    try:
+        engine = get_live_engine()
+        snapshot = engine.refresh_now()
+        bets = [_livegame_to_bet(g) for g in snapshot.next_two_days]
+        total_stake = 0.0  # No stake info from live engine directly
+        return JSONResponse(content={
+            "total_bets": len(bets),
+            "games_available": snapshot.n_total,
+            "total_stake": total_stake,
+            "generated_at": snapshot.generated_at,
+            "n_today": snapshot.n_today,
+            "n_tomorrow": snapshot.n_tomorrow,
+            "refreshed": True,
+        })
+    except Exception as e:
+        logger.error(f"Refresh API failed: {e}")
+        return JSONResponse(content={
+            "total_bets": 0, "games_available": 0,
+            "total_stake": 0, "generated_at": datetime.now().isoformat(),
+            "refreshed": False,
+        })
 
-_stripe_manager = None
+
+@app.get("/api/resolve")
+async def api_resolve():
+    """Resolve predictions against actual results and return updated data."""
+    try:
+        from betting_intel.analytics.tracker import ResultsTracker
+        tracker = ResultsTracker()
+        n = tracker.resolve_all()
+        data = load_predictions()
+        return JSONResponse(content={
+            "resolved": n,
+            "message": f"Resolved {n} predictions",
+            "n_bets": data["n_bets"],
+            "n_clear": data["n_clear"],
+            "generated_at": data["generated_at"],
+        })
+    except Exception as e:
+        logger.error(f"Resolve failed: {e}")
+        return JSONResponse(content={"error": str(e), "resolved": 0}, status_code=500)
 
 
-def _get_stripe_manager() -> StripeIntegration:
-    """Lazy-load the Stripe integration."""
-    global _stripe_manager
-    if _stripe_manager is None:
-        from betting_intel.business.subscriptions import StripeIntegration
-        _stripe_manager = StripeIntegration()
-    return _stripe_manager
+# ═══════════════════════════════════════════════════════════════════════════
+#  HEALTH ROUTES
+# ═══════════════════════════════════════════════════════════════════════════
 
 
-def _get_sub_manager() -> "SubscriptionManager":
-    """Lazy-load the subscription manager."""
-    from betting_intel.business.subscriptions import SubscriptionManager
-    sm = SubscriptionManager(str(PROJECT_ROOT / "data" / "subscribers.json"))
-    return sm
-
-
-@app.get("/api/stripe/config")
-async def stripe_config():
-    """Return Stripe publishable key for the frontend."""
-    import os
-    pub_key = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
-    return JSONResponse({
-        "publishableKey": pub_key,
-        "enabled": bool(pub_key) and pub_key != "your-stripe-key-here",
+@app.get("/api/health")
+async def api_health():
+    """Lightweight health check."""
+    db_ok = Path("data/nba_data.db").exists()
+    predictions_ok = FORWARD_TEST_JSON.exists()
+    return JSONResponse(content={
+        "status": "ok" if db_ok else "degraded",
+        "database": db_ok,
+        "predictions_file": predictions_ok,
+        "version": "0.3.0",
     })
 
 
-@app.post("/api/stripe/create-checkout-session")
-async def create_checkout_session(request: Request):
-    """
-    Create a Stripe Checkout Session for a subscription.
-
-    Expects JSON: { "tier": "basic", "interval": "month", "user_id": "..." }
-      - interval: "month" or "year"
-    Returns: { "url": "https://checkout.stripe.com/..." }
-    """
-    import os
-
-    body = await request.json()
-    tier = body.get("tier", "basic")
-    interval = body.get("interval", "month")
-    user_id = body.get("user_id", f"user_{os.urandom(4).hex()}")
-
-    domain = os.getenv("SITE_DOMAIN", "http://localhost:8000")
-    success_url = f"{domain}/subscribe/success?session_id={{CHECKOUT_SESSION_ID}}"
-    cancel_url = f"{domain}/subscribe/cancel"
-
-    stripe_mgr = _get_stripe_manager()
-
-    if not stripe_mgr.is_enabled():
-        # Demo mode: simulate checkout for development
-        sm = _get_sub_manager()
-        months = 12 if interval == "year" else 1
-        sm.add_subscriber(
-            user_id=user_id,
-            tier=tier,
-            email="demo@example.com",
-            months=months,
-        )
-        return JSONResponse({
-            "url": f"/subscribe/success?demo=1&tier={tier}&interval={interval}",
-            "demo": True,
-            "user_id": user_id,
+@app.get("/api/health/live")
+async def api_health_live():
+    """Live health check — is the live engine running?"""
+    try:
+        engine = get_live_engine()
+        has_data = engine.has_cached_data
+        return JSONResponse(content={
+            "status": "ok" if has_data else "degraded",
+            "cached_data": has_data,
+        })
+    except Exception:
+        return JSONResponse(content={
+            "status": "degraded",
+            "cached_data": False,
         })
 
-    checkout_url = stripe_mgr.create_checkout_session(
-        user_id=user_id,
-        tier=tier,
-        interval=interval,
-        success_url=success_url,
-        cancel_url=cancel_url,
-    )
 
-    if not checkout_url:
-        return JSONResponse(
-            {"error": "Failed to create checkout session. Check Stripe configuration."},
-            status_code=400,
-        )
-
-    return JSONResponse({"url": checkout_url, "demo": False})
+@app.get("/api/health/ready")
+async def api_health_ready():
+    """Ready check — is the app ready to serve requests?"""
+    return JSONResponse(content={
+        "status": "ok",
+        "ready": True,
+        "version": "0.3.0",
+    })
 
 
-@app.post("/api/stripe/webhook")
-async def stripe_webhook(request: Request):
-    """
-    Handle incoming Stripe webhook events.
-
-    This endpoint receives events from Stripe:
-      - checkout.session.completed → activate subscription
-      - customer.subscription.updated → tier changes
-      - customer.subscription.deleted → cancellations
-      - invoice.payment_succeeded → renewal confirmations
-    """
-    import stripe
-    import os
-
-    payload = await request.body()
-    sig_header = request.headers.get("stripe-signature", "")
-    webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-
-    # If no webhook secret configured, skip verification for development
-    if webhook_secret:
-        try:
-            event = stripe.Webhook.construct_event(
-                payload, sig_header, webhook_secret
-            )
-        except (ValueError, stripe.error.SignatureVerificationError) as e:
-            logger.warning(f"Stripe webhook signature verification failed: {e}")
-            return JSONResponse({"error": "Invalid signature"}, status_code=400)
-    else:
-        # Dev mode: parse payload manually
-        import json
-        try:
-            event = json.loads(payload)
-        except json.JSONDecodeError:
-            return JSONResponse({"error": "Invalid JSON"}, status_code=400)
-
-    stripe_mgr = _get_stripe_manager()
-    result = stripe_mgr.process_webhook(event)
-
-    if result:
-        sm = _get_sub_manager()
-        action = result.get("action")
-        user_id = result.get("user_id", "")
-        tier = result.get("tier", "basic")
-        status = result.get("status", "")
-
-        if action == "subscribe" and status == "active":
-            months = result.get("months", 1)
-            sm.add_subscriber(
-                user_id=user_id,
-                tier=tier,
-                email=result.get("email", ""),
-                stripe_customer_id=result.get("stripe_customer_id", ""),
-                stripe_subscription_id=result.get("stripe_subscription_id", ""),
-                months=months,
-            )
-        elif action == "update":
-            sm.update_tier(user_id, tier)
-        elif action == "cancel":
-            sm.cancel_subscription(user_id)
-
-    return JSONResponse({"received": True})
-
-
-@app.get("/subscribe/success", response_class=HTMLResponse)
-async def subscribe_success(request: Request, session_id: str = "", demo: str = "0", tier: str = "basic"):
-    """Show a success page after a subscription is activated."""
-    is_demo = demo == "1"
-    tier_name = tier.capitalize()
-    return templates.TemplateResponse(
-        request,
-        "subscribe_success.html",
-        {
-            "session_id": session_id,
-            "demo": is_demo,
-            "tier": tier_name,
-            "dashboard_url": "/dashboard",
-        },
-    )
-
-
-@app.get("/subscribe/cancel", response_class=HTMLResponse)
-async def subscribe_cancel(request: Request):
-    """Show a cancellation page if the user leaves the checkout."""
-    return templates.TemplateResponse(
-        request,
-        "subscribe_cancel.html",
-        {
-            "pricing_url": "/#pricing",
-        },
-    )
-
-
-@app.get("/subscribe/manage", response_class=HTMLResponse)
-async def subscribe_manage(request: Request, user_id: str = ""):
-    """Subscription management page — view/edit current plan."""
-    sm = _get_sub_manager()
-    stats = sm.get_stats()
-
-    # Look up stripe_customer_id for the portal link
-    stripe_customer_id = ""
-    if user_id:
-        sub = sm.get_subscriber(user_id)
-        if sub and sub.stripe_customer_id:
-            stripe_customer_id = sub.stripe_customer_id
-
-    return templates.TemplateResponse(
-        request,
-        "subscribe_manage.html",
-        {
-            "stats": stats,
-            "dashboard_url": "/dashboard",
-            "stripe_customer_id": stripe_customer_id,
-        },
-    )
-
-
-@app.post("/api/stripe/create-portal-session")
-async def create_portal_session(request: Request):
-    """
-    Create a Stripe Customer Portal session for subscription management.
-
-    Expects JSON: { "customer_id": "cus_...", "return_url": "..." }
-    Returns: { "url": "https://billing.stripe.com/..." }
-    """
-    import os
-
-    body = await request.json()
-    customer_id = body.get("customer_id", "")
-    return_url = body.get("return_url", os.getenv("SITE_DOMAIN", "http://localhost:8000") + "/subscribe/manage")
-
-    if not customer_id:
-        return JSONResponse(
-            {"error": "customer_id is required"},
-            status_code=400,
-        )
-
-    stripe_mgr = _get_stripe_manager()
-    portal_url = stripe_mgr.create_customer_portal_session(
-        customer_id=customer_id,
-        return_url=return_url,
-    )
-
-    if not portal_url:
-        return JSONResponse(
-            {"error": "Failed to create portal session. Stripe may not be configured."},
-            status_code=400,
-        )
-
-    return JSONResponse({"url": portal_url})
-
-
-# ── Legal Pages ───────────────────────────────────────────────────────────
-
-
-@app.get("/privacy", response_class=HTMLResponse)
-async def privacy_page(request: Request):
-    """Privacy Policy page."""
-    return templates.TemplateResponse(request, "privacy.html", {})
-
-
-@app.get("/terms", response_class=HTMLResponse)
-async def terms_page(request: Request):
-    """Terms of Service page."""
-    return templates.TemplateResponse(request, "terms.html", {})
-
-
-# ── SEO Routes ──────────────────────────────────────────────────────────────
-
-
-@app.get("/robots.txt", response_class=HTMLResponse)
-async def robots_txt():
-    """Serve robots.txt for search engines."""
-    return HTMLResponse(
-        content="""# https://www.robotstxt.org/robotstxt.html
-User-agent: *
-Allow: /
-Allow: /dashboard
-Allow: /static/
-Disallow: /api/
-Disallow: /signals
-
-Sitemap: https://exactbets.com/sitemap.xml
-""",
-        media_type="text/plain",
-    )
-
-
-@app.get("/sitemap.xml", response_class=HTMLResponse)
-async def sitemap_xml():
-    """Serve sitemap.xml for search engines."""
-    today = date.today().isoformat()
-    return HTMLResponse(
-        content=f"""<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>https://exactbets.com/</loc>
-    <lastmod>{today}</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>https://exactbets.com/dashboard</loc>
-    <lastmod>{today}</lastmod>
-    <changefreq>hourly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://exactbets.com/todays-card</loc>
-    <lastmod>{today}</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.7</priority>
-  </url>
-  <url>
-    <loc>https://exactbets.com/all-bets</loc>
-    <lastmod>{today}</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://exactbets.com/player-props</loc>
-    <lastmod>{today}</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.5</priority>
-  </url>
-  <url>
-    <loc>https://exactbets.com/privacy</loc>
-    <lastmod>{today}</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.3</priority>
-  </url>
-  <url>
-    <loc>https://exactbets.com/terms</loc>
-    <lastmod>{today}</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.3</priority>
-  </url>
-</urlset>
-""",
-        media_type="application/xml",
-    )
-
-
-# ── Run ────────────────────────────────────────────────────────────────────
-
+# ── Run ─────────────────────────────────────────────────────────────────
 
 def run(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
-    """Run the web server via uvicorn."""
     import uvicorn
-    uvicorn.run(
-        "web.app:app",
-        host=host,
-        port=port,
-        reload=reload,
-        log_level="info",
-    )
+    uvicorn.run("web.app:app", host=host, port=port, reload=reload, log_level="info")
 
 
 if __name__ == "__main__":

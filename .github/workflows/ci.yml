@@ -72,7 +72,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev,dashboard]"
 
-      - name: Run tests with coverage
+      - name: Run unit tests with coverage
         run: |
           pytest -v \
             --cov=src/betting_intel \
@@ -80,12 +80,49 @@ jobs:
             --cov-report=xml:reports/coverage/coverage.xml \
             --cov-report=term-missing \
             --cov-fail-under=40 \
-            -m "not slow"
+            -m "not slow and not integration"
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
           file: reports/coverage/coverage.xml
+          flags: unit
+          fail_ci_if_error: false
+
+  # ── Integration Tests (single config, runs once after matrix) ──────────
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,dashboard]"
+
+      - name: Run integration tests with coverage
+        run: |
+          pytest -v \
+            --tb=short \
+            --cov=src/betting_intel \
+            --cov-config=.coveragerc \
+            --cov-report=xml:reports/coverage/integration-coverage.xml \
+            -m "integration" \
+            tests/test_web_production_mock.py tests/test_scraper_level_mock.py
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: reports/coverage/integration-coverage.xml
+          flags: integration
           fail_ci_if_error: false
 
   # ── Type Check (Ubuntu) ────────────────────────────────────────────────

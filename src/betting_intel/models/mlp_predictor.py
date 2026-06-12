@@ -150,6 +150,10 @@ class MLPPredictor:
         Returns:
             self
         """
+        if len(X) == 0:
+            raise ValueError("Empty training data — X must have at least 1 sample")
+        if X.ndim != 2:
+            raise ValueError(f"Expected 2D array for X, got shape {X.shape}")
         if self.input_dim == 0:
             self.input_dim = X.shape[1]
 
@@ -181,11 +185,11 @@ class MLPPredictor:
             val_loader = DataLoader(val_dataset, batch_size=self.batch_size)
 
         # Build model
-        output_dim = 2 if self.is_classifier else 1
+        n_outputs = 2 if self.is_classifier else 1
         self.model = MLPNetwork(
             input_dim=self.input_dim,
             hidden_dims=self.hidden_dims,
-            output_dim=output_dim if not self.is_classifier else 2,
+            output_dim=n_outputs,
             dropout=self.dropout,
             predict_uncertainty=self.predict_uncertainty,
         ).to(self.device)
@@ -399,13 +403,17 @@ class MLPPredictor:
         """Negative log-likelihood loss for Gaussian distribution.
 
         Loss = 0.5 * log(2*pi*sigma^2) + 0.5 * (y - mu)^2 / sigma^2
+
+        Uses math.pi instead of torch.pi for backward compat with older torch.
         """
-        return (0.5 * torch.log(2 * torch.pi * sigma.pow(2))
-                + 0.5 * (y - mu.squeeze()).pow(2) / sigma.pow(2)).mean()
+        import math
+        log_var = 2 * torch.log(sigma.clamp(min=1e-6))
+        return (0.5 * math.log(2 * math.pi) + 0.5 * log_var
+                + 0.5 * (y - mu.squeeze()).pow(2) / (sigma.pow(2).clamp(min=1e-12))).mean()
 
     def get_params(self) -> Dict[str, Any]:
         """Get model parameters."""
-        return {
+        params = {
             "name": "MLPPredictor",
             "prediction_type": self.prediction_type,
             "hidden_dims": self.hidden_dims,
@@ -417,6 +425,12 @@ class MLPPredictor:
             "best_epoch": self.best_epoch,
             "predict_uncertainty": self.predict_uncertainty,
         }
+        # Expose margin scaler status if available (SpreadPredictorWithUncertainty)
+        if hasattr(self, '_margin_scaler_clipped'):
+            params['margin_scaler_clipped'] = self._margin_scaler_clipped
+            params['margin_scaler_raw_std'] = getattr(self, '_margin_scaler_raw_std', None)
+            params['margin_scaler_std'] = getattr(self, '_margin_scaler_std', None)
+        return params
 
 
 # ── Spread Predictor with Uncertainty (like NBA_AI L4) ──────────────────
@@ -470,9 +484,56 @@ class SpreadPredictorWithUncertainty(MLPPredictor):
             X_val: optional validation features
             y_val_margin: optional validation margins
         """
-        # Normalize margin target to stabilize training
-        self._margin_scaler_mean = float(np.mean(y_margin))
-        self._margin_scaler_std = float(np.std(y_margin).clip(min=1.0))
+        # ── Validate input ─────────────────────────────────────────────
+        if len(y_margin) == 0:
+            raise ValueError("y_margin is empty — need at least 1 sample to fit")
+
+        # Strip NaN / Inf before computing scaler stats.
+        # Single NaN in y_margin would make mean() return NaN, which
+        # would then propagate through normalization and break training.
+        y_clean = y_margin[~np.isnan(y_margin)]
+        y_clean = y_clean[~np.isinf(y_clean)]
+        if len(y_clean) == 0:
+            raise ValueError(
+                "All y_margin values are NaN or Inf — cannot compute scaler"
+            )
+
+        # ── Robust margin scaler ───────────────────────────────────────
+        # Goal: normalize margins to roughly [-3, +3] for stable NN training.
+        # The standard deviation of NBA margins is typically ~12, so
+        # dividing by 12 gives nice normalized values. But for degenerate
+        # cases (tiny datasets, constant margins, NaN-heavy), we must
+        # fall back gracefully instead of silently producing bad normalization.
+        raw_mean = float(np.mean(y_clean))
+        raw_std = float(np.std(y_clean, ddof=0))
+
+        # Determine a safe floor for the standard deviation to prevent
+        # division by zero or near-zero (which would explode values).
+        # The percentile-based floor adapts to the data distribution:
+        #   - Normal NBA margins (std ~12): floor never activates
+        #   - Nearly constant margins (std ~0.01): floor at ~10% of range
+        #   - Exactly constant margins (std = 0): floor at 0.5 points
+        data_range = float(np.max(y_clean) - np.min(y_clean)) if len(y_clean) >= 2 else 0.0
+        # Floor = max(10% of data range, 0.5 points, 1.0 as absolute min)
+        std_floor = max(data_range * 0.10, 0.5, 1.0)
+        # Also cap the floor so it doesn't exceed reasonable bounds
+        std_floor = min(std_floor, 50.0)
+
+        effective_std = max(raw_std, std_floor)
+        self._margin_scaler_mean = raw_mean
+        self._margin_scaler_std = effective_std
+
+        # Track whether clipping occurred for transparency
+        self._margin_scaler_clipped = raw_std < std_floor
+        self._margin_scaler_raw_std = raw_std
+
+        if self._margin_scaler_clipped and len(y_clean) > 1:
+            print(
+                f"  ⚠  Spread scaler: std {raw_std:.3f} is below floor {std_floor:.3f}, "
+                f"clipping for stability (range={data_range:.1f}, n={len(y_clean)})"
+            )
+
+        # ── Normalize ──────────────────────────────────────────────────
         y_norm = (y_margin - self._margin_scaler_mean) / self._margin_scaler_std
 
         # Normalize validation margin targets if provided
@@ -480,6 +541,7 @@ class SpreadPredictorWithUncertainty(MLPPredictor):
             y_val_norm = (y_val_margin - self._margin_scaler_mean) / self._margin_scaler_std
         else:
             y_val_norm = None
+
         super().fit(X, y_norm, X_val=X_val, y_val=y_val_norm)
         return self
 
@@ -516,8 +578,20 @@ class SpreadPredictorWithUncertainty(MLPPredictor):
 
         # Win probability from margin distribution
         # P(home wins) = P(margin > 0) = Phi(spread_mu / spread_sigma)
+        # Guard: if sigma is 0 (e.g., in degenerate cases), win prob is
+        # treated as deterministic (1.0 if mu > 0, 0.0 if mu < 0)
         from scipy import stats
-        win_prob = stats.norm.cdf(spread_mu / np.clip(spread_sigma, 1e-6, None))
+        z = np.divide(
+            spread_mu,
+            spread_sigma,
+            out=np.full_like(spread_mu, np.inf),
+            where=spread_sigma > 1e-6,
+        )
+        win_prob = np.where(
+            spread_sigma > 1e-6,
+            stats.norm.cdf(z),
+            np.where(spread_mu > 0, 1.0, 0.0),
+        )
 
         return {
             "spread_mu": spread_mu,
@@ -556,21 +630,28 @@ class EnhancedEnsemble:
     """
 
     def __init__(self, log_odds_averaging: bool = True,
-                 weight_decay: float = 0.95):
+                 weight_decay: float = 0.95,
+                 diversity_weight: float = 0.3):
         """
         Args:
             log_odds_averaging: If True, average win probabilities in
                 log-odds space (NBA_AI's approach). If False, arithmetic mean.
             weight_decay: Exponential decay factor for performance tracking.
                 0.95 = recent 20 predictions matter most.
+            diversity_weight: How much to penalize correlated models (0-1).
+                0 = no penalty (standard ensemble), 0.3 = moderate.
+                Higher values force model diversity. Keeps ensemble robust
+                when one model family dominates.
         """
         self.models: Dict[str, Any] = {}
         self.model_types: Dict[str, str] = {}  # "regression" or "classification"
         self.weights: Dict[str, float] = {}
         self.log_odds_averaging = log_odds_averaging
         self.weight_decay = weight_decay
+        self.diversity_weight = diversity_weight
         self._performance_history: Dict[str, List[float]] = {}
         self._n_predictions = 0
+        self._feature_contributions: Optional[Dict[str, np.ndarray]] = None  # Latest breakdown
 
     def add_model(self, name: str, model_obj: Any,
                   model_type: str = "regression",
@@ -619,7 +700,43 @@ class EnhancedEnsemble:
                 print(f"  ⚠  Ensemble: {name} failed: {e}")
                 all_preds[name] = np.zeros(X.shape[0]) if not self._n_predictions else None
 
-        # Weighted combination
+        # ── Store predictions for diversity tracking ──────────
+        valid_preds_for_history = {}
+        for name, preds in all_preds.items():
+            if preds is not None and len(preds) == X.shape[0]:
+                valid_preds_for_history[name] = preds
+
+        # ── Diversity-adjusted weights ─────────────────────────
+        # If models are making identical predictions, they shouldn't
+        # both get full weight. Detect correlation and downweight.
+        diversity_adjustments = {}
+        if self.diversity_weight > 0 and len(valid_preds_for_history) >= 2:
+            model_names = list(valid_preds_for_history.keys())
+            pred_matrix = np.column_stack([
+                valid_preds_for_history[n] for n in model_names
+            ])
+            if pred_matrix.shape[1] >= 2 and pred_matrix.shape[0] > 1:
+                with np.errstate(invalid='ignore', divide='ignore'):
+                    corr_matrix = np.corrcoef(pred_matrix.T)
+                # For each model: 1 - average correlation with others
+                # Higher correlation = lower diversity adjustment
+                for i, name in enumerate(model_names):
+                    other_corrs = [corr_matrix[i, j] for j in range(len(model_names))
+                                   if j != i and not np.isnan(corr_matrix[i, j])]
+                    if other_corrs:
+                        avg_corr = float(np.mean(other_corrs))
+                        # Diversity factor: 1 - diversity_weight * avg_corr
+                        # If avg_corr = 0.9 and diversity_weight = 0.3 → factor = 0.73
+                        # If avg_corr = 0.1 and diversity_weight = 0.3 → factor = 0.97
+                        diversity_adjustments[name] = 1.0 - self.diversity_weight * avg_corr
+                    else:
+                        diversity_adjustments[name] = 1.0
+
+        # ── Weighted combination ────────────────────────────────
+        # Apply diversity adjustments to weights so correlated models
+        # don't dominate the ensemble. The adjusted weights are then
+        # re-normalized so the ensemble prediction stays on the correct
+        # scale (prevents systematic under/over-prediction).
         n_samples = X.shape[0]
         ensemble_pred = np.zeros(n_samples, dtype=float)
 
@@ -628,15 +745,30 @@ class EnhancedEnsemble:
         if not valid_models:
             return ensemble_pred
 
-        for name, preds in valid_models:
+        # Compute adjusted weights with diversity penalty
+        adj_weights = {}
+        total_adj = 0.0
+        for name, _ in valid_models:
             weight = norm_weights.get(name, 0.0)
+            div_factor = diversity_adjustments.get(name, 1.0)
+            adj_weights[name] = weight * div_factor
+            total_adj += adj_weights[name]
+
+        # Re-normalize so weights sum to 1.0 (prevents scale distortion)
+        if total_adj > 0:
+            for name in adj_weights:
+                adj_weights[name] /= total_adj
+
+        for name, preds in valid_models:
+            adjusted_weight = adj_weights.get(name, 0.0)
+
             if self.model_types.get(name) == "classification" and self.log_odds_averaging:
                 # Log-odds averaging (NBA_AI's approach)
                 eps = 1e-8
                 log_odds = np.log(np.clip(preds, eps, 1 - eps) / np.clip(1 - preds, eps, 1 - eps))
-                ensemble_pred += weight * log_odds
+                ensemble_pred += adjusted_weight * log_odds
             else:
-                ensemble_pred += weight * preds
+                ensemble_pred += adjusted_weight * preds
 
         # Convert back from log-odds if needed
         has_classification = any(

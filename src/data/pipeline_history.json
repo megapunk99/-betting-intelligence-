@@ -259,5 +259,315 @@
       "duration": 13.7,
       "n_models": 411
     }
+  },
+  {
+    "run_id": "live_20260606_181448_9",
+    "mode": "live",
+    "season": null,
+    "status": "running",
+    "started_at": "2026-06-06T18:14:48.497403",
+    "completed_at": "",
+    "duration_seconds": 0.0,
+    "games_processed": 0,
+    "predictions_generated": 0,
+    "errors": [],
+    "warnings": [],
+    "stages": {
+      "data_loading": {
+        "status": "ok",
+        "duration": 0.12,
+        "rows": 360
+      },
+      "train_predict": {
+        "status": "ok",
+        "duration": 5.77,
+        "n_predictions": 360
+      }
+    },
+    "metrics": {}
+  },
+  {
+    "run_id": "historical_20260606_184146_10",
+    "mode": "historical",
+    "season": "Current",
+    "status": "success",
+    "started_at": "2026-06-06T18:41:46.778725",
+    "completed_at": "2026-06-06T18:41:56.952044",
+    "duration_seconds": 10.173319816589355,
+    "games_processed": 143,
+    "predictions_generated": 360,
+    "errors": [],
+    "warnings": [],
+    "stages": {
+      "data_loading": {
+        "status": "ok",
+        "duration": 0.13,
+        "rows": 360
+      },
+      "train_predict": {
+        "status": "ok",
+        "duration": 5.46,
+        "n_predictions": 360
+      }
+    },
+    "metrics": {
+      "duration": 10.2,
+      "n_models": 0
+    }
+  },
+  {
+    "run_id": "historical_20260606_184252_11",
+    "mode": "historical",
+    "season": "Current",
+    "status": "success",
+    "started_at": "2026-06-06T18:42:52.836772",
+    "completed_at": "2026-06-06T18:43:02.898429",
+    "duration_seconds": 10.061657190322876,
+    "games_processed": 143,
+    "predictions_generated": 360,
+    "errors": [],
+    "warnings": [],
+    "stages": {
+      "data_loading": {
+        "status": "ok",
+        "duration": 0.15,
+        "rows": 360
+      },
+      "train_predict": {
+        "status": "ok",
+        "duration": 5.35,
+        "n_predictions": 360
+      }
+    },
+    "metrics": {
+      "duration": 10.2,
+      "n_models": 0
+    }
+  },
+  {
+    "run_id": "historical_20260606_184355_12",
+    "mode": "historical",
+    "season": "Current",
+    "status": "success",
+    "started_at": "2026-06-06T18:43:55.185866",
+    "completed_at": "2026-06-06T18:44:05.365122",
+    "duration_seconds": 10.179256200790405,
+    "games_processed": 143,
+    "predictions_generated": 360,
+    "errors": [],
+    "warnings": [],
+    "stages": {
+      "data_loading": {
+        "status": "ok",
+        "duration": 0.16,
+        "rows": 360
+      },
+      "train_predict": {
+        "status": "ok",
+        "duration": 5.31,
+        "n_predictions": 360
+      }
+    },
+    "metrics": {
+      "duration": 10.3,
+      "n_models": 0
+    }
+  },
+  {
+    "run_id": "historical_20260606_184435_13",
+    "mode": "historical",
+    "season": "Current",
+    "status": "success",
+    "started_at": "2026-06-06T18:44:35.122683",
+    "completed_at": "2026-06-06T18:44:45.802755",
+    "duration_seconds": 10.680072784423828,
+    "games_processed": 143,
+    "predictions_generated": 360,
+    "errors": [],
+    "warnings": [],
+    "stages": {
+      "data_loading": {
+        "status": "ok",
+        "duration": 0.14,
+        "rows": 360
+      },
+      "train_predict": {
+        "status": "ok",
+        "duration": 5.42,
+        "n_predictions": 360
+      }
+    },
+    "metrics": {
+      "duration": 10.7,
+      "n_models": 0
+    }
+  },
+  {
+    "run_id": "historical_20260606_184530_14",
+    "mode": "historical",
+    "season": "Current",
+    "status": "success",
+    "started_at": "2026-06-06T18:45:30.093508",
+    "completed_at": "2026-06-06T18:45:40.024476",
+    "duration_seconds": 9.930968761444092,
+    "games_processed": 143,
+    "predictions_generated": 360,
+    "errors": [],
+    "warnings": [],
+    "stages": {
+      "data_loading": {
+        "status": "ok",
+        "duration": 0.15,
+        "rows": 360
+      },
+      "train_predict": {
+        "status": "ok",
+        "duration": 5.31,
+        "n_predictions": 360
+      }
+    },
+    "metrics": {
+      "duration": 10.0,
+      "n_models": 0
+    }
+  },
+  {
+    "run_id": "historical_20260606_185451_15",
+    "mode": "historical",
+    "season": "Current",
+    "status": "success",
+    "started_at": "2026-06-06T18:54:51.273848",
+    "completed_at": "2026-06-06T18:55:01.077144",
+    "duration_seconds": 9.8032968044281,
+    "games_processed": 143,
+    "predictions_generated": 360,
+    "errors": [],
+    "warnings": [],
+    "stages": {
+      "data_loading": {
+        "status": "ok",
+        "duration": 0.12,
+        "rows": 360
+      },
+      "train_predict": {
+        "status": "ok",
+        "duration": 5.44,
+        "n_predictions": 360
+      }
+    },
+    "metrics": {
+      "duration": 9.8,
+      "n_models": 0
+    }
+  },
+  {
+    "run_id": "live_20260606_190016_16",
+    "mode": "live",
+    "season": "Current",
+    "status": "running",
+    "started_at": "2026-06-06T19:00:16.417699",
+    "completed_at": "",
+    "duration_seconds": 0.0,
+    "games_processed": 0,
+    "predictions_generated": 0,
+    "errors": [],
+    "warnings": [],
+    "stages": {
+      "data_loading": {
+        "status": "ok",
+        "duration": 1.19,
+        "rows": 360
+      },
+      "train_predict": {
+        "status": "ok",
+        "duration": 8.92,
+        "n_predictions": 360
+      }
+    },
+    "metrics": {}
+  },
+  {
+    "run_id": "live_20260606_190531_17",
+    "mode": "live",
+    "season": "Current",
+    "status": "running",
+    "started_at": "2026-06-06T19:05:31.182467",
+    "completed_at": "",
+    "duration_seconds": 0.0,
+    "games_processed": 0,
+    "predictions_generated": 0,
+    "errors": [],
+    "warnings": [],
+    "stages": {
+      "data_loading": {
+        "status": "ok",
+        "duration": 1.27,
+        "rows": 360
+      },
+      "train_predict": {
+        "status": "ok",
+        "duration": 5.44,
+        "n_predictions": 360
+      }
+    },
+    "metrics": {}
+  },
+  {
+    "run_id": "live_20260606_191033_18",
+    "mode": "live",
+    "season": "Current",
+    "status": "success",
+    "started_at": "2026-06-06T19:10:33.344097",
+    "completed_at": "2026-06-06T19:38:45.551839",
+    "duration_seconds": 1692.2077429294586,
+    "games_processed": 143,
+    "predictions_generated": 360,
+    "errors": [],
+    "warnings": [],
+    "stages": {
+      "data_loading": {
+        "status": "ok",
+        "duration": 1.97,
+        "rows": 360
+      },
+      "train_predict": {
+        "status": "ok",
+        "duration": 5.91,
+        "n_predictions": 360
+      }
+    },
+    "metrics": {
+      "duration": 1692.2,
+      "n_models": 411
+    }
+  },
+  {
+    "run_id": "live_20260606_194513_19",
+    "mode": "live",
+    "season": "Current",
+    "status": "success",
+    "started_at": "2026-06-06T19:45:13.254906",
+    "completed_at": "2026-06-06T20:15:43.438701",
+    "duration_seconds": 1830.1837956905365,
+    "games_processed": 142,
+    "predictions_generated": 360,
+    "errors": [],
+    "warnings": [],
+    "stages": {
+      "data_loading": {
+        "status": "ok",
+        "duration": 0.13,
+        "rows": 360
+      },
+      "train_predict": {
+        "status": "ok",
+        "duration": 5.4,
+        "n_predictions": 360
+      }
+    },
+    "metrics": {
+      "duration": 1830.2,
+      "n_models": 411
+    }
   }
 ]

@@ -199,27 +199,9 @@ def phase_clear_engine_caches():
 
 
 def phase_regenerate_engine() -> bool:
-    """Phase 5: Regenerate recommendation engine with fresh model data."""
-    logger.info(f"\n{CYAN}[5/5] Regenerating recommendation engine...{RESET}")
-
-    try:
-        from betting_intel.recommendations.engine import RecommendationEngine
-
-        start = time.time()
-        engine = RecommendationEngine(seed=42)
-        summary = engine.get_summary()
-        elapsed = time.time() - start
-
-        logger.info(f"  {GREEN}Engine regenerated in {elapsed:.1f}s{RESET}")
-        logger.info(f"  Games: {summary.get('games_available', 0)}")
-        logger.info(f"  Bets:  {summary.get('total_bets', 0)}")
-        logger.info(f"  Clear: {summary.get('clear_picks', 0)}")
-        return True
-    except Exception as e:
-        logger.error(f"  {RED}Engine regeneration failed: {e}{RESET}")
-        import traceback
-        traceback.print_exc()
-        return False
+    """Phase 5: Regenerate recommendation engine (stub — RecommendationEngine deleted)."""
+    logger.info(f"\n{CYAN}[5/5] Engine regeneration skipped (RecommendationEngine was deleted){RESET}")
+    return True
 
 
 def main():

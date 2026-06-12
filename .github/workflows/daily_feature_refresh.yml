@@ -6,6 +6,10 @@ on:
     - cron: '0 6 * * *'
   workflow_dispatch:  # Allow manual trigger
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   refresh-features:
     runs-on: ubuntu-latest
@@ -17,53 +21,81 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-
-      - name: Cache pip dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+          python-version: '3.11'
+          cache: "pip"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e .
 
+      # Restore NBA database from seed workflow cache so the feature
+      # refresh and model retraining can load real game data.
+      - name: Restore NBA database cache
+        uses: actions/cache@v4
+        with:
+          path: data/nba_data.db
+          key: nba-data-test-${{ github.sha }}
+          restore-keys: |
+            nba-data-
+
+      - name: Check database has game data
+        id: db-check
+        run: |
+          python tools/check_db.py --min-rows 50 && echo "has_data=true" >> "$GITHUB_OUTPUT" || echo "has_data=false" >> "$GITHUB_OUTPUT"
+
       - name: Run feature refresh
+        if: steps.db-check.outputs.has_data == 'true'
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
           NBA_API_KEY: ${{ secrets.NBA_API_KEY }}
         run: |
-          python -c "
-          import sys; sys.path.insert(0, 'src')
-          from betting_intel.features.builder import FeatureBuilder
-          from betting_intel.data.loader import NBADataLoader
-          from betting_intel.config import DB_PATH
-          import warnings; warnings.filterwarnings('ignore')
+          python tools/daily_refresh.py --mode build-features
 
-          loader = NBADataLoader()
-          raw_df = loader.load_game_logs()
-
-          builder = FeatureBuilder(DB_PATH)
-          version = builder.build_all(raw_df, description='Daily auto-refresh')
-          print(f'Features built: {version}')
-          "
+      - name: Skip — no NBA database available
+        if: steps.db-check.outputs.has_data != 'true'
+        run: |
+          echo "::notice::Feature refresh skipped — NBA database not available. Run ci-seed-database.yml first or trigger after the nightly seed."
 
       - name: Run model retraining
+        if: steps.db-check.outputs.has_data == 'true'
         run: |
-          python tools/retrain_models.py || echo "Retraining script not found, skipping"
+          python tools/retrain_all.py --mode weekly
+
+      - name: Skip model retraining — no NBA database available
+        if: steps.db-check.outputs.has_data != 'true'
+        run: |
+          echo "::notice::Model retraining skipped — NBA database not available."
+
+      - name: Resolve predictions against actual results
+        if: steps.db-check.outputs.has_data == 'true'
+        run: |
+          betting-intel analytics resolve
+
+      - name: Check for underperforming strategies
+        if: steps.db-check.outputs.has_data == 'true'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_ALERT_TO: ${{ secrets.SMTP_ALERT_TO }}
+        run: |
+          betting-intel analytics check-alerts
+
+      - name: Post P&L summary to workflow run page
+        if: steps.db-check.outputs.has_data == 'true'
+        run: |
+          betting-intel analytics summary >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Skip analytics — no NBA database available
+        if: steps.db-check.outputs.has_data != 'true'
+        run: |
+          echo "::notice::Analytics resolve skipped — NBA database not available."
 
       - name: Run validation checks
         run: |
-          python -c "
-          import sys; sys.path.insert(0, 'src')
-          from betting_intel.validation.cross_validation import TimeSeriesCrossValidator
-          from betting_intel.validation.calibration import ProbabilityCalibrator
-          print('Validation modules loaded successfully')
-          "
+          python tools/daily_refresh.py --mode validate-checks
 
       - name: Upload model artifacts
         uses: actions/upload-artifact@v4

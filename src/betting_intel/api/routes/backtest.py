@@ -15,8 +15,7 @@ from betting_intel.api.schemas import (
     EdgeSignalSchema,
     BankrollResponse,
 )
-from betting_intel.backtesting.engine import WalkForwardEngine
-from betting_intel.backtesting.metrics import BacktestMetrics
+# WalkForwardEngine and BacktestMetrics removed — backtesting package was deleted
 
 router = APIRouter(prefix="/analyze", tags=["Analysis"])
 

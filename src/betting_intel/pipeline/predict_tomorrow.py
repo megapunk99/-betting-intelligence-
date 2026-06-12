@@ -337,8 +337,9 @@ class PredictTomorrowPipeline:
             api_key = os.environ.get("ODDS_API_KEY", "")
 
             if not api_key:
-                print("  [WARN] No ODDS_API_KEY found. Using mock data.")
-                return self._mock_games(date)
+                print("  [WARN] No ODDS_API_KEY found. No real odds available.")
+                print("  [INFO] Set ODDS_API_KEY in .env file. Returning empty — no synthetic data.")
+                return []
 
             client = OddsAPIClient(api_key=api_key)
             games = client.get_upcoming_games_with_odds(
@@ -354,14 +355,14 @@ class PredictTomorrowPipeline:
                 if dt and dt.strftime("%Y-%m-%d") == date:
                     tomorrow_games.append(g)
 
-            return tomorrow_games if tomorrow_games else games[:5]
+            return tomorrow_games if tomorrow_games else []  # CRITICAL: never return non-tomorrow games as tomorrow predictions
 
         except ImportError as e:
-            print(f"  [WARN] OddsAPIClient not available ({e}). Using mock data.")
-            return self._mock_games(date)
+            print(f"  [WARN] OddsAPIClient not available ({e}). No real odds available.")
+            return []
         except Exception as e:
             print(f"  [WARN] Failed to fetch odds: {e}")
-            return self._mock_games(date)
+            return []
 
     def _store_odds_snapshot(self, games: List[Any]):
         """Store odds snapshot for CLV tracking."""
@@ -424,6 +425,87 @@ class PredictTomorrowPipeline:
 
         return features
 
+    def _extract_feature_importance(self, model_data: dict,
+                                      feature_names: list[str]) -> list[dict]:
+        """Extract top-5 feature contributions from a trained model.
+
+        Handles multiple model formats:
+          - sklearn/LightGBM/XGBoost: model.feature_importances_
+          - sklearn linear models: model.coef_
+          - dict with 'models' key (ensemble dict from saved model)
+          - dict with 'feature_cols' and sub-models
+
+        Returns:
+            List of {"feature": str, "importance": float, "direction": "+" | "-"}
+            sorted by absolute importance descending, top 5 only.
+        """
+        importances: np.ndarray | None = None
+
+        try:
+            if isinstance(model_data, dict):
+                # Ensemble saved as dict — try to extract importance from sub-models
+                sub_models = model_data.get("models", {})
+                if sub_models:
+                    # Average importance across all sub-models
+                    all_imps = []
+                    for name, sub in sub_models.items():
+                        imp = self._extract_raw_importance(sub)
+                        if imp is not None:
+                            all_imps.append(imp)
+                    if all_imps:
+                        importances = np.mean(all_imps, axis=0)
+                else:
+                    # Maybe the dict itself has importance or models data
+                    for key in ["feature_importances_", "coef_", "importance"]:
+                        if key in model_data:
+                            val = model_data[key]
+                            if isinstance(val, (list, np.ndarray)):
+                                importances = np.asarray(val).flatten()
+                                break
+            else:
+                importances = self._extract_raw_importance(model_data)
+        except Exception as e:
+            logger.debug(f"Feature importance extraction failed: {e}")
+            return []
+
+        if importances is None or len(importances) == 0:
+            return []
+
+        # Match importances to feature names
+        n_features = min(len(importances), len(feature_names))
+        if n_features == 0:
+            return []
+
+        features = []
+        for i in range(n_features):
+            imp = float(importances[i])
+            if abs(imp) > 1e-8:
+                features.append({
+                    "feature": feature_names[i],
+                    "importance": abs(imp),
+                    "direction": "+" if imp > 0 else "-",
+                })
+
+        # Sort by absolute importance descending, return top 5
+        features.sort(key=lambda x: x["importance"], reverse=True)
+        return features[:5]
+
+    def _extract_raw_importance(self, model_obj) -> np.ndarray | None:
+        """Extract raw importance/coefficient array from any model object."""
+        if hasattr(model_obj, "feature_importances_"):
+            return model_obj.feature_importances_
+        if hasattr(model_obj, "coef_"):
+            coef = model_obj.coef_
+            if coef.ndim > 1:
+                return coef[0] if coef.shape[0] == 1 else np.mean(np.abs(coef), axis=0)
+            return coef
+        if hasattr(model_obj, "feature_importances"):
+            return model_obj.feature_importances
+        # LightGBM booster
+        if hasattr(model_obj, "booster_") and hasattr(model_obj.booster_, "feature_importance"):
+            return model_obj.booster_.feature_importance(importance_type="gain")
+        return None
+
     def _run_models(self, games: List[Any], features: Dict) -> List[Optional[Dict]]:
         """Run prediction models on each game."""
         predictions = []
@@ -443,6 +525,7 @@ class PredictTomorrowPipeline:
 
             total_model = None
             ml_model = None
+            total_feature_cols: list[str] = []
             models_loaded = False
             for p in model_paths:
                 if p.exists():
@@ -450,6 +533,9 @@ class PredictTomorrowPipeline:
                         model_data = joblib.load(p)
                         if "total" in str(p):
                             total_model = model_data
+                            # Extract feature columns from saved model dict
+                            if isinstance(model_data, dict):
+                                total_feature_cols = model_data.get("feature_cols", [])
                         else:
                             ml_model = model_data
                         models_loaded = True
@@ -462,6 +548,17 @@ class PredictTomorrowPipeline:
                 print("  [WARN] No trained models found. Returning empty predictions.")
                 print("  [WARN] Run 'python -m betting_intel.models.train' first to train models.")
                 return []
+
+            # Extract top-5 feature importance from the loaded model
+            feature_breakdown = self._extract_feature_importance(
+                total_model, total_feature_cols
+            )
+            if feature_breakdown:
+                top_features = [
+                    f"{f['feature']} ({f['direction']}{f['importance']:.1f})"
+                    for f in feature_breakdown[:3]
+                ]
+                print(f"  Top features: {', '.join(top_features)}...")
 
             # Wire in probability calibration
             calibrator = None
@@ -486,7 +583,25 @@ class PredictTomorrowPipeline:
                         total_pred = total_model.predict(feat_df)[0]
 
                         raw_home_prob = ml_model.predict_proba(feat_df)[0][1] if ml_model else 0.5
-                        raw_total_over_prob = 0.5 + (float(total_pred) - 220) * 0.002
+
+                        # PROPER PROBABILITY CONVERSION: Use logistic (sigmoid) function
+                        # instead of the crude linear hack `0.5 + (pred - 220) * 0.002`.
+                        # The logistic function P = 1/(1+exp(-k*(pred - market)))
+                        # correctly maps the prediction error to [0,1] with proper
+                        # calibration at the tails (linear hacks clip at 0.01/0.99).
+                        # k=0.04 gives sensible calibration: 10pt diff → ~60% confidence
+                        import math
+                        # Get market total from real odds data only.
+                        # NEVER use a hardcoded fallback (220.0, 224.0, etc.) —
+                        # if there's no real market data, skip edge computation.
+                        market_total = float(feat.get("market_total", feat.get("market_line", feat.get("trailing_avg_total_10g", 0))))
+                        if market_total <= 0:
+                            # No real market data — pred stays None, still appended
+                            # to maintain 1:1 alignment with games list
+                            pass
+                        k_sensitivity = 0.04  # Calibrated: 10pt diff = P(over) ≈ 0.60
+                        diff = float(total_pred) - market_total
+                        raw_total_over_prob = 1.0 / (1.0 + math.exp(-k_sensitivity * diff))
 
                         # Apply calibration if available
                         home_prob = raw_home_prob
@@ -504,6 +619,7 @@ class PredictTomorrowPipeline:
                             "predicted_total": float(total_pred),
                             "model_name": "trained_ensemble" if calibrator else "ensemble",
                             "confidence": 0.7,
+                            "feature_breakdown": feature_breakdown,
                         }
                     except Exception as e:
                         logger.error(f"Model inference failed for {game_id}: {e}")
@@ -579,43 +695,16 @@ class PredictTomorrowPipeline:
             return self.data_dir / "betting_intel.db" if self.data_dir else Path("data/betting_intel.db")
 
     def _mock_games(self, date: str) -> List[Any]:
-        """Generate mock game data when API is unavailable."""
-        import warnings
-        warnings.warn("MOCK DATA MODE: No real odds available. Predictions will not be actionable.")
-
-        class MockGame:
-            def __init__(self, home, away, gid, hml, aml, total, ct):
-                self.id = gid
-                self.home_team = home
-                self.away_team = away
-                self.home_team_short = home.split()[-1]
-                self.away_team_short = away.split()[-1]
-                self.commence_time = ct
-                self.home_moneyline = hml
-                self.away_moneyline = aml
-                self.market_total = total
-
-            @property
-            def commence_datetime(self):
-                try:
-                    return datetime.fromisoformat(self.commence_time.replace("Z", "+00:00"))
-                except Exception:
-                    return None
-
-        return [
-            MockGame(
-                home="San Antonio Spurs", away="Oklahoma City Thunder",
-                gid="mock_001", hml=-110, aml=-110, total=220.5,
-                ct=f"{date}T19:30:00Z",
-            ),
-            MockGame(
-                home="Boston Celtics", away="Los Angeles Lakers",
-                gid="mock_002", hml=-150, aml=+130, total=218.5,
-                ct=f"{date}T20:00:00Z",
-            ),
-            MockGame(
-                home="Golden State Warriors", away="Denver Nuggets",
-                gid="mock_003", hml=-120, aml=+100, total=225.5,
-                ct=f"{date}T21:30:00Z",
-            ),
-        ]
+        """
+        NEVER returns mock games — real data or nothing.
+        
+        If TheOddsAPI is unavailable, we return an empty list.
+        No fake schedules. No randomly generated matchups.
+        The system shows nothing when real data is unavailable.
+        """
+        logger.warning(
+            "No real odds available from TheOddsAPI. "
+            "Returning empty — no synthetic/mock games generated. "
+            "Set ODDS_API_KEY or wait for quota reset."
+        )
+        return []

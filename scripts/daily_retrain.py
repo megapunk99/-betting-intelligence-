@@ -163,44 +163,10 @@ def clear_engine_caches():
 
 
 def regenerate_engine():
-    """Load the RecommendationEngine once to regenerate all caches with fresh data.
-
-    The engine now loads predictions from multiple signal sources in priority order:
-      1. Pipeline predictions from models/saved/pipeline_predictions.pkl
-      2. Pre-trained EnhancedEnsemble from models/saved/engine_ensemble.joblib
-      3. Real market odds from TheOddsAPI
-      4. Internal momentum model (fallback)
-
-    After regeneration, the engine caches its results so subsequent calls are instant.
-    """
-    logger.info(f"\n{CYAN}[3/4] Regenerating engine with fresh data...{RESET}")
-
-    try:
-        from betting_intel.recommendations.engine import RecommendationEngine
-
-        logger.info(f"  Loading engine and generating bets...")
-        start = time.time()
-
-        engine = RecommendationEngine(seed=42)
-        summary = engine.get_summary()
-
-        elapsed = time.time() - start
-
-        logger.info(f"  Engine regenerated in {elapsed:.1f}s")
-        logger.info(f"  Games available: {summary.get('games_available', 0)}")
-        logger.info(f"  Total bets:      {summary.get('total_bets', 0)}")
-        logger.info(f"  Clear picks:     {summary.get('clear_picks', 0)}")
-
-        # Log by type
-        for bet_type, count in summary.get("by_type", {}).items():
-            logger.info(f"    {bet_type}: {count} bets")
-
-        return True
-    except Exception as e:
-        logger.error(f"  {RED}Engine regeneration failed: {e}{RESET}")
-        import traceback
-        traceback.print_exc()
-        return False
+    """Regenerate engine caches (stub — RecommendationEngine deleted)."""
+    logger.info(f"\n{CYAN}[3/4] Engine regeneration skipped (RecommendationEngine was deleted){RESET}")
+    logger.info(f"  Recreate betting_intel/recommendations/engine.py to re-enable.")
+    return True
 
 
 def generate_betting_card() -> bool:

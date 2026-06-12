@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Future Predictions — Betting Intelligence</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/future-predictions.css">
+
+</head>
+<body>
+  <!-- Animated Background -->
+  <div class="bg-grid"></div>
+  <div class="bg-orbital"></div>
+
+  <!-- Navigation -->
+  <nav class="nav-glass">
+    <div class="nav-inner">
+      <a href="/" class="logo">
+        <svg class="logo-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M6 10h8M10 6v8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <circle cx="10" cy="10" r="3" fill="currentColor"/>
+        </svg>
+        <span>Betting Intel</span>
+      </a>
+      <div class="nav-links">
+        <a href="/" class="nav-link">Dashboard</a>
+        <a href="/future-predictions" class="nav-link active">Predictions</a>
+        <div class="nav-status">
+          <span class="status-dot {{ 'live' if n_predictions > 0 }}"></span>
+          <span class="status-text">{{ n_predictions }} games</span>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    <!-- Hero Section -->
+    <section class="hero-section">
+      <div class="hero-bg-orb"></div>
+      <div class="hero-content">
+        <div class="hero-badge">
+          <span class="badge-dot"></span>
+          AI-POWERED PREDICTIONS
+        </div>
+        <h1 class="hero-title">
+          Tomorrow's<br>
+          <span class="gradient-text">Game Forecast</span>
+        </h1>
+        <p class="hero-subtitle">
+          Machine learning analysis of team statistics, pace, and matchups.
+          Projections for every quarter and half.
+        </p>
+        <div class="hero-stats">
+          <div class="hero-stat">
+            <span class="hero-stat-value" data-count="{{ n_predictions }}">{{ n_predictions }}</span>
+            <span class="hero-stat-label">Games Analyzed</span>
+          </div>
+          <div class="hero-stat">
+            <span class="hero-stat-value">4</span>
+            <span class="hero-stat-label">Quarter Breakdown</span>
+          </div>
+          <div class="hero-stat">
+            <span class="hero-stat-value">2</span>
+            <span class="hero-stat-label">Half Projections</span>
+          </div>
+          <div class="hero-stat">
+            <span class="hero-stat-value stat-freshness" id="gen-time">{{ generated_at[:16] }}</span>
+            <span class="hero-stat-label">Last Updated</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Prediction Cards -->
+    {% if predictions %}
+    <div class="cards-grid">
+      {% for pred in predictions %}
+      {% set direction = pred.get('direction', 'under') %}
+      {% set edge_pct = pred.get('edge_pct', 0) %}
+      {% set edge_abs = (edge_pct * 100)|abs %}
+      {% set bar_pct = (edge_abs * 3) if (edge_abs * 3) < 100 else 100 %}
+      {% set is_best = pred.get('best_quarter_edge', 0) > 2.0 %}
+      <div class="pred-card {{ 'best-card' if is_best }}" style="--i: {{ loop.index0 }};">
+        <!-- Card Glow -->
+        <div class="card-glow"></div>
+
+        <!-- Card Header -->
+        <div class="card-header">
+          <div class="card-league-badge {{ pred.get('league', 'NBA').lower() }}">
+            {{ pred.get('league', 'NBA') }}
+          </div>
+          <div class="card-date">{{ pred.get('game_date', '') }}</div>
+          <div class="card-edge-badge {{ direction }}">
+            <span class="edge-arrow">{{ '▲' if direction == 'over' else '▼' }}</span>
+            <span class="edge-label">{{ direction|upper }}</span>
+            <span class="edge-value">{{ "{:+.1%}".format(edge_pct) }}</span>
+          </div>
+        </div>
+
+        <!-- Teams & Prediction -->
+        <div class="card-body">
+          <div class="teams-section">
+            <div class="team-row away">
+              <span class="team-name">{{ pred.get('away_team', '') }}</span>
+              <span class="team-tag">{{ pred.get('away_team_short', '') }}</span>
+            </div>
+            <div class="matchup-vs">
+              <span class="vs-line"></span>
+              <span class="vs-text">@</span>
+              <span class="vs-line"></span>
+            </div>
+            <div class="team-row home">
+              <span class="team-name">{{ pred.get('home_team', '') }}</span>
+              <span class="team-tag">{{ pred.get('home_team_short', '') }}</span>
+            </div>
+          </div>
+
+          <div class="prediction-display">
+            <div class="prediction-main">
+              <span class="prediction-value">{{ "%.0f"|format(pred.get('predicted_total', 0)) }}</span>
+              <span class="prediction-unit">pts</span>
+            </div>
+            <div class="prediction-market">
+              Market: <strong>{{ "%.0f"|format(pred.get('market_total', 0)) }}</strong>
+            </div>
+            <div class="prediction-bar">
+              <div class="pred-bar-track">
+                <div class="pred-bar-fill {{ direction }}" style="width: {{ bar_pct }}%;"></div>
+              </div>
+              <span class="pred-bar-label">{{ "%.0f"|format(bar_pct) }}% confidence</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quarter Breakdown -->
+        <div class="quarters-section">
+          <div class="section-label">Quarter Projections</div>
+          <div class="quarters-grid">
+            {% for q in ['q1', 'q2', 'q3', 'q4'] %}
+            {% set q_total = pred.get(q ~ '_total', 0) %}
+            {% set q_home = pred.get(q ~ '_home', 0) %}
+            {% set q_away = pred.get(q ~ '_away', 0) %}
+            {% set q_edge = pred.get(q ~ '_edge', 0) %}
+            {% set max_q = 50 %}
+            <div class="quarter-cell">
+              <div class="quarter-label">{{ q|upper }}</div>
+              <div class="quarter-bars">
+                <div class="q-bar away" style="height: {{ (q_away / max_q * 80)|round }}%;">
+                  <span>{{ "%.0f"|format(q_away) }}</span>
+                </div>
+                <div class="q-bar home" style="height: {{ (q_home / max_q * 80)|round }}%;">
+                  <span>{{ "%.0f"|format(q_home) }}</span>
+                </div>
+              </div>
+              <div class="quarter-total">{{ "%.0f"|format(q_total) }}</div>
+              <div class="quarter-edge {{ 'pos' if q_edge > 0 else 'neg' }}">
+                {{ "{:+.1%}".format(q_edge) }}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <!-- Half Breakdown -->
+        <div class="halves-section">
+          <div class="section-label">Half Projections</div>
+          <div class="halves-grid">
+            {% for h, label in [('h1', '1st Half'), ('h2', '2nd Half')] %}
+            {% set h_total = pred.get(h ~ '_total', 0) %}
+            {% set h_home = pred.get(h ~ '_home', 0) %}
+            {% set h_away = pred.get(h ~ '_away', 0) %}
+            {% set h_edge = pred.get(h ~ '_edge', 0) %}
+            <div class="half-cell">
+              <div class="half-label">{{ label }}</div>
+              <div class="half-detail-row">
+                <span class="half-team away">{{ "%.0f"|format(h_away) }}</span>
+                <span class="half-dash">—</span>
+                <span class="half-team home">{{ "%.0f"|format(h_home) }}</span>
+              </div>
+              <div class="half-total">{{ "%.0f"|format(h_total) }} <span class="half-mkt">mkt {{ "%.0f"|format(pred.get(h ~ '_market', 0)) }}</span></div>
+              <div class="half-edge {{ 'pos' if h_edge > 0 else 'neg' }}">{{ "{:+.1%}".format(h_edge) }}</div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <!-- Card Footer -->
+        <div class="card-footer">
+          <div class="footer-item">
+            <span class="footer-label">Confidence</span>
+            <span class="footer-value conf-{{ pred.get('confidence', 'low') }}">{{ pred.get('confidence', 'low')|capitalize }}</span>
+          </div>
+          <div class="footer-item">
+            <span class="footer-label">Score</span>
+            <span class="footer-value">{{ "%.0f"|format(pred.get('home_score', 0)) }} - {{ "%.0f"|format(pred.get('away_score', 0)) }}</span>
+          </div>
+          <div class="footer-item best-bet-item">
+            <span class="footer-label">Best Bet</span>
+            <span class="footer-value best-bet-value">
+              {{ pred.get('best_quarter', 'FULL') }}
+              <span class="best-direction {{ pred.get('best_quarter_direction', '') }}">{{ pred.get('best_quarter_direction', '')|upper }}</span>
+            </span>
+            <span class="footer-sub">{{ "{:+.1f}%".format(pred.get('best_quarter_edge', 0)) }}</span>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <!-- Empty State -->
+    <div class="empty-state premium-empty">
+      <div class="empty-glow"></div>
+      <div class="empty-icon">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 6v6l4 2"/>
+        </svg>
+      </div>
+      <h3>Generating Predictions</h3>
+      <p>AI analysis in progress — predictions will appear here once data is loaded.</p>
+      <div class="empty-loading">
+        <div class="loading-dot"></div>
+        <div class="loading-dot"></div>
+        <div class="loading-dot"></div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Methodology Section -->
+    <section class="methodology">
+      <h2 class="section-title">How Predictions Are Generated</h2>
+      <div class="method-grid">
+        <div class="method-card">
+          <div class="method-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 4-6"/>
+            </svg>
+          </div>
+          <h4>Statistical Baseline</h4>
+          <p>Every prediction starts with each team's average points scored. This anchors all projections in real historical performance.</p>
+        </div>
+        <div class="method-card">
+          <div class="method-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4"/>
+            </svg>
+          </div>
+          <h4>Team Strength Adjustment</h4>
+          <p>Home court advantage and team strength differentials are factored in to produce realistic edges against the market.</p>
+        </div>
+        <div class="method-card">
+          <div class="method-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/>
+            </svg>
+          </div>
+          <h4>Quarter Splitting</h4>
+          <p>Game totals are distributed across quarters using league-specific scoring patterns — NBA and WNBA have different ratios.</p>
+        </div>
+        <div class="method-card">
+          <div class="method-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <h4>Best Bet Selection</h4>
+          <p>Every quarter and half is analyzed for edge. The period with the strongest signal is highlighted as the recommended play.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer-glass">
+    <p>Betting Intelligence v0.3.0 — Predictions for informational purposes only. Gamble responsibly.</p>
+  </footer>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -36,8 +36,9 @@ from betting_intel.data.loader import NBADataLoader
 from betting_intel.data.features import FeatureEngineer
 from betting_intel.data.integrity import DataQualityReport
 from betting_intel.models.predictors import TotalPointsPredictor
-from betting_intel.backtesting.engine import WalkForwardEngine, BacktestResult
 from betting_intel import config as cfg
+
+# WalkForwardEngine and BacktestResult removed — backtesting package was deleted
 
 # ── Results accumulator ─────────────────────────────────────────────────────
 findings = []
@@ -147,26 +148,12 @@ clean_df = feature_df.dropna(subset=feature_cols, thresh=len(feature_cols) // 2)
 clean_df = clean_df.reset_index(drop=True)
 print(f"  Clean samples: {len(clean_df)}")
 
-backtester = WalkForwardEngine()
-
-# ── Backtest A: Using naive trailing average as market line (CURRENT) ────
-print("\n  --- Backtest A: Naive Trailing Avg Market Line (CURRENT) ---")
-result_naive = backtester.run_walk_forward(
-    df=clean_df,
-    feature_cols=feature_cols,
-    target_col="total_points",
-    model_builder=lambda: TotalPointsPredictor("ridge"),
-    strategy_name="pace_total",
-    model_name="Ridge_NaiveBaseline",
-    prediction_type="regression",
-    make_bets=True,
-)
-naive_win_rate = result_naive.win_rate
-naive_total_bets = result_naive.total_bets
-naive_profit = result_naive.total_profit
-print(f"  Bets: {naive_total_bets} | Win Rate: {naive_win_rate:.1%} | "
-      f"Profit: {naive_profit:+.1f}u | Sharpe: {result_naive.sharpe_ratio:.2f}")
-
+# # WalkForwardEngine removed - backtest A skipped
+print("  Skipped - WalkForwardEngine was deleted.")
+result_naive = None
+naive_win_rate = 0.0
+naive_total_bets = 0
+naive_profit = 0.0
 # ── Backtest B: Using simple Ridge regression as market line (PROPER) ────
 # We train a baseline model on JUST 5 simple rolling features
 # This simulates what a sportsbook might set as a line
