@@ -99,8 +99,17 @@ prometheus.yml
 # Generated caches
 models/saved/*.pkl
 server*.log
+web_server.log
 webhook*.log
 stripe_listen.log
+
+# Generated data artifacts
+data/prediction_cache.json
+data/recommendations.json
+data/analytics_alerts.jsonl
+data/forward_test_results.json
+data/predictions/
+logs/
 
 # Generated test/output data
 data/test_props_*.json

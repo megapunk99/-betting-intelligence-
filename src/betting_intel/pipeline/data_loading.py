@@ -55,25 +55,23 @@ class DataLoadingMixin:
             return None
 
         try:
-            from betting_intel.data.live_gateway import LiveDataGateway
-            gateway = LiveDataGateway(odds_api_key=ODDS_API_KEY)
-            odds_data = gateway.get_live_odds(force_refresh=True)
-            if odds_data and len(odds_data) > 0:
-                df = pd.DataFrame(odds_data)
-                print(f"  ✅  Fetched {len(df)} games from LiveDataGateway")
-                self.results["metadata"]["data_source"] = "live_gateway"
+            from betting_intel.data.odds_fetcher import OddsAPIClient
+            client = OddsAPIClient(api_key=ODDS_API_KEY)
+            games = client.fetch_odds_for_sport("basketball_nba", regions="us", markets="h2h,spreads,totals")
+            if games and len(games) > 0:
+                df = pd.DataFrame(games)
+                print(f"  ✅  Fetched {len(df)} games from OddsAPIClient")
+                self.results["metadata"]["data_source"] = "odds_api_client"
                 return df
         except Exception as e:
             err_msg = str(e).lower()
             if "429" in err_msg or "quota" in err_msg or "rate limit" in err_msg or "too many requests" in err_msg:
                 print(f"  ❌  API QUOTA EXCEEDED (HTTP 429): {e}")
-                print("  ❌  Cannot continue in --live mode without a valid TheOddsAPI quota.")
-                print("  ❌  Set ODDS_API_KEY in your .env file or wait for quota to reset.")
                 raise RuntimeError(f"TheOddsAPI quota exceeded: {e}") from e
             if "401" in err_msg or "unauthorized" in err_msg:
                 print("  ⚠  Invalid ODDS_API_KEY (HTTP 401). Using NBA static data fallback.")
                 return None
-            print(f"  ⚠  LiveDataGateway failed: {e}")
+            print(f"  ⚠  OddsAPIClient failed: {e}")
 
         return None
 

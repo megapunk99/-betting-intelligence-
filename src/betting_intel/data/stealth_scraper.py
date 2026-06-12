@@ -54,8 +54,9 @@ ODDS_CACHE_TTL = 120  # 2 minutes
 # Cooldown between Playwright launches (to avoid detection)
 PLAYWRIGHT_COOLDOWN = 30  # 30 seconds between browser launches
 
-# Import shared health monitor for ScraperCoordinator integration
-from betting_intel.data.scraper_utils import GLOBAL_SCRAPER_MONITOR as _monitor
+# ScraperCoordinator integration removed during cleanup — no longer used
+
+_GLOBAL_SCRAPER_MONITOR = None
 
 
 class StealthBrowser:

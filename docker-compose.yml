@@ -1,93 +1,17 @@
 version: "3.9"
 
 services:
-  # ── Redis Cache (for pub/sub WebSocket broadcasting) ───────────────
-  redis:
-    image: redis:7-alpine
-    container_name: betting-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - betting-network
-
-  # ── PostgreSQL Database ────────────────────────────────────────────
-  postgres:
-    image: postgres:16-alpine
-    container_name: betting-postgres
-    restart: unless-stopped
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    environment:
-      POSTGRES_DB: betting_intel
-      POSTGRES_USER: betting
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U betting -d betting_intel"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - betting-network
-
-  # ── API Server ─────────────────────────────────────────────────────
   api:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: betting-api
     restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
     volumes:
       - ./data:/app/data
       - ./output:/app/output
-      - ./logs:/app/logs
-      - ./models:/app/models
     environment:
-      DATABASE_URL: postgresql+psycopg2://betting:${POSTGRES_PASSWORD:-changeme}@postgres:5432/betting_intel
-      NBA_DB_PATH: /app/data/nba_data.db
-      DATA_DIR: /app/data
-      OUTPUT_DIR: /app/output
-      LOG_LEVEL: INFO
-      LOG_FORMAT: json
-      API_HOST: "0.0.0.0"
-      API_PORT: "8000"
-      API_WORKERS: "4"
-      API_KEY: ${API_KEY:-change-me}
-      ENABLE_PROMETHEUS: "true"
-      PROMETHEUS_PORT: "9090"
-      ENABLE_LIVE_ODDS: "${ENABLE_LIVE_ODDS:-false}"
       ODDS_API_KEY: ${ODDS_API_KEY:-}
-      ODDS_POLL_INTERVAL: "30"
-      ENABLE_ALERTS: "${ENABLE_ALERTS:-false}"
-      ENABLE_TELEGRAM: "${ENABLE_TELEGRAM:-false}"
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
-      ENABLE_DISCORD: "${ENABLE_DISCORD:-false}"
-      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+      API_KEY: ${API_KEY:-change-me}
     ports:
       - "8000:8000"
-      - "9090:9090"
-    networks:
-      - betting-network
-
-  # ── Streamlit Dashboard ────────────────────────────────────────────
-networks:
-  betting-network:
-    driver: bridge
-
-volumes:
-  postgres_data:
-  prometheus_data:
-  grafana_data:

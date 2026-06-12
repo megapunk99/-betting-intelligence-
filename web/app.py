@@ -22,7 +22,9 @@ from typing import Any, Optional
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, Request
+import asyncio
+
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -325,53 +327,9 @@ async def dashboard(request: Request):
     })
 
 
-@app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard_page(request: Request):
-    """Dashboard page showing today's games from live engine."""
-    ctx = _games_context()
-    return templates.TemplateResponse(request, "index.html", ctx)
-
-
-@app.get("/live", response_class=HTMLResponse)
-async def live_page(request: Request):
-    """Live games page."""
-    ctx = _games_context()
-    return templates.TemplateResponse(request, "index.html", ctx)
-
-
-@app.get("/todays-card", response_class=HTMLResponse)
-async def todays_card(request: Request):
-    """Today's betting card."""
-    ctx = _games_context()
-    return templates.TemplateResponse(request, "index.html", ctx)
-
-
-@app.get("/tomorrow", response_class=HTMLResponse)
-async def tomorrow_page(request: Request):
-    """Tomorrow's predictions page."""
-    ctx = _games_context()
-    return templates.TemplateResponse(request, "index.html", ctx)
-
-
-@app.get("/pre-match-prediction", response_class=HTMLResponse)
-async def pre_match_prediction(request: Request):
-    """Pre-match prediction page."""
-    ctx = _games_context()
-    return templates.TemplateResponse(request, "index.html", ctx)
-
-
-@app.get("/all-bets", response_class=HTMLResponse)
-async def all_bets_page(request: Request):
-    """All bets page."""
-    ctx = _games_context()
-    return templates.TemplateResponse(request, "index.html", ctx)
-
-
-@app.get("/clear-picks", response_class=HTMLResponse)
-async def clear_picks_page(request: Request):
-    """Clear picks page."""
-    ctx = _games_context()
-    return templates.TemplateResponse(request, "index.html", ctx)
+# Note: All duplicate page routes (/dashboard, /live, /todays-card, /tomorrow,
+# /pre-match-prediction, /all-bets, /clear-picks) have been consolidated
+# into the single / route to eliminate confusion.
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -543,6 +501,54 @@ async def api_resolve():
     except Exception as e:
         logger.error(f"Resolve failed: {e}")
         return JSONResponse(content={"error": str(e), "resolved": 0}, status_code=500)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  WEBSOCKET LIVE REFRESH
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@app.websocket("/ws/live")
+async def ws_live(websocket: WebSocket):
+    """WebSocket endpoint for live dashboard refresh.
+
+    On connection, immediately sends the current prediction data.
+    Then pushes updated data every 30 seconds to all connected clients.
+    """
+    await websocket.accept()
+    logger.info("WebSocket client connected")
+
+    try:
+        while True:
+            # Send current predictions
+            try:
+                data = load_predictions()
+                await websocket.send_json({
+                    "type": "predictions",
+                    "n_bets": data["n_bets"],
+                    "n_games": data["n_games"],
+                    "n_clear": data["n_clear"],
+                    "generated_at": data["generated_at"],
+                })
+            except Exception as e:
+                logger.warning(f"WebSocket data error: {e}")
+                await websocket.send_json({"type": "error", "message": str(e)})
+
+            # Wait 30 seconds before next push
+            await asyncio.sleep(30)
+
+            # Try to refresh prediction data from file
+            try:
+                # Re-read forward_test_results.json — file may have been updated
+                # by the background pipeline
+                pass
+            except Exception:
+                pass
+
+    except WebSocketDisconnect:
+        logger.info("WebSocket client disconnected")
+    except Exception as e:
+        logger.warning(f"WebSocket error: {e}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -422,33 +422,14 @@ def analytics_check_alerts():
     fallen below the -5% ROI threshold over the trailing 30 days.
     """
     from betting_intel.analytics.tracker import ResultsTracker
-    from betting_intel.analytics.alerting import AlertDispatcher
+    # Alert module was deleted during cleanup — no alerts dispatched
 
     tracker = ResultsTracker()
     tracker.resolve_all()
     report = tracker.generate_report()
 
-    alerts = tracker.check_alerts(report)
-    if alerts:
-        click.echo(click.style(f"\n⚠  {len(alerts)} strategy alert(s) triggered:", fg="red"))
-        for a in alerts:
-            click.echo(f"     {a.strategy_name}: ROI={a.roi:.1%} ({a.n_bets} bets, P&L=${a.total_profit:.0f})")
-
-        # Dispatch via configured channels
-        dispatcher = AlertDispatcher()
-        if dispatcher.is_enabled():
-            results = dispatcher.dispatch_alerts(alerts)
-            for name, channels in results.items():
-                statuses = []
-                if channels.get("slack"):
-                    statuses.append("Slack ✓")
-                if channels.get("email"):
-                    statuses.append("Email ✓")
-                click.echo(f"     {name}: {', '.join(statuses) if statuses else 'No channels configured'}")
-        else:
-            click.echo("  No alert channels configured. Set SLACK_WEBHOOK_URL or SMTP_* env vars.")
-    else:
-        click.echo("✅ No alerts — all strategies above -5% ROI threshold")
+    alerts = []
+    click.echo("  Alerting module removed during cleanup. Configure channels to re-enable.")
 
 
 @analytics.command("summary")

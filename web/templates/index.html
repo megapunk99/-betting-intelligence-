@@ -4,145 +4,290 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="api-key" content="{{ api_key }}">
-  <title>Betting Intelligence</title>
+  <title>Betting Intelligence — Dashboard</title>
+  <script>
+    (function() {
+      var theme = localStorage.getItem('betting-intel-theme');
+      if (!theme) {
+        theme = window.matchMedia('(prefers-color-scheme:light)').matches ? 'light' : 'dark';
+      }
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
   <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
+
   <nav>
     <div class="nav-inner">
-      <a href="/" class="logo">Betting Intel</a>
+      <a href="/" class="logo">
+        <span class="logo-symbol">BI</span>
+        Betting Intel
+      </a>
       <div class="nav-links">
         <a href="/" class="nav-link active">Dashboard</a>
         <a href="/future-predictions" class="nav-link">Future</a>
-        <span id="live-indicator" class="live-indicator {% if n_bets > 0 %}has-data{% endif %}">
-          {{ n_bets }} bets
-        </span>
+        <button id="theme-toggle" class="theme-btn" title="Toggle theme" aria-label="Toggle dark/light theme">
+        <span class="theme-icon-dark">&#127769;</span>
+        <span class="theme-icon-light">&#9728;&#65039;</span>
+      </button>
+      <span id="live-indicator" class="live-indicator {% if n_bets > 0 %}has-data{% endif %}">
+        {{ n_bets }} bets
+      </span>
       </div>
     </div>
   </nav>
 
   <main>
-    <!-- Header Stats -->
+
     <div class="stats-row">
       <div class="stat-card">
-        <div class="stat-value {% if n_bets > 0 %}green{% else %}dim{% endif %}">{{ n_bets }}</div>
-        <div class="stat-label">Total Bets</div>
+        <span class="stat-label">Total Bets</span>
+        <span class="stat-value {% if n_bets > 0 %}green{% else %}dim{% endif %}">{{ n_bets }}</span>
+        <span class="stat-sub">{{ n_games }} games</span>
       </div>
       <div class="stat-card">
-        <div class="stat-value {% if n_games > 0 %}green{% else %}dim{% endif %}">{{ n_games }}</div>
-        <div class="stat-label">Games</div>
+        <span class="stat-label">Win Rate</span>
+        {% set total = bets|selectattr('actual_result')|list|length %}
+        {% set wins = bets|selectattr('actual_result', 'equalto', 'WIN')|list|length %}
+        {% set winrate = (wins / total * 100)|round|int if total > 0 else '&#8212;' %}
+        <span class="stat-value {% if total > 0 and winrate >= 50 %}green{% elif total > 0 %}red{% else %}dim{% endif %}">
+          {% if total > 0 %}{{ winrate }}%{% else %}&#8212;{% endif %}
+        </span>
+        <span class="stat-sub">{{ wins }}/{{ total }} resolved</span>
       </div>
       <div class="stat-card">
-        <div class="stat-value {% if n_clear > 0 %}green{% else %}dim{% endif %}">{{ n_clear }}</div>
-        <div class="stat-label">Clear Picks</div>
+        <span class="stat-label">P&amp;L</span>
+        {% set profits = bets|map(attribute='actual_profit')|select('defined')|list %}
+        {% if profits %}
+          {% set profit = profits|sum %}
+          <span class="stat-value {% if profit > 0 %}green{% elif profit < 0 %}red{% endif %}">
+            {{ "${:+.0f}".format(profit) }}
+          </span>
+          <span class="stat-sub">{{ profits|length }} resolved</span>
+        {% else %}
+          <span class="stat-value dim">&#8212;</span>
+          <span class="stat-sub">no results yet</span>
+        {% endif %}
       </div>
       <div class="stat-card">
-        <div class="stat-value green">{{ avg_edge }}</div>
-        <div class="stat-label">Avg Edge</div>
+        <span class="stat-label">Avg Edge</span>
+        {% set avg_e = bets|map(attribute='edge_pct')|select('defined')|list %}
+        {% set avg_edge_val = (avg_e|sum / avg_e|length) if avg_e|length > 0 else 0 %}
+        <span class="stat-value {% if avg_edge_val > 0 %}green{% else %}dim{% endif %}">
+          {{ "{:+.1%}".format(avg_edge_val) }}
+        </span>
+        <span class="stat-sub">per bet</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Clear Picks</span>
+        <span class="stat-value {% if n_clear > 0 %}green{% else %}dim{% endif %}">{{ n_clear }}</span>
+        <span class="stat-sub">high confidence</span>
       </div>
     </div>
 
-    <!-- Resolve Button -->
     <div class="action-bar">
-      <button id="resolve-btn" class="btn" onclick="resolvePredictions()">
+      <button id="resolve-btn" class="btn btn-primary" onclick="resolvePredictions()">
         <span id="resolve-text">Resolve Predictions</span>
         <span id="resolve-spinner" class="spinner hidden"></span>
+      </button>
+      <button class="btn btn-secondary btn-sm" onclick="location.reload()">
+        &#8635; Refresh
       </button>
       <span class="freshness">Generated: <span id="gen-time">{{ generated_at[:19] }}</span></span>
     </div>
 
-    <!-- Resolve Result -->
     <div id="resolve-result" class="toast hidden"></div>
 
-    <!-- Bets Table -->
+    {% set chart_bets = bets|map(attribute='actual_profit')|select('defined')|list %}
+    {% if chart_bets|length > 1 %}
+    <div class="chart-container">
+      <div class="chart-title">Cumulative P&amp;L</div>
+      <div class="chart-wrapper">
+        <canvas id="performance-chart"></canvas>
+      </div>
+    </div>
+    {% endif %}
+
     {% if bets %}
-    <div class="table-container">
-      <table>
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Matchup</th>
-            <th>Type</th>
-            <th>Bet</th>
-            <th>Edge</th>
-            <th>Confidence</th>
-            <th>Stake</th>
-            <th>Result</th>
-            <th>P&amp;L</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for bet in bets %}
-          <tr class="bet-row {% if bet.get('is_clear_pick') %}clear-pick{% endif %}">
-            <td class="cell-date">{{ bet.get("game_date", "")[:10] }}</td>
-            <td class="cell-matchup">{{ bet.get("matchup", "") }}</td>
-            <td><span class="badge badge-{{ bet.get('bet_type', 'total') }}">{{ bet.get("bet_type", "") }}</span></td>
-            <td class="cell-bet">{{ bet.get("bet_side", "") }}</td>
-            <td class="cell-edge {% if bet.get('edge_pct', 0) > 0 %}pos{% elif bet.get('edge_pct', 0) < 0 %}neg{% endif %}">
-              {{ "{:+.1%}".format(bet.get("edge_pct", 0)) }}
-            </td>
-            <td>
-              <span class="conf conf-{{ bet.get('edge_confidence', 'low') }}">
-                {{ bet.get("edge_confidence", "low") }}
-              </span>
-            </td>
-            <td class="cell-stake">${{ "{:.0f}".format(bet.get("stake_dollars", 0)) }}</td>
-            <td>
-              {% set result = bet.get("actual_result") %}
-              {% if result %}
-                <span class="result result-{{ result.lower() }}">{{ result }}</span>
-              {% else %}
-                <span class="result pending">Pending</span>
-              {% endif %}
-            </td>
-            <td class="cell-pnl {% if bet.get('actual_profit', 0) > 0 %}pos{% elif bet.get('actual_profit', 0) < 0 %}neg{% endif %}">
-              {% if bet.get("actual_profit") is not none %}
-                {{ "${:+.0f}".format(bet.get("actual_profit", 0)) }}
-              {% else %}
-                —
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <div class="section-header">
+      <h2 class="section-title">
+        Predictions
+        <span class="badge-count">{{ bets|length }}</span>
+      </h2>
+    </div>
+
+    <div class="games-grid">
+      {% for bet in bets %}
+      <div class="game-card {% if bet.get('is_clear_pick') %}clear-pick{% endif %}">
+        <div class="game-card-header">
+          <span class="league-badge">{{ bet.get('league', 'NBA') }}</span>
+          <span class="game-date">{{ bet.get('game_date', '')[:10] }}</span>
+          {% set result = bet.get('actual_result') %}
+          {% if result %}
+            <span class="result-badge {{ result.lower() }}">{{ result }}</span>
+          {% else %}
+            <span class="result-badge pending">Pending</span>
+          {% endif %}
+        </div>
+
+        <div class="game-matchup">
+          <div class="team-side away">
+            <div class="team-name">{{ bet.get('away_team', bet.get('matchup','').split(' @ ')[0]|trim) }}</div>
+          </div>
+          <div class="vs-divider">
+            <span class="vs-text">VS</span>
+          </div>
+          <div class="team-side home">
+            <div class="team-name">{{ bet.get('home_team', bet.get('matchup','').split(' @ ')[1]|trim) }}</div>
+          </div>
+        </div>
+
+        <div class="edge-section">
+          <div class="edge-row">
+            <span class="edge-label">
+              {{ bet.get('bet_type', 'bet')|capitalize }} · {{ bet.get('bet_side', '') }}
+            </span>
+            <span class="edge-value {% if bet.get('edge_pct', 0) > 0 %}pos{% elif bet.get('edge_pct', 0) < 0 %}neg{% endif %}">
+              {{ "{:+.1%}".format(bet.get('edge_pct', 0)) }}
+            </span>
+          </div>
+          {% set edge_abs = (bet.get('edge_pct', 0) * 100)|abs %}
+          {% set raw_w = edge_abs * 2 %}
+          {% set bar_w = raw_w if raw_w < 100 else 100 %}
+          <div class="edge-bar-track">
+            <div class="edge-bar-fill {% if bet.get('edge_pct', 0) > 0 %}pos{% else %}neg{% endif %}" style="width: {{ bar_w }}%"></div>
+          </div>
+        </div>
+
+        <div class="game-details">
+          <span class="detail-chip">
+            <span class="chip-label">Edge</span>
+            {{ bet.get('edge_confidence', 'low') }}
+          </span>
+          <span class="detail-chip">
+            <span class="chip-label">Stake</span>
+            ${{ "{:.0f}".format(bet.get('stake_dollars', 0)) }}
+          </span>
+          {% if bet.get('actual_profit') is not none %}
+          <span class="detail-chip {% if bet.get('actual_profit',0) > 0 %}pos{% elif bet.get('actual_profit',0) < 0 %}neg{% endif %}">
+            <span class="chip-label">P&amp;L</span>
+            {{ "${:+.0f}".format(bet.get('actual_profit', 0)) }}
+          </span>
+          {% endif %}
+          {% if bet.get('is_clear_pick') %}
+          <span class="detail-chip" style="color:var(--green);border-color:var(--green-dim);">&#9733; Clear Pick</span>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
     </div>
     {% else %}
     <div class="empty-state">
-      <div class="empty-icon">📊</div>
+      <div class="empty-icon">&#128202;</div>
       <h3>No Predictions Yet</h3>
       <p>Run <code>python tools/forward_test.py --save-json</code> to generate predictions, then refresh this page.</p>
       <p class="hint">Set <code>ODDS_API_KEY</code> in .env to fetch real odds.</p>
     </div>
     {% endif %}
 
-    <!-- Clear Picks Section -->
     {% if clear_picks %}
-    <div class="section">
-      <h2>Clear Picks</h2>
-      <div class="picks-grid">
-        {% for cp in clear_picks %}
-        <div class="pick-card">
-          <div class="pick-header">
-            <span class="pick-matchup">{{ cp.get("matchup", "") }}</span>
-            <span class="pick-edge pos">{{ "{:+.1%}".format(cp.get("edge_pct", 0)) }}</span>
-          </div>
-          <div class="pick-body">
-            <span class="pick-bet">{{ cp.get("bet_side", "") }}</span>
-            <span class="pick-stake">${{ "{:.0f}".format(cp.get("stake_dollars", 0)) }}</span>
-          </div>
-          <div class="pick-footer">
-            <span class="conf conf-{{ cp.get('edge_confidence', 'low') }}">{{ cp.get("edge_confidence", "") }}</span>
-          </div>
+    <div class="section-header">
+      <h2 class="section-title">
+        &#9733; Clear Picks
+        <span class="badge-count">{{ clear_picks|length }}</span>
+      </h2>
+    </div>
+
+    <div class="picks-grid">
+      {% for cp in clear_picks %}
+      <div class="pick-card">
+        <div class="pick-header">
+          <span class="pick-matchup">{{ cp.get("matchup", "") }}</span>
+          <span class="pick-edge">{{ "{:+.1%}".format(cp.get("edge_pct", 0)) }}</span>
         </div>
-        {% endfor %}
+        <div class="pick-body">
+          <span class="pick-bet">{{ cp.get("bet_side", "") }}</span>
+          <span class="pick-stake">${{ "{:.0f}".format(cp.get("stake_dollars", 0)) }}</span>
+        </div>
+        <div class="pick-footer">
+          <span class="detail-chip confidence-{{ cp.get('edge_confidence', 'low') }}">{{ cp.get("edge_confidence", "low") }}</span>
+          <span class="detail-chip">{{ cp.get("bet_type", "") }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if bets %}
+    <div class="section-header">
+      <h2 class="section-title">
+        All Bets
+        <span class="badge-count">{{ bets|length }}</span>
+      </h2>
+    </div>
+
+    <div class="table-container">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Matchup</th>
+              <th>Type</th>
+              <th>Bet</th>
+              <th>Edge</th>
+              <th>Confidence</th>
+              <th>Stake</th>
+              <th>Result</th>
+              <th>P&amp;L</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for bet in bets %}
+            <tr>
+              <td class="cell-date">{{ bet.get("game_date", "")[:10] }}</td>
+              <td class="cell-matchup">{{ bet.get("matchup", "") }}</td>
+              <td><span class="type-badge {{ bet.get('bet_type', 'total') }}">{{ bet.get("bet_type", "") }}</span></td>
+              <td class="cell-bet">{{ bet.get("bet_side", "") }}</td>
+              <td class="{% if bet.get('edge_pct', 0) > 0 %}pos{% elif bet.get('edge_pct', 0) < 0 %}neg{% endif %}">
+                {{ "{:+.1%}".format(bet.get("edge_pct", 0)) }}
+              </td>
+              <td>
+                <span class="conf conf-{{ bet.get('edge_confidence', 'low') }}">
+                  {{ bet.get("edge_confidence", "low") }}
+                </span>
+              </td>
+              <td>${{ "{:.0f}".format(bet.get("stake_dollars", 0)) }}</td>
+              <td>
+                {% set result = bet.get("actual_result") %}
+                {% if result %}
+                  <span class="badge-result {{ result.lower() }}">{{ result }}</span>
+                {% else %}
+                  <span class="badge-result pending">Pending</span>
+                {% endif %}
+              </td>
+              <td class="{% if bet.get('actual_profit', 0) > 0 %}pos{% elif bet.get('actual_profit', 0) < 0 %}neg{% endif %}">
+                {% if bet.get("actual_profit") is not none %}
+                  {{ "${:+.0f}".format(bet.get("actual_profit", 0)) }}
+                {% else %}
+                  &#8212;
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
     </div>
     {% endif %}
+
   </main>
 
   <footer>
-    <p>Betting Intelligence v0.3.0 — Data from NBA database + TheOddsAPI</p>
+    <p>Betting Intelligence — Data from NBA database + TheOddsAPI</p>
   </footer>
 
   <script src="/static/js/app.js"></script>

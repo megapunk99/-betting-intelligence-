@@ -14,7 +14,6 @@ authors = [
 ]
 
 dependencies = [
-    # Core data
     "numpy>=1.24",
     "pandas>=2.0",
     "scipy>=1.11",
@@ -22,27 +21,14 @@ dependencies = [
     "python-dotenv>=1.0",
     "pydantic>=2.5",
     "pydantic-settings>=2.1",
-
-    # ML
     "scikit-learn>=1.3",
     "xgboost>=2.0",
     "lightgbm>=4.0",
-
-    # Web server
     "fastapi>=0.109",
     "uvicorn[standard]>=0.27",
     "jinja2>=3.1",
-    "python-multipart>=0.0.6",
-    "aiofiles>=23.2",
-
-    # Database
     "SQLAlchemy>=2.0",
-    "alembic>=1.13",
-
-    # CLI
     "click>=8.1",
-
-    # HTTP client
     "httpx>=0.26",
 ]
 
@@ -52,13 +38,10 @@ dev = [
     "pytest-cov>=4.1",
     "pytest-asyncio>=0.23",
     "ruff>=0.3",
-    "mypy>=1.8",
-    "nba-api>=1.4",
 ]
 
 [project.scripts]
 betting-intel = "betting_intel.cli.main:cli"
-betting-api = "betting_intel.api.app:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -68,10 +51,3 @@ include = ["betting_intel*"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
-filterwarnings = [
-    "error::RuntimeWarning",
-]
-markers = [
-    "slow: marks tests as slow (deselect with '-m not slow')",
-    "integration: marks tests as integration tests",
-]

@@ -991,21 +991,9 @@ class ModelingMixin:
         """
         print("\n" + "=" * 70)
         print("  🏀  MULTI-LEAGUE MODEL TRAINING")
-        print("  ℹ  Training per-league models for WNBA, Euroleague, NCAAB")
+        print("  ℹ  Per-league training was removed during cleanup. NBA only.")
         print("=" * 70)
-
-        from betting_intel.pipeline.multi_league import train_all_basketball_models
-
-        results = train_all_basketball_models(
-            leagues=None,  # Auto-detect leagues with ESPN API
-            output_dir=str(self.args.model_dir),
-        )
-
-        # Store results for reporting
-        trained = [k for k, v in results.items() if v.get("status") == "trained"]
-        if trained:
-            print(f"  ✅  Multi-league models trained: {', '.join(trained)}")
-        self.results["metadata"]["multi_league_models"] = results
+        self.results["metadata"]["multi_league_models"] = {}
 
     # ── Multi-League Predictions ───────────────────────────────────
 
@@ -1026,44 +1014,8 @@ class ModelingMixin:
         print("  🔮  MULTI-LEAGUE TOMORROW PREDICTIONS")
         print("=" * 70)
 
-        from betting_intel.pipeline.multi_league import (
-            predict_league_games,
-            load_league_model,
-        )
-        from betting_intel.data.basketball_leagues import (
-            LEAGUES_WITH_ODDS,
-        )
-
-        all_predictions: list[Dict[str, Any]] = []
-
-        # Which leagues to try (skip NBA — already handled)
-        target_leagues = [lg for lg in LEAGUES_WITH_ODDS if lg.key != "nba"]
-
-        for league in target_leagues:
-            # Load model once (avoid double-load bug)
-            model, feature_cols = load_league_model(league.key)
-            if model is None:
-                print(f"  No trained model for {league.key} — skipping. "
-                      f"Will use league-average baselines instead.")
-                continue
-
-            # Fetch upcoming games
-            upcoming_df = self._fetch_league_upcoming(league)
-            if upcoming_df is None or upcoming_df.empty:
-                print(f"  No upcoming games for {league.key}")
-                continue
-
-            # Predict — pass pre-loaded model to avoid redundant disk load
-            predictions = predict_league_games(
-                league.key, upcoming_df,
-                model=model, feature_cols=feature_cols,
-            )
-            all_predictions.extend(predictions)
-
-        if all_predictions:
-            print(f"\n  Multi-league: {len(all_predictions)} total predictions")
-
-        return all_predictions
+        print("  Multi-league predictions removed during cleanup. NBA only.")
+        return []
 
     def _fetch_league_upcoming(self, league) -> Optional[pd.DataFrame]:
         """Fetch upcoming games for a specific league."""

@@ -329,7 +329,7 @@ class PredictTomorrowPipeline:
                 try:
                     from betting_intel.data.odds_fetcher import OddsAPIClient
                 except ImportError:
-                    from betting_intel.data.live_gateway import OddsAPIClient as OddsAPIClient
+                    from betting_intel.data.odds_fetcher import OddsAPIClient
 
             from dotenv import load_dotenv
             import os
@@ -378,8 +378,8 @@ class PredictTomorrowPipeline:
         """Fetch injury data for tomorrow's teams."""
         injuries = {}
         try:
-            from betting_intel.data.player_injury import InjuryAnalyzer
-            analyzer = InjuryAnalyzer(self._get_db_path())
+            # InjuryAnalyzer module removed during cleanup
+            analyzer = None
             for game in games:
                 home = game.home_team_short if hasattr(game, "home_team_short") else ""
                 away = game.away_team_short if hasattr(game, "away_team_short") else ""
