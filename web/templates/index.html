@@ -44,29 +44,26 @@
 
     <div class="stats-row">
       <div class="stat-card">
-        <span class="stat-label">Total Bets</span>
+        <span class="stat-label">Live Games</span>
         <span class="stat-value {% if n_bets > 0 %}green{% else %}dim{% endif %}">{{ n_bets }}</span>
         <span class="stat-sub">{{ n_games }} games</span>
       </div>
       <div class="stat-card">
         <span class="stat-label">Win Rate</span>
-        {% set total = bets|selectattr('actual_result')|list|length %}
-        {% set wins = bets|selectattr('actual_result', 'equalto', 'WIN')|list|length %}
-        {% set winrate = (wins / total * 100)|round|int if total > 0 else '&#8212;' %}
-        <span class="stat-value {% if total > 0 and winrate >= 50 %}green{% elif total > 0 %}red{% else %}dim{% endif %}">
-          {% if total > 0 %}{{ winrate }}%{% else %}&#8212;{% endif %}
+        {% set total_r = resolved_wins + resolved_losses %}
+        {% set winrate_r = (resolved_wins / total_r * 100)|round|int if total_r > 0 else '&#8212;' %}
+        <span class="stat-value {% if total_r > 0 and winrate_r >= 50 %}green{% elif total_r > 0 %}red{% else %}dim{% endif %}">
+          {% if total_r > 0 %}{{ winrate_r }}%{% else %}&#8212;{% endif %}
         </span>
-        <span class="stat-sub">{{ wins }}/{{ total }} resolved</span>
+        <span class="stat-sub">{{ resolved_wins }}/{{ total_r }} resolved</span>
       </div>
       <div class="stat-card">
         <span class="stat-label">P&amp;L</span>
-        {% set profits = bets|map(attribute='actual_profit')|select('defined')|list %}
-        {% if profits %}
-          {% set profit = profits|sum %}
-          <span class="stat-value {% if profit > 0 %}green{% elif profit < 0 %}red{% endif %}">
-            {{ "${:+.0f}".format(profit) }}
+        {% if resolved_pnl != 0 %}
+          <span class="stat-value {% if resolved_pnl > 0 %}green{% elif resolved_pnl < 0 %}red{% endif %}">
+            {{ "${:+.0f}".format(resolved_pnl) }}
           </span>
-          <span class="stat-sub">{{ profits|length }} resolved</span>
+          <span class="stat-sub">{{ n_resolved }} resolved</span>
         {% else %}
           <span class="stat-value dim">&#8212;</span>
           <span class="stat-sub">no results yet</span>
@@ -79,7 +76,7 @@
         <span class="stat-value {% if avg_edge_val > 0 %}green{% else %}dim{% endif %}">
           {{ "{:+.1%}".format(avg_edge_val) }}
         </span>
-        <span class="stat-sub">per bet</span>
+        <span class="stat-sub">per live bet</span>
       </div>
       <div class="stat-card">
         <span class="stat-label">Clear Picks</span>
@@ -93,18 +90,64 @@
         <span id="resolve-text">Resolve Predictions</span>
         <span id="resolve-spinner" class="spinner hidden"></span>
       </button>
-      <button class="btn btn-secondary btn-sm" onclick="location.reload()">
+      <button class="btn btn-secondary btn-sm" onclick="refreshLiveData()">
         &#8635; Refresh
       </button>
-      <span class="freshness">Generated: <span id="gen-time">{{ generated_at[:19] }}</span></span>
+      <span class="freshness">
+        Generated: <span id="gen-time">{{ generated_at[:19] }}</span>
+        {% if last_auto_resolve %}
+        <span class="resolve-stamp">
+          &middot; Auto-resolve: <span title="{{ last_auto_resolve }}">{{ last_auto_resolve[:19] }}</span>
+        </span>
+        {% endif %}
+      </span>
     </div>
 
-    <div id="resolve-result" class="toast hidden"></div>
+    {% if n_sport_count > 0 %}
+    <div class="sport-pnl-card">
+      <div class="sport-pnl-header">
+        <span class="chart-title">Profit by Sport</span>
+        <span class="stat-sub">{{ n_resolved }} resolved bets</span>
+      </div>
+      <div class="sport-pnl-grid">
+        {% for sp in sport_pnl %}
+        {% set sp_league = sp.league|lower %}
+        {% set winrate = (sp.wins / sp.n * 100)|round|int if sp.n > 0 else 0 %}
+        <div class="sport-pnl-item">
+          <div class="spi-header">
+            <span class="league-badge league-{{ sp_league }}">{{ sp.league }}</span>
+            <span class="spi-pnl {% if sp.profit > 0 %}pos{% elif sp.profit < 0 %}neg{% endif %}">
+              {{ "${:+.0f}".format(sp.profit) }}
+            </span>
+          </div>
+          <div class="spi-stats">
+            <span class="spi-stat">{{ sp.wins }}-{{ sp.losses }}</span>
+            <span class="spi-stat-sub">{{ winrate }}% win</span>
+          </div>
+          <div class="spi-bar-track">
+            {% set max_profit = sport_pnl|map(attribute='profit')|map('abs')|max|default(1) %}
+            {% set bar_pct = (sp.profit / max_profit * 50)|abs if max_profit > 0 else 0 %}
+            {% set bar_pct = [bar_pct, 100]|min %}
+            {% if sp.profit >= 0 %}
+            <div class="spi-bar-fill pos" style="width: {{ bar_pct }}%; margin-left: 50%;"></div>
+            {% else %}
+            <div class="spi-bar-fill neg" style="width: {{ bar_pct }}%; margin-left: {{ 50 - bar_pct }}%;"></div>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
 
-    {% set chart_bets = bets|map(attribute='actual_profit')|select('defined')|list %}
-    {% if chart_bets|length > 1 %}
-    <div class="chart-container">
-      <div class="chart-title">Cumulative P&amp;L</div>
+    {% if n_resolved > 1 %}
+    <div class="chart-container" id="chart-container" data-profits="{{ chart_profits }}">
+      <div class="chart-title-row">
+        <span class="chart-title">Cumulative P&amp;L</span>
+        <a href="/api/resolved-bets/csv" class="btn btn-secondary btn-sm download-btn" download>
+          &#8681; Download CSV
+        </a>
+      </div>
       <div class="chart-wrapper">
         <canvas id="performance-chart"></canvas>
       </div>
@@ -115,15 +158,30 @@
     <div class="section-header">
       <h2 class="section-title">
         Predictions
-        <span class="badge-count">{{ bets|length }}</span>
+        <span class="badge-count" id="total-bets-count">{{ bets|length }}</span>
       </h2>
     </div>
 
-    <div class="games-grid">
+    <!-- Sport filter tabs -->
+    {% set sport_groups = bets|map(attribute='league')|unique|list|sort %}
+    <div class="sport-filters" id="sport-filters">
+      <button class="sport-filter-btn active" data-sport="all" onclick="filterBySport('all')">
+        All <span class="filter-count">({{ bets|length }})</span>
+      </button>
+      {% for league in sport_groups %}
+      {% set count = bets|selectattr('league', 'equalto', league)|list|length %}
+      <button class="sport-filter-btn" data-sport="{{ league|lower }}" onclick="filterBySport('{{ league|lower }}')">
+        {{ league }} <span class="filter-count">({{ count }})</span>
+      </button>
+      {% endfor %}
+    </div>
+
+    <div class="games-grid" id="games-grid">
       {% for bet in bets %}
-      <div class="game-card {% if bet.get('is_clear_pick') %}clear-pick{% endif %}">
+      {% set league_slug = (bet.get('league', 'NBA')|lower) %}
+      <div class="game-card {% if bet.get('is_clear_pick') %}clear-pick{% endif %}" data-sport="{{ league_slug }}">
         <div class="game-card-header">
-          <span class="league-badge">{{ bet.get('league', 'NBA') }}</span>
+          <span class="league-badge league-{{ league_slug }}">{{ bet.get('league', 'NBA') }}</span>
           <span class="game-date">{{ bet.get('game_date', '')[:10] }}</span>
           {% set result = bet.get('actual_result') %}
           {% if result %}
@@ -148,7 +206,7 @@
         <div class="edge-section">
           <div class="edge-row">
             <span class="edge-label">
-              {{ bet.get('bet_type', 'bet')|capitalize }} · {{ bet.get('bet_side', '') }}
+              {{ bet.get('bet_type_display', 'Bet') }} · {{ bet.get('bet_side', '') }}
             </span>
             <span class="edge-value {% if bet.get('edge_pct', 0) > 0 %}pos{% elif bet.get('edge_pct', 0) < 0 %}neg{% endif %}">
               {{ "{:+.1%}".format(bet.get('edge_pct', 0)) }}
@@ -161,16 +219,50 @@
             <div class="edge-bar-fill {% if bet.get('edge_pct', 0) > 0 %}pos{% else %}neg{% endif %}" style="width: {{ bar_w }}%"></div>
           </div>
         </div>
+        {% set total_ep = bet.get('total_edge_pct') or 0 %}
+        {% set total_dir = bet.get('total_direction', 'neutral') %}
+        {% set total_pred = bet.get('total_prediction') %}
+        {% set total_mkt = bet.get('market_total', 0) %}
+        {% if total_pred and total_pred > 0 and total_mkt and total_mkt > 10 and abs(total_ep) > 0.005 %}
+        <div class="edge-section totals-edge">
+          <div class="edge-row">
+            <span class="edge-label">
+              O/U Edge · {{ total_dir|upper }} {{ total_mkt|int }}
+            </span>
+            <span class="edge-value {% if total_ep > 0 %}pos{% elif total_ep < 0 %}neg{% endif %}">
+              {{ "{:+.1%}".format(total_ep) }}
+            </span>
+          </div>
+          {% set total_bar_w = abs(total_ep) * 200 %}
+          {% if total_bar_w > 100 %}{% set total_bar_w = 100 %}{% endif %}
+          <div class="edge-bar-track">
+            <div class="edge-bar-fill total {% if total_ep > 0 %}pos{% else %}neg{% endif %}" style="width: {{ total_bar_w }}%"></div>
+          </div>
+          <span class="totals-detail">Pred {{ total_pred|int }} vs Mkt {{ total_mkt|int }}</span>
+        </div>
+        {% endif %}
 
         <div class="game-details">
           <span class="detail-chip">
             <span class="chip-label">Edge</span>
-            {{ bet.get('edge_confidence', 'low') }}
+            {{ bet.get('edge_confidence', 'low')|capitalize }}
           </span>
           <span class="detail-chip">
             <span class="chip-label">Stake</span>
             ${{ "{:.0f}".format(bet.get('stake_dollars', 0)) }}
           </span>
+          {% if bet.get('predicted_at') %}
+          <span class="detail-chip" title="Predicted at">
+            <span class="chip-label">Predicted</span>
+            {{ bet.get('predicted_at','')[:16] }}
+          </span>
+          {% endif %}
+          {% if bet.get('n_books_ml', 0) > 0 %}
+          <span class="detail-chip">
+            <span class="chip-label">Books</span>
+            {{ bet.get('n_books_ml') }}
+          </span>
+          {% endif %}
           {% if bet.get('actual_profit') is not none %}
           <span class="detail-chip {% if bet.get('actual_profit',0) > 0 %}pos{% elif bet.get('actual_profit',0) < 0 %}neg{% endif %}">
             <span class="chip-label">P&amp;L</span>
@@ -181,15 +273,109 @@
           <span class="detail-chip" style="color:var(--green);border-color:var(--green-dim);">&#9733; Clear Pick</span>
           {% endif %}
         </div>
+
+        {% if bet.get('reasoning_lines') or bet.get('feature_display') %}
+        <div class="reasoning-section">
+          <div class="reasoning-header" onclick="this.parentElement.classList.toggle('expanded')">
+            <span class="reasoning-icon">&#9432;</span>
+            <span class="reasoning-title">Analysis</span>
+            <span class="reasoning-toggle">&#9660;</span>
+          </div>
+          <div class="reasoning-body">
+            <ul class="reasoning-list">
+              {% for line in bet.get('reasoning_lines') %}
+              <li>{{ line }}</li>
+              {% endfor %}
+            </ul>
+            {% if bet.get('feature_display') %}
+            <div class="feature-drivers">
+              <div class="feature-drivers-label">Model Key Drivers</div>
+              {% for feat in bet.get('feature_display')[:4] %}
+              <div class="feature-driver-item" title="Importance: {{ feat.weight }}%">
+                <div class="feature-driver-bar-track">
+                  <div class="feature-driver-bar-fill" style="width: {{ feat.width_pct|int }}%"></div>
+                </div>
+                <span class="feature-driver-name">{{ feat.description }}</span>
+                <span class="feature-driver-weight">{{ feat.weight }}%</span>
+              </div>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
       </div>
       {% endfor %}
     </div>
     {% else %}
-    <div class="empty-state">
+    <!-- Loading skeleton (shown while refresh is in progress) -->
+    <div class="skeleton-area" id="skeleton-area">
+      <div class="skeleton-stats">
+        {% for i in range(5) %}
+        <div class="skeleton-stat">
+          <div class="skel skel-label"></div>
+          <div class="skel-shimmer skel-value"></div>
+          <div class="skel skel-sub"></div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="skeleton-actions">
+        <div class="skel skel-btn"></div>
+        <div class="skel skel-btn-sm"></div>
+        <div class="skel skel-freshness"></div>
+      </div>
+
+      <div class="skeleton-section-header">
+        <div class="skel-shimmer skel-title"></div>
+        <div class="skel skel-badge"></div>
+      </div>
+
+      <div class="skeleton-filters">
+        <div class="skel skel-pill-wide"></div>
+        <div class="skel skel-pill"></div>
+        <div class="skel skel-pill"></div>
+      </div>
+
+      <div class="skeleton-grid">
+        {% for i in range(3) %}
+        <div class="skeleton-card">
+          <div class="skel-row">
+            <div class="skel skel-badge"></div>
+            <div class="skel skel-date"></div>
+            <div class="skel skel-result-badge"></div>
+          </div>
+          <div class="skel-matchup">
+            <div class="skel-shimmer skel-team"></div>
+            <div class="skel skel-vs"></div>
+            <div class="skel-shimmer skel-team-right"></div>
+          </div>
+          <div>
+            <div class="skel-edge-row">
+              <div class="skel skel-edge-label"></div>
+              <div class="skel skel-edge-val"></div>
+            </div>
+            <div class="skel skel-edge-bar"></div>
+          </div>
+          <div class="skel-details">
+            <div class="skel skel-chip-wide"></div>
+            <div class="skel skel-chip"></div>
+            <div class="skel skel-chip"></div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="empty-state" id="empty-state">
       <div class="empty-icon">&#128202;</div>
-      <h3>No Predictions Yet</h3>
-      <p>Run <code>python tools/forward_test.py --save-json</code> to generate predictions, then refresh this page.</p>
-      <p class="hint">Set <code>ODDS_API_KEY</code> in .env to fetch real odds.</p>
+      <h3>No Matchups Available</h3>
+      <p>No upcoming games found in the next 2 days. Try refreshing the data.</p>
+      <p class="hint">The system checks ESPN and TheOddsAPI for NBA/college games.</p>
+      <div class="empty-actions">
+        <button id="refresh-btn" class="btn btn-primary" onclick="refreshLiveData()">
+          &#8635; Refresh Now
+        </button>
+      </div>
     </div>
     {% endif %}
 
@@ -221,11 +407,11 @@
     </div>
     {% endif %}
 
-    {% if bets %}
+    {% if all_bets %}
     <div class="section-header">
       <h2 class="section-title">
         All Bets
-        <span class="badge-count">{{ bets|length }}</span>
+        <span class="badge-count">{{ n_all_bets }}</span>
       </h2>
     </div>
 
@@ -235,6 +421,7 @@
           <thead>
             <tr>
               <th>Date</th>
+              <th>League</th>
               <th>Matchup</th>
               <th>Type</th>
               <th>Bet</th>
@@ -246,9 +433,11 @@
             </tr>
           </thead>
           <tbody>
-            {% for bet in bets %}
-            <tr>
+            {% for bet in all_bets %}
+            {% set league_slug = (bet.get('league', 'NBA')|lower) %}
+            <tr class="result-{{ (bet.get('actual_result') or 'pending').lower() }}">
               <td class="cell-date">{{ bet.get("game_date", "")[:10] }}</td>
+              <td><span class="league-badge league-{{ league_slug }}">{{ bet.get("league", "NBA") }}</span></td>
               <td class="cell-matchup">{{ bet.get("matchup", "") }}</td>
               <td><span class="type-badge {{ bet.get('bet_type', 'total') }}">{{ bet.get("bet_type", "") }}</span></td>
               <td class="cell-bet">{{ bet.get("bet_side", "") }}</td>
@@ -285,6 +474,9 @@
     {% endif %}
 
   </main>
+
+  <!-- Toast container — lives outside <main> so it survives DOM swaps -->
+  <div id="toast-root" aria-live="polite"></div>
 
   <footer>
     <p>Betting Intelligence — Data from NBA database + TheOddsAPI</p>

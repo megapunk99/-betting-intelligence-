@@ -347,16 +347,10 @@ class OddsPoller:
         base_url = "https://api.the-odds-api.com/v4"
         sports = [
             "basketball_nba",
-            "basketball_wnba",
-            "basketball_euroleague",
-            "soccer_belgium_first_div",
         ]
 
         league_map = {
             "basketball_nba": "NBA",
-            "basketball_wnba": "WNBA",
-            "basketball_euroleague": "EuroLeague",
-            "soccer_belgium_first_div": "soccer_belgian_pro_league",
         }
 
         async def _fetch_sport(sport: str) -> tuple[str, list[OddsSnapshot]]:

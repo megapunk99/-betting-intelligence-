@@ -125,6 +125,82 @@ def backtest_run(strategy: str, output: str | None):
     click.echo("(Implementation in progress)")
 
 
+@backtest.command("compare")
+@click.option("--periods", "-p", default=5, type=int,
+              help="Number of chronological test periods")
+@click.option("--test-size", "-t", default=100, type=int,
+              help="Approximate number of games per test period")
+@click.option("--min-edge", "-e", default=0.02, type=float,
+              help="Minimum edge threshold for betting simulation")
+@click.option("--save", "-s", is_flag=True, help="Save report to JSON file")
+def backtest_compare(periods: int, test_size: int, min_edge: float, save: bool):
+    """
+    Compare RobustPredictionSystem vs MarketInefficiencySystem head-to-head
+    on historical NBA data. Trains both models on identical train/test splits
+    and measures accuracy, edge capture, ROI, Sharpe, and drawdown.
+    """
+    click.echo(f"\n  Running backtest comparison with {periods} periods, {test_size} games each...")
+    click.echo(f"  Min edge threshold: {min_edge:.1%}")
+
+    from betting_intel.pipeline.backtest_comparison import BacktestComparison
+
+    comparison = BacktestComparison(
+        min_edge_threshold=min_edge,
+        initial_bankroll=10_000.0,
+        kelly_fraction=0.25,
+    )
+
+    try:
+        report = comparison.run(
+            n_test_periods=periods,
+            test_size_games=test_size,
+            verbose=True,
+        )
+
+        if save:
+            from datetime import datetime
+            output_dir = settings.output_dir / "reports"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            path = output_dir / f"backtest_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            with open(path, "w") as f:
+                import json
+                json.dump({
+                    "generated_at": report.generated_at,
+                    "n_periods": report.n_periods,
+                    "total_n_train": report.total_n_train,
+                    "total_n_test": report.total_n_test,
+                    "delta_accuracy": report.delta_accuracy,
+                    "delta_brier": report.delta_brier,
+                    "delta_flat_roi": report.delta_flat_roi,
+                    "delta_kelly_roi": report.delta_kelly_roi,
+                    "delta_flat_sharpe": report.delta_flat_sharpe,
+                    "delta_edge_capture": report.delta_edge_capture,
+                    "is_significant": report.is_significant,
+                    "p_value": report.p_value,
+                    "agreement_rate": report.agreement_rate,
+                    "market_win_rate_on_disagree": report.market_won_rate,
+                    "classifier_win_rate_on_disagree": report.classifier_won_rate,
+                    "periods": [
+                        {
+                            "period_label": p.period_label,
+                            "n_games": p.n_games,
+                            "classifier_accuracy": p.classifier.accuracy,
+                            "market_accuracy": p.market_inefficiency.accuracy,
+                            "delta_accuracy": p.delta_accuracy,
+                            "delta_brier": p.delta_brier,
+                            "delta_flat_roi": p.delta_flat_roi,
+                        }
+                        for p in report.periods
+                    ],
+                }, f, indent=2, default=str)
+            click.echo(f"  Report saved to: {path}")
+
+    except Exception as e:
+        click.echo(f"  ❌  Backtest comparison failed: {e}", err=True)
+        import traceback
+        traceback.print_exc()
+
+
 @backtest.command("report")
 @click.option("--latest", is_flag=True, help="Show latest backtest results")
 def backtest_report(latest: bool):
@@ -254,35 +330,69 @@ def web_start(host: str, port: int, reload: bool):
     )
 
 
-# ── Small League Commands (stub — small_leagues package was deleted)
+# ── Backfill Commands ────────────────────────────────────────────────────
 @cli.group()
-def small_leagues():
-    """Small-league data management commands."""
+def backfill():
+    """Backfill historical market data commands."""
     pass
 
 
-@small_leagues.command("list")
-def small_leagues_list():
-    """List available small leagues (unavailable — package deleted)."""
-    click.echo("small_leagues package was deleted during cleanup. Re-create betting_intel/data/small_leagues/ to re-enable.")
+@backfill.command("market-odds")
+@click.option("--mode", type=click.Choice(["scores", "historical", "stats"]), required=True,
+              help="scores: free-tier game metadata | historical: paid-tier full odds | stats: check DB")
+@click.option("--days-back", type=int, default=3, help="Days back for scores mode (free tier max: 3)")
+@click.option("--start-date", type=str, help="Start date (YYYY-MM-DD) for historical mode")
+@click.option("--end-date", type=str, help="End date (YYYY-MM-DD) for historical mode")
+@click.option("--snapshot-interval", type=click.Choice(["daily", "weekly", "monthly"]),
+              default="daily", help="Snapshot frequency for historical mode")
+@click.option("--force", is_flag=True, help="Overwrite existing records")
+def backfill_market_odds(mode: str, days_back: int, start_date: str | None,
+                          end_date: str | None, snapshot_interval: str, force: bool):
+    """
+    Backfill the market_odds table with historical NBA data from TheOddsAPI.
+
+    Scores mode (free tier): Fetches completed game metadata + scores from
+    /v4/sports/{sport}/scores/. Does NOT include odds (free tier limitation)
+    but builds the game schedule mapping for training.
+
+    Historical mode (paid tier): Fetches historical odds snapshots from
+    /v4/historical/sports/{sport}/odds. Requires paid subscription.
+
+    Stats mode: Shows current state of the market_odds table.
+
+    Examples:
+        betting-intel backfill market-odds --mode stats
+        betting-intel backfill market-odds --mode scores --days-back 3
+        betting-intel backfill market-odds --mode historical \
+            --start-date 2024-10-01 --end-date 2024-11-01
+    """
+    import sys as _sys
+    import subprocess
+
+    script_path = Path(__file__).resolve().parent.parent.parent.parent / "tools" / "backfill_market_odds.py"
+    if not script_path.exists():
+        click.echo(f"Error: backfill script not found at {script_path}", err=True)
+        raise click.Abort()
+
+    cmd = [_sys.executable, str(script_path), "--mode", mode]
+
+    if mode == "scores":
+        cmd.extend(["--days-back", str(days_back)])
+    elif mode == "historical":
+        if not start_date or not end_date:
+            click.echo("Error: --start-date and --end-date required for historical mode", err=True)
+            raise click.Abort()
+        cmd.extend(["--start-date", start_date, "--end-date", end_date])
+        cmd.extend(["--snapshot-interval", snapshot_interval])
+
+    if force:
+        cmd.append("--force")
+
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        raise click.Abort()
 
 
-@small_leagues.command("fetch")
-def small_leagues_fetch():
-    """Fetch small-league game data (unavailable — package deleted)."""
-    click.echo("small_leagues package was deleted during cleanup. Re-create betting_intel/data/small_leagues/ to re-enable.")
-
-
-@small_leagues.command("teams")
-def small_leagues_teams(league: str = ""):
-    """List teams for a small league (unavailable — package deleted)."""
-    click.echo("small_leagues package was deleted during cleanup. Re-create betting_intel/data/small_leagues/ to re-enable.")
-
-
-@small_leagues.command("bridge")
-def small_leagues_bridge(league: str = ""):
-    """Bridge small-league data to NBA-pipeline format (unavailable)."""
-    click.echo("small_leagues package was deleted during cleanup. Re-create betting_intel/data/small_leagues/ to re-enable.")
 
 
 # ── Recommendations Commands ───────────────────────────────────────────
@@ -313,7 +423,7 @@ def _format_action(bet) -> str:
 
 
 @recommendations.command("list")
-@click.option("--league", "-l", default="all", help="Filter by league (NBA, lnb_pro_b, cebl, bnxt, or all)")
+@click.option("--league", "-l", default="all", help="Filter by league (NBA or all)")
 @click.option("--type", "-t", "bet_type", default="all", help="Filter by bet type (moneyline, spread, total, props, or all)")
 @click.option("--min-edge", default=0.01, type=float, help="Minimum edge threshold")
 @click.option("--clear-only", is_flag=True, help="Show only clear picks")
@@ -537,7 +647,7 @@ def analytics_dashboard(json_output: bool):
 @recommendations.command("player-props")
 @click.argument("home_team")
 @click.argument("away_team")
-@click.option("--league", default="NBA", help="League (NBA, lnb_pro_b, cebl, bnxt)")
+@click.option("--league", default="NBA", help="League (NBA only)")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 def recommendations_player_props(home_team: str, away_team: str, league: str, json_output: bool):
     """Generate player prop predictions for a specific matchup."""

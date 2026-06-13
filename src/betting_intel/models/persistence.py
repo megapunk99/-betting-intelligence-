@@ -6,16 +6,18 @@ Uses joblib for serialization and maintains a model registry.
 from __future__ import annotations
 
 import json
-import hashlib
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-import joblib
 import numpy as np
 
 from betting_intel.config import settings
+from betting_intel.utils.safe_serialize import (
+    safe_joblib_dump, safe_joblib_load,
+    add_hash_to_existing_file,
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -28,7 +30,7 @@ class ModelRegistry:
     """
 
     def __init__(self, models_dir: Optional[Path] = None):
-        self.models_dir = models_dir or (settings.resolved_output_dir / "models")
+        self.models_dir = models_dir or (settings.output_dir / "models")
         self.models_dir.mkdir(parents=True, exist_ok=True)
         self._registry_file = self.models_dir / "registry.json"
         self._registry = self._load_registry()
@@ -71,13 +73,9 @@ class ModelRegistry:
         model_dir = self.models_dir / model_name
         model_dir.mkdir(exist_ok=True)
 
-        # Save model artifact
+        # Save model artifact with hash verification
         model_path = model_dir / f"{version}.joblib"
-        joblib.dump(model, model_path)
-
-        # Compute hash for reproducibility
-        with open(model_path, "rb") as f:
-            model_hash = hashlib.sha256(f.read()).hexdigest()
+        model_hash = safe_joblib_dump(model, model_path)
 
         # Save metadata
         metadata = {
@@ -135,13 +133,16 @@ class ModelRegistry:
         if not model_path.exists():
             raise FileNotFoundError(f"Model artifact not found: {model_path}")
 
-        model = joblib.load(model_path)
+        model = safe_joblib_load(model_path)
         metadata = {}
         if metadata_path.exists():
             with open(metadata_path) as f:
                 metadata = json.load(f)
 
-        logger.info("Model loaded: model=%s version=%s features=%d", model_name, version, len(metadata.get("feature_cols", [])))
+        logger.info(
+            "Model loaded: model=%s version=%s features=%d integrity=hash_verified",
+            model_name, version, len(metadata.get("feature_cols", [])),
+        )
         return model, metadata
 
     def list_models(self) -> list[dict]:
@@ -192,5 +193,17 @@ class ModelRegistry:
         self._save_registry()
         return True
 
+
+# Add hashes to any existing model files that lack them
+for model_dir_candidate in [settings.output_dir / "models"]:
+    try:
+        if model_dir_candidate.exists():
+            for joblib_file in model_dir_candidate.rglob("*.joblib"):
+                try:
+                    add_hash_to_existing_file(joblib_file)
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
 model_registry = ModelRegistry()

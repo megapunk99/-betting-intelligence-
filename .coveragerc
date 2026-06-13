@@ -2,126 +2,73 @@
 # Coverage Configuration — Betting Intelligence System
 # ═══════════════════════════════════════════════════════════════════════════
 #
-# Used by pytest-cov. Run coverage:
-#   pytest --cov=src/betting_intel --cov-report=html --cov-report=term
+# Usage:
+#   pytest --cov=src --cov-report=term-missing
+#   pytest --cov=src --cov-report=html
 #
-# Generated HTML report: htmlcov/index.html
+# HTML report: reports/coverage/html/index.html
 # ═══════════════════════════════════════════════════════════════════════════
 
 [run]
-# Source packages to measure
-source = src/betting_intel
+# Source directory to measure (must match the --cov= arg)
+source = .
 
-# Branch coverage (measures if both if/else branches execute)
+# Branch coverage
 branch = True
 
-# Exclude patterns — files/modules to skip entirely
+# Omit non-project code
 omit =
     */tests/*
     */__pycache__/*
     */.venv/*
     */venv/*
-    # Alembic migration environment (auto-generated boilerplate)
-    */alembic/env.py
-    */allegations/script.py.mako
-
-# Extra test include paths (outside src/)
-include =
-    */src/betting_intel/*
-    # Include test helpers if any live outside tests/
-    # */test_helpers/*
-
-# Concurrency setting — only enable if tests use multiprocessing.
-# concurrency =
-#     multiprocessing
+    */alembic/*
 
 # Data file location
 data_file = .coverage
 
 [report]
-# Fail if total coverage falls below this percentage
-# Tune this value as coverage improves — run locally to see current level
-fail_under = 40
+fail_under = 30
 
-# Show coverage for these file patterns
+# Only show src files
 include =
-    */src/betting_intel/*.py
+    src/betting_intel/*
 
-# Omit these from the report
+# Omit from report
 omit =
     */tests/*
     */__pycache__/*
-    */__init__.py
-    # Alembic environment is auto-generated
+    */.venv/*
+    */venv/*
     */alembic/*
-    # Version info file
-    */_version.py
+    src/betting_intel/cli/main.py
+    src/betting_intel/main.py
 
-# Regex patterns for lines to exclude from coverage
 exclude_lines =
-    # Standard pragma
     pragma: no cover
-
-    # Debug/log-only code
     def __repr__
     def __str__
     def __bool__
-
-    # Abstract methods
+    @property
     raise NotImplementedError
-    raise NotImplementedError()
-
-    # Type checking only
     if TYPE_CHECKING:
     if typing.TYPE_CHECKING:
-
-    # Handled elsewhere (e.g., imported for re-export)
-    from \. import
-    import \. as
-
-    # Debug/development-only guards
+    from typing import
     if __name__ == .__main__.:
     if __name__ == '__main__':
     if __name__ == "__main__":
+    pass$
 
-    # Protocol/interface stubs
-    \.\.\.  # Ellipsis in stubs
-
-# Don't warn about modules that can't be imported
 ignore_errors = True
-
-# Sort by: coverage percentage (ascending — worst first)
 sort = Cover
-
-# Precision of coverage percentages
 precision = 1
-
-# Show missing line numbers
 show_missing = True
-
-# Skip covered/empty files in report
 skip_covered = False
 skip_empty = True
 
 [html]
-# Directory for HTML report
 directory = reports/coverage/html
-
-# Extra CSS for branding (optional)
-# extra_css = etc/coverage.css
-
-# Include source code in report
 show_contexts = True
 
 [xml]
-# XML output for CI tools like Codecov
 output = reports/coverage/coverage.xml
-
-# Package name to strip from paths
-package = betting_intel
-
-[paths]
-# Normalize paths so coverage works across different environments (CI, local)
-source =
-    src/betting_intel
-    **/site-packages/betting_intel

@@ -35,9 +35,7 @@
           <span class="theme-icon-dark">&#127769;</span>
           <span class="theme-icon-light">&#9728;&#65039;</span>
         </button>
-        <div class="live-indicator {% if n_predictions > 0 %}has-data{% endif %}">
-          {{ n_predictions }} games
-        </div>
+        <div class="live-indicator" id="future-indicator">0 games</div>
       </div>
     </div>
   </nav>
@@ -55,7 +53,7 @@
         </p>
         <div class="hero-stats">
           <div class="hero-stat">
-            <span class="hero-stat-value" data-count="{{ n_predictions }}">{{ n_predictions }}</span>
+            <span class="hero-stat-value" id="future-count" data-count="0">0</span>
             <span class="hero-stat-label">Games</span>
           </div>
           <div class="hero-stat">
@@ -67,140 +65,165 @@
             <span class="hero-stat-label">Halves</span>
           </div>
           <div class="hero-stat">
-            <span class="hero-stat-value stat-freshness" id="gen-time">{{ generated_at[:16] }}</span>
+            <span class="hero-stat-value stat-freshness" id="gen-time">—</span>
             <span class="hero-stat-label">Updated</span>
           </div>
         </div>
       </div>
     </section>
 
-    {% if predictions %}
-    <div class="cards-grid">
-      {% for pred in predictions %}
-      {% set direction = pred.get('direction', 'under') %}
-      {% set edge_pct = pred.get('edge_pct', 0) %}
-      {% set edge_abs = (edge_pct * 100)|abs %}
-      {% set bar_pct = [edge_abs * 3, 100]|min %}
-      {% set is_best = pred.get('best_quarter_edge', 0) > 10.0 %}
-      <div class="pred-card {{ 'best-card' if is_best }}">
-
-        <div class="card-header">
-          <span class="card-league-badge {{ pred.get('league', 'NBA').lower() }}">
-            {{ pred.get('league', 'NBA') }}
-          </span>
-          <span class="card-date">{{ pred.get('game_date', '') }}</span>
-          <span class="card-edge-badge {{ direction }}">
-            <span class="edge-arrow">{{ '▲' if direction == 'over' else '▼' }}</span>
-            <span class="edge-value">{{ "{:+.1%}".format(edge_pct) }}</span>
-          </span>
-        </div>
-
-        <div class="card-body">
-          <div class="teams-section">
-            <div class="team-row away">
-              <span class="team-name">{{ pred.get('away_team', '') }}</span>
-              <span class="team-tag">{{ pred.get('away_team_short', '') }}</span>
+    <!-- Loading Skeleton -->
+    <div id="future-skeleton" class="future-skeleton">
+      <div class="skel-cards-grid">
+        <div class="skel-pred-card">
+          <div class="skel-card-header">
+            <div class="skel skel-league-badge skel-shimmer"></div>
+            <div class="skel skel-date skel-shimmer"></div>
+            <div class="skel skel-edge-badge skel-shimmer"></div>
+          </div>
+          <div class="skel-card-body">
+            <div class="skel-teams">
+              <div class="skel skel-team-row skel-shimmer"></div>
+              <div class="skel skel-vs-row skel-shimmer"></div>
+              <div class="skel skel-team-row skel-shimmer"></div>
             </div>
-            <div class="matchup-vs">
-              <span class="vs-line"></span>
-              <span class="vs-text">@</span>
-              <span class="vs-line"></span>
-            </div>
-            <div class="team-row home">
-              <span class="team-name">{{ pred.get('home_team', '') }}</span>
-              <span class="team-tag">{{ pred.get('home_team_short', '') }}</span>
+            <div class="skel-pred-display">
+              <div class="skel skel-pred-value skel-shimmer"></div>
+              <div class="skel skel-pred-market skel-shimmer"></div>
+              <div class="skel skel-pred-bar skel-shimmer"></div>
             </div>
           </div>
-
-          <div class="prediction-display">
-            <div class="prediction-main">
-              <span class="prediction-value">{{ "%.0f"|format(pred.get('predicted_total', 0)) }}</span>
-              <span class="prediction-unit">pts</span>
-            </div>
-            <div class="prediction-market">
-              Market: <strong>{{ "%.0f"|format(pred.get('market_total', 0)) }}</strong>
-            </div>
-            <div class="prediction-bar">
-              <div class="pred-bar-track">
-                <div class="pred-bar-fill {{ direction }}" style="width: {{ bar_pct }}%;"></div>
+          <div class="skel-quarters">
+            <div class="skel skel-section-label skel-shimmer"></div>
+            <div class="skel-quarters-grid">
+              {% for i in range(4) %}
+              <div class="skel-quarter-cell">
+                <div class="skel skel-q-label skel-shimmer"></div>
+                <div class="skel skel-q-bars skel-shimmer"></div>
+                <div class="skel skel-q-total skel-shimmer"></div>
               </div>
-              <span class="pred-bar-label">{{ "%.0f"|format(bar_pct) }}%</span>
+              {% endfor %}
             </div>
+          </div>
+          <div class="skel-footer">
+            <div class="skel skel-footer-item skel-shimmer"></div>
+            <div class="skel skel-footer-item skel-shimmer"></div>
+            <div class="skel skel-footer-item skel-shimmer"></div>
           </div>
         </div>
-
-        <div class="quarters-section">
-          <div class="section-label">Quarter Projections</div>
-          <div class="quarters-grid">
-            {% for q in ['q1', 'q2', 'q3', 'q4'] %}
-            {% set q_total = pred.get(q ~ '_total', 0) %}
-            {% set q_home = pred.get(q ~ '_home', 0) %}
-            {% set q_away = pred.get(q ~ '_away', 0) %}
-            {% set q_edge = pred.get(q ~ '_edge', 0) %}
-            {% set max_q = 50 %}
-            <div class="quarter-cell">
-              <div class="quarter-label">{{ q|upper }}</div>
-              <div class="quarter-bars">
-                <div class="q-bar away" style="height: {{ (q_away / max_q * 70)|round }}%;">
-                  <span>{{ "%.0f"|format(q_away) }}</span>
-                </div>
-                <div class="q-bar home" style="height: {{ (q_home / max_q * 70)|round }}%;">
-                  <span>{{ "%.0f"|format(q_home) }}</span>
-                </div>
-              </div>
-              <div class="quarter-total">{{ "%.0f"|format(q_total) }}</div>
-              <div class="quarter-edge {{ 'pos' if q_edge > 0 else 'neg' }}">
-                {{ "{:+.1%}".format(q_edge) }}
-              </div>
+        {% for i in range(2) %}
+        <div class="skel-pred-card">
+          <div class="skel-card-header">
+            <div class="skel skel-league-badge skel-shimmer"></div>
+            <div class="skel skel-date skel-shimmer"></div>
+            <div class="skel skel-edge-badge skel-shimmer"></div>
+          </div>
+          <div class="skel-card-body">
+            <div class="skel-teams">
+              <div class="skel skel-team-row skel-shimmer"></div>
+              <div class="skel skel-vs-row skel-shimmer"></div>
+              <div class="skel skel-team-row skel-shimmer"></div>
             </div>
-            {% endfor %}
+            <div class="skel-pred-display">
+              <div class="skel skel-pred-value skel-shimmer"></div>
+              <div class="skel skel-pred-market skel-shimmer"></div>
+              <div class="skel skel-pred-bar skel-shimmer"></div>
+            </div>
+          </div>
+          <div class="skel-quarters">
+            <div class="skel skel-section-label skel-shimmer"></div>
+            <div class="skel-quarters-grid">
+              {% for i in range(4) %}
+              <div class="skel-quarter-cell">
+                <div class="skel skel-q-label skel-shimmer"></div>
+                <div class="skel skel-q-bars skel-shimmer"></div>
+                <div class="skel skel-q-total skel-shimmer"></div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          <div class="skel-footer">
+            <div class="skel skel-footer-item skel-shimmer"></div>
+            <div class="skel skel-footer-item skel-shimmer"></div>
+            <div class="skel skel-footer-item skel-shimmer"></div>
           </div>
         </div>
+        {% endfor %}
+      </div>
+    </div>
 
-        <div class="halves-section">
-          <div class="section-label">Half Projections</div>
-          <div class="halves-grid">
-            {% for h, label in [('h1', '1st Half'), ('h2', '2nd Half')] %}
-            {% set h_total = pred.get(h ~ '_total', 0) %}
-            {% set h_home = pred.get(h ~ '_home', 0) %}
-            {% set h_away = pred.get(h ~ '_away', 0) %}
-            {% set h_edge = pred.get(h ~ '_edge', 0) %}
-            <div class="half-cell">
-              <div class="half-label">{{ label }}</div>
-              <div class="half-detail-row">
-                <span class="half-team away">{{ "%.0f"|format(h_away) }}</span>
-                <span class="half-dash">—</span>
-                <span class="half-team home">{{ "%.0f"|format(h_home) }}</span>
-              </div>
-              <div class="half-total">{{ "%.0f"|format(h_total) }} <span class="half-mkt">mkt {{ "%.0f"|format(pred.get(h ~ '_market', 0)) }}</span></div>
-              <div class="half-edge {{ 'pos' if h_edge > 0 else 'neg' }}">{{ "{:+.1%}".format(h_edge) }}</div>
+    <!-- Cards container (filled by JS) -->
+    <div id="future-cards" class="cards-grid"></div>
+
+    <!-- Empty state (shown by JS when no data) — skeleton cards with overlay message -->
+    <div id="future-empty" class="future-empty-wrapper" style="display:none">
+      <div class="skel-cards-grid">
+        <div class="skel-pred-card">
+          <div class="skel-card-header">
+            <div class="skel skel-league-badge"></div>
+            <div class="skel skel-date"></div>
+            <div class="skel skel-edge-badge"></div>
+          </div>
+          <div class="skel-card-body">
+            <div class="skel-teams">
+              <div class="skel skel-team-row"></div>
+              <div class="skel skel-vs-row"></div>
+              <div class="skel skel-team-row"></div>
             </div>
-            {% endfor %}
+            <div class="skel-pred-display">
+              <div class="skel skel-pred-value"></div>
+              <div class="skel skel-pred-market"></div>
+              <div class="skel skel-pred-bar"></div>
+            </div>
           </div>
-        </div>
-
-        <div class="card-footer">
-          <div class="footer-item">
-            <span class="footer-label">Confidence</span>
-            <span class="footer-value conf-{{ pred.get('confidence', 'low') }}">{{ pred.get('confidence', 'low')|capitalize }}</span>
+          <div class="skel-quarters">
+            <div class="skel skel-section-label"></div>
+            <div class="skel-quarters-grid">
+              <div class="skel-quarter-cell">
+                <div class="skel skel-q-label"></div>
+                <div class="skel skel-q-bars"></div>
+                <div class="skel skel-q-total"></div>
+              </div>
+              <div class="skel-quarter-cell">
+                <div class="skel skel-q-label"></div>
+                <div class="skel skel-q-bars"></div>
+                <div class="skel skel-q-total"></div>
+              </div>
+              <div class="skel-quarter-cell">
+                <div class="skel skel-q-label"></div>
+                <div class="skel skel-q-bars"></div>
+                <div class="skel skel-q-total"></div>
+              </div>
+              <div class="skel-quarter-cell">
+                <div class="skel skel-q-label"></div>
+                <div class="skel skel-q-bars"></div>
+                <div class="skel skel-q-total"></div>
+              </div>
+            </div>
           </div>
-          <div class="footer-item">
-            <span class="footer-label">Score</span>
-            <span class="footer-value">{{ "%.0f"|format(pred.get('home_score', 0)) }} - {{ "%.0f"|format(pred.get('away_score', 0)) }}</span>
-          </div>
-          <div class="footer-item best-bet-item">
-            <span class="footer-label">Best Bet</span>
-            <span class="footer-value">
-              {{ pred.get('best_quarter', 'FULL') }}
-              <span class="best-direction {{ pred.get('best_quarter_direction', '') }}">{{ pred.get('best_quarter_direction', '')|upper }}</span>
-            </span>
-            <span class="footer-sub">{{ "{:+.1f}%".format(pred.get('best_quarter_edge', 0)) }}</span>
+          <div class="skel-footer">
+            <div class="skel skel-footer-item"></div>
+            <div class="skel skel-footer-item"></div>
+            <div class="skel skel-footer-item"></div>
           </div>
         </div>
       </div>
-      {% endfor %}
+      <div class="future-empty-overlay">
+        <div class="empty-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+            <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+          </svg>
+        </div>
+        <h3>No Predictions Available</h3>
+        <p>Predictions will appear here once data is loaded from the prediction engine.</p>
+        <button class="btn-primary" onclick="window._loadFuturePredictions()" style="margin-top:1rem">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+          Retry
+        </button>
+      </div>
     </div>
 
+    <!-- Methodology (always visible) -->
     <section class="methodology">
       <h2 class="section-title">How Predictions Are Generated</h2>
       <div class="method-grid">
@@ -242,25 +265,11 @@
         </div>
       </div>
     </section>
-    {% else %}
-    <div class="empty-state premium-empty">
-      <div class="empty-glow"></div>
-      <div class="empty-icon">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
-          <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
-        </svg>
-      </div>
-      <h3>Generating Predictions</h3>
-      <p>Analysis in progress — predictions will appear here once data is loaded.</p>
-      <div class="empty-loading">
-        <div class="loading-dot"></div>
-        <div class="loading-dot"></div>
-        <div class="loading-dot"></div>
-      </div>
-    </div>
-    {% endif %}
 
   </main>
+
+  <!-- Toast container — lives outside <main> so it survives any future DOM swaps -->
+  <div id="toast-root" aria-live="polite"></div>
 
   <footer class="footer-glass">
     <p>Betting Intelligence — Predictions for informational purposes only.</p>

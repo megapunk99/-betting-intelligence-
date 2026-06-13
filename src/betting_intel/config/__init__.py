@@ -1,56 +1,52 @@
-"""
-Configuration package — exposes both the pydantic-settings Settings class
-and module-level constants matching the original config.py API for backward
-compatibility with the core engine modules.
-"""
+"""Configuration package — exposes settings and module-level constants."""
 from pathlib import Path
 from betting_intel.config.settings import Settings, get_settings
 
 _settings = get_settings()
-settings = _settings  # Export the instance so `from betting_intel.config import settings` works
+settings = _settings  # Export the instance
 
-# ── Core constants (matching original config.py API) ──────────────────
-PROJECT_ROOT = _settings.project_root
-DATA_DIR = _settings.resolved_data_dir
-OUTPUT_DIR = _settings.resolved_output_dir
-DB_PATH = _settings.resolved_nba_db_path
+# ── Core paths ──────────────────────────────────────────────────────
+PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent.parent.parent
+DATA_DIR: Path = _settings.data_dir
+OUTPUT_DIR: Path = _settings.output_dir
+DB_PATH: Path = _settings.nba_db_path
 
-# ── Data Settings ─────────────────────────────────────────────────────
+# ── Data Settings ───────────────────────────────────────────────────
 MIN_GAMES_PER_TEAM = 5
 TRAIN_START_DATE = "2022-10-01"
 TEST_START_DATE = "2023-11-01"
 TEST_END_DATE = "2024-04-14"
 
-# ── Feature Engineering ───────────────────────────────────────────────
-ROLLING_WINDOWS = _settings.rolling_windows
-MAX_REST_DAYS = _settings.max_rest_days
+# ── Feature Engineering ─────────────────────────────────────────────
+ROLLING_WINDOWS = [3, 5, 10, 20]
+MAX_REST_DAYS = 14
 BACK_TO_BACK_PENALTY = True
 
-# ── Modeling ──────────────────────────────────────────────────────────
-TEST_SIZE = _settings.test_size
-WALK_FORWARD_WINDOW = _settings.walk_forward_window
-WALK_FORWARD_STEP = _settings.walk_forward_step
-MIN_TRAIN_SAMPLES = _settings.min_train_samples
+# ── Modeling ────────────────────────────────────────────────────────
+TEST_SIZE = 0.2
+WALK_FORWARD_WINDOW = 50
+WALK_FORWARD_STEP = 10
+MIN_TRAIN_SAMPLES = 100
 
-# ── Betting Simulation ────────────────────────────────────────────────
+# ── Betting Simulation ──────────────────────────────────────────────
 INITIAL_BANKROLL = _settings.initial_bankroll
-UNIT_SIZE = _settings.unit_size
-MAX_KELLY_FRACTION = _settings.max_kelly_fraction
 MIN_EDGE_THRESHOLD = _settings.min_edge_threshold
+UNIT_SIZE = INITIAL_BANKROLL / 100
+MAX_KELLY_FRACTION = 0.25
 VIG = 0.045
 CONFIDENCE_THRESHOLD = 0.55
 
-# ── Model Selection ───────────────────────────────────────────────────
-ENABLE_LINEAR_MODEL = _settings.enable_linear_model
-ENABLE_XGBOOST_MODEL = _settings.enable_xgboost_model
-ENABLE_ENSEMBLE = _settings.enable_ensemble
+# ── Model Selection ─────────────────────────────────────────────────
+ENABLE_LINEAR_MODEL = True
+ENABLE_XGBOOST_MODEL = True
+ENABLE_ENSEMBLE = True
 
-# ── Output ────────────────────────────────────────────────────────────
+# ── Output ──────────────────────────────────────────────────────────
 VERBOSE = True
 SAVE_PLOTS = True
 PLOT_STYLE = "seaborn-v0_8-darkgrid"
 
-# ── Strategy Names ────────────────────────────────────────────────────
+# ── Strategy Names ──────────────────────────────────────────────────
 STRATEGIES = {
     "pace_total": "Pace-Adjusted Total Prediction",
     "rest_edge": "Rest & Fatigue Edge",
@@ -59,29 +55,22 @@ STRATEGIES = {
     "quarter_scoring": "Quarter Scoring Pattern",
 }
 
-# ── Pipeline Control ──────────────────────────────────────────────────
-FAST_MODE = True                                  # Skip non-essential models
-ENABLE_HYPERPARAMETER_TUNING = False               # Optuna tuning (slow)
-ENABLE_STACKING_ENSEMBLE = True                    # Stacking ensemble
-ENABLE_MONTE_CARLO = True                          # Monte Carlo simulation
-MONTE_CARLO_SIMULATIONS = 10000                    # Number of MC simulations
+# ── Pipeline Control ────────────────────────────────────────────────
+FAST_MODE = True
+ENABLE_HYPERPARAMETER_TUNING = False
+ENABLE_STACKING_ENSEMBLE = True
+ENABLE_MONTE_CARLO = True
+MONTE_CARLO_SIMULATIONS = 10000
+PREFERRED_MODEL = "lightgbm"
 
-# ── Model Selection ───────────────────────────────────────────────────
-PREFERRED_MODEL = "lightgbm"                       # Default model strategy
-
-# ── API / External Services ───────────────────────────────────────────
-# IMPORTANT: This reads from .env via the Settings class (pydantic-settings).
-# The Settings class loads ODDS_API_KEY from the .env file automatically.
-# If not set in .env, the default is "your-api-key-here" (handled gracefully
-# by the engine's _fetch_real_odds_and_schedule method).
-ODDS_API_KEY = _settings.odds_api_key               # TheOddsAPI key (from .env)
-ODDS_API_BASE_URL = "https://api.the-odds-api.com"   # TheOddsAPI v4 base URL
-ODDS_CACHE_TTL_MINUTES = 5                          # Cache TTL for odds data
-CACHE_DIR = PROJECT_ROOT / "cache"                   # Cache directory for API responses
+# ── API / External Services ─────────────────────────────────────────
+ODDS_API_KEY = _settings.odds_api_key
+ODDS_API_BASE_URL = "https://api.the-odds-api.com"
+ODDS_CACHE_TTL_MINUTES = 5
+CACHE_DIR = PROJECT_ROOT / "cache"
 
 __all__ = [
     "Settings", "get_settings", "settings",
-    # Constants
     "PROJECT_ROOT", "DATA_DIR", "OUTPUT_DIR", "DB_PATH",
     "ROLLING_WINDOWS", "MAX_REST_DAYS",
     "WALK_FORWARD_WINDOW", "WALK_FORWARD_STEP", "MIN_TRAIN_SAMPLES",

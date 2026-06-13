@@ -5,25 +5,37 @@
 
   // ─── Chart.js performance chart ───
 
-  function initPerformanceChart() {
-    const canvas = document.getElementById('performance-chart');
-    if (!canvas) return;
+  let _chartInstance = null;
 
-    const rows = document.querySelectorAll('table tbody tr');
-    const profits = [];
-    rows.forEach(row => {
-      const pnlCell = row.querySelector('td:last-child');
-      if (!pnlCell) return;
-      const text = pnlCell.textContent.trim();
-      const match = text.match(/^[+\-–—$]\s*(\d+)/);
-      if (match) {
-        const val = parseFloat(match[1]);
-        profits.push(isNaN(val) ? 0 : val);
+  function initPerformanceChart() {
+    // Destroy previous chart instance FIRST to prevent memory leak on DOM swaps,
+    // even if the new DOM doesn't contain a chart (fewer than 2 data points)
+    if (_chartInstance) {
+      _chartInstance.destroy();
+      _chartInstance = null;
+    }
+
+    const chartContainer = document.getElementById('chart-container');
+    const canvas = document.getElementById('performance-chart');
+    if (!canvas || !chartContainer) return;
+
+    // Read profits from data attribute (server-side resolved bets, oldest first)
+    let profits = [];
+    try {
+      var raw = chartContainer.getAttribute('data-profits');
+      if (raw) {
+        profits = JSON.parse(raw);
       }
-    });
+    } catch (e) {
+      console.warn('Failed to parse chart profits:', e);
+    }
+
+    // Guard against malformed data and filter to valid numbers
+    if (!Array.isArray(profits)) profits = [];
+    profits = profits.filter(function(p) { return typeof p === 'number' && !isNaN(p); });
 
     if (profits.length < 2) {
-      canvas.parentElement.parentElement.style.display = 'none';
+      chartContainer.style.display = 'none';
       return;
     }
 
@@ -31,7 +43,7 @@
     const cumulative = profits.map(p => { cum += p; return cum; });
     const labels = profits.map((_, i) => `#${i + 1}`);
 
-    new Chart(canvas, {
+    _chartInstance = new Chart(canvas, {
       type: 'line',
       data: {
         labels,
@@ -117,11 +129,18 @@
 
   // ─── Freshness timer ───
 
+  let _freshnessInterval = null;
+
   function initFreshness() {
     const el = document.getElementById('gen-time');
     if (!el || !el.textContent) return;
     const dt = new Date(el.textContent);
     if (isNaN(dt.getTime())) return;
+
+    // Clear any previous interval to prevent accumulation across DOM swaps
+    if (_freshnessInterval) {
+      clearInterval(_freshnessInterval);
+    }
 
     function update() {
       const seconds = Math.floor((new Date() - dt) / 1000);
@@ -132,7 +151,7 @@
       el.textContent = display;
     }
     update();
-    setInterval(update, 10000);
+    _freshnessInterval = setInterval(update, 10000);
   }
 
   // ─── WebSocket live connection ───
@@ -221,11 +240,217 @@
   function initKeyboardNav() {
     document.addEventListener('keydown', e => {
       if (e.target.closest('input,textarea,button')) return;
-      if (e.key === 'r' && !e.ctrlKey && !e.metaKey) window.location.reload();
+      // Note: 'r' for reload removed — too easy to trigger accidentally
       if (e.key === 'p' && !e.ctrlKey && !e.metaKey) window.location.href = '/future-predictions';
       if (e.key === 'd' && !e.ctrlKey && !e.metaKey) window.location.href = '/';
     });
   }
+
+  // ─── Future Predictions: client-side loading ───
+
+  function _renderFutureCard(pred) {
+    var direction = pred.direction || 'under';
+    var edgePct = pred.edge_pct || 0;
+    var edgeAbs = Math.abs(edgePct * 100);
+    var barPct = Math.min(edgeAbs * 3, 100);
+    var isBest = (pred.best_quarter_edge || 0) > 10.0;
+
+    var quarters = ['q1', 'q2', 'q3', 'q4'];
+    var halves = [['h1', '1st Half'], ['h2', '2nd Half']];
+
+    var card = document.createElement('div');
+    card.className = 'pred-card' + (isBest ? ' best-card' : '');
+    card.style.animationDelay = '0s';
+
+    var cardHeader = document.createElement('div');
+    cardHeader.className = 'card-header';
+    cardHeader.innerHTML =
+      '<span class="card-league-badge ' + (pred.league || 'NBA').toLowerCase() + '">' + (pred.league || 'NBA') + '</span>' +
+      '<span class="card-date">' + (pred.game_date || '') + '</span>' +
+      '<span class="card-edge-badge ' + direction + '">' +
+        '<span class="edge-arrow">' + (direction === 'over' ? '▲' : '▼') + '</span>' +
+        '<span class="edge-value">' + (edgePct >= 0 ? '+' : '') + (edgePct * 100).toFixed(1) + '%</span>' +
+      '</span>';
+    card.appendChild(cardHeader);
+
+    // Card body
+    var cardBody = document.createElement('div');
+    cardBody.className = 'card-body';
+    cardBody.innerHTML =
+      '<div class="teams-section">' +
+        '<div class="team-row away">' +
+          '<span class="team-name">' + (pred.away_team || '') + '</span>' +
+          '<span class="team-tag">' + (pred.away_team_short || '') + '</span>' +
+        '</div>' +
+        '<div class="matchup-vs">' +
+          '<span class="vs-line"></span><span class="vs-text">@</span><span class="vs-line"></span>' +
+        '</div>' +
+        '<div class="team-row home">' +
+          '<span class="team-name">' + (pred.home_team || '') + '</span>' +
+          '<span class="team-tag">' + (pred.home_team_short || '') + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="prediction-display">' +
+        '<div class="prediction-main">' +
+          '<span class="prediction-value">' + (pred.predicted_total || 0).toFixed(0) + '</span>' +
+          '<span class="prediction-unit">pts</span>' +
+        '</div>' +
+        '<div class="prediction-market">Market: <strong>' + (pred.market_total || 0).toFixed(0) + '</strong></div>' +
+        '<div class="prediction-bar">' +
+          '<div class="pred-bar-track"><div class="pred-bar-fill ' + direction + '" style="width:' + barPct + '%;"></div></div>' +
+          '<span class="pred-bar-label">' + barPct.toFixed(0) + '%</span>' +
+        '</div>' +
+      '</div>';
+    card.appendChild(cardBody);
+
+    // Quarters
+    var qSection = document.createElement('div');
+    qSection.className = 'quarters-section';
+    var qHtml = '<div class="section-label">Quarter Projections</div><div class="quarters-grid">';
+    quarters.forEach(function(q) {
+      var qTotal = pred[q + '_total'] || 0;
+      var qHome = pred[q + '_home'] || 0;
+      var qAway = pred[q + '_away'] || 0;
+      var qEdge = pred[q + '_edge'] || 0;
+      var maxQ = 50;
+      var homeH = Math.round((qHome / maxQ) * 70);
+      var awayH = Math.round((qAway / maxQ) * 70);
+      qHtml +=
+        '<div class="quarter-cell">' +
+          '<div class="quarter-label">' + q.toUpperCase() + '</div>' +
+          '<div class="quarter-bars">' +
+            '<div class="q-bar away" style="height:' + awayH + '%;"><span>' + qAway.toFixed(0) + '</span></div>' +
+            '<div class="q-bar home" style="height:' + homeH + '%;"><span>' + qHome.toFixed(0) + '</span></div>' +
+          '</div>' +
+          '<div class="quarter-total">' + qTotal.toFixed(0) + '</div>' +
+          '<div class="quarter-edge ' + (qEdge > 0 ? 'pos' : 'neg') + '">' + (qEdge >= 0 ? '+' : '') + (qEdge * 100).toFixed(1) + '%</div>' +
+        '</div>';
+    });
+    qHtml += '</div>';
+    qSection.innerHTML = qHtml;
+    card.appendChild(qSection);
+
+    // Halves
+    var hSection = document.createElement('div');
+    hSection.className = 'halves-section';
+    var hHtml = '<div class="section-label">Half Projections</div><div class="halves-grid">';
+    halves.forEach(function(h) {
+      var key = h[0];
+      var label = h[1];
+      var hTotal = pred[key + '_total'] || 0;
+      var hHome = pred[key + '_home'] || 0;
+      var hAway = pred[key + '_away'] || 0;
+      var hEdge = pred[key + '_edge'] || 0;
+      hHtml +=
+        '<div class="half-cell">' +
+          '<div class="half-label">' + label + '</div>' +
+          '<div class="half-detail-row">' +
+            '<span class="half-team away">' + hAway.toFixed(0) + '</span>' +
+            '<span class="half-dash">—</span>' +
+            '<span class="half-team home">' + hHome.toFixed(0) + '</span>' +
+          '</div>' +
+          '<div class="half-total">' + hTotal.toFixed(0) + ' <span class="half-mkt">mkt ' + (pred[key + '_market'] || 0).toFixed(0) + '</span></div>' +
+          '<div class="half-edge ' + (hEdge > 0 ? 'pos' : 'neg') + '">' + (hEdge >= 0 ? '+' : '') + (hEdge * 100).toFixed(1) + '%</div>' +
+        '</div>';
+    });
+    hHtml += '</div>';
+    hSection.innerHTML = hHtml;
+    card.appendChild(hSection);
+
+    // Footer
+    var confidence = pred.confidence || 'low';
+    var homeScore = pred.home_score || 0;
+    var awayScore = pred.away_score || 0;
+    var bestQ = pred.best_quarter || 'FULL';
+    var bestDir = pred.best_quarter_direction || '';
+    var bestEdge = pred.best_quarter_edge || 0;
+
+    var footer = document.createElement('div');
+    footer.className = 'card-footer';
+    footer.innerHTML =
+      '<div class="footer-item">' +
+        '<span class="footer-label">Confidence</span>' +
+        '<span class="footer-value conf-' + confidence + '">' + confidence.charAt(0).toUpperCase() + confidence.slice(1) + '</span>' +
+      '</div>' +
+      '<div class="footer-item">' +
+        '<span class="footer-label">Score</span>' +
+        '<span class="footer-value">' + homeScore.toFixed(0) + ' - ' + awayScore.toFixed(0) + '</span>' +
+      '</div>' +
+      '<div class="footer-item best-bet-item">' +
+        '<span class="footer-label">Best Bet</span>' +
+        '<span class="footer-value">' + bestQ + ' <span class="best-direction ' + bestDir + '">' + bestDir.toUpperCase() + '</span></span>' +
+        '<span class="footer-sub">' + (bestEdge >= 0 ? '+' : '') + bestEdge.toFixed(1) + '%</span>' +
+      '</div>';
+    card.appendChild(footer);
+
+    return card;
+  }
+
+  function loadFuturePredictions() {
+    var skeleton = document.getElementById('future-skeleton');
+    var container = document.getElementById('future-cards');
+    var emptyState = document.getElementById('future-empty');
+    var countEl = document.getElementById('future-count');
+    var indicator = document.getElementById('future-indicator');
+    var genTime = document.getElementById('gen-time');
+
+    if (!container) return; // not on the future predictions page
+
+    // Show skeleton
+    if (skeleton) skeleton.classList.add('active');
+    if (emptyState) emptyState.style.display = 'none';
+    if (container) container.innerHTML = '';
+
+    fetch('/api/future-predictions')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var preds = data.predictions || [];
+
+        // Update hero stats & indicator
+        if (countEl) {
+          countEl.textContent = preds.length;
+          countEl.setAttribute('data-count', preds.length);
+        }
+        if (indicator) {
+          indicator.textContent = preds.length + ' games';
+          indicator.classList.toggle('has-data', preds.length > 0);
+        }
+        if (genTime && data.generated_at) {
+          genTime.textContent = data.generated_at.slice(0, 16);
+          // Re-init freshness timer with the real timestamp (replaces the stale one from init())
+          initFreshness();
+        }
+
+        // Hide skeleton
+        if (skeleton) skeleton.classList.remove('active');
+
+        if (preds.length === 0) {
+          // Show empty state
+          if (emptyState) emptyState.style.display = '';
+          return;
+        }
+
+        // Render cards with staggered fade-in
+        preds.forEach(function(pred, i) {
+          var card = _renderFutureCard(pred);
+          card.classList.add('fade-in');
+          card.style.animationDelay = (i * 80) + 'ms';
+          container.appendChild(card);
+        });
+
+        // Animate the counters
+        if (typeof animateCounters === 'function') animateCounters();
+      })
+      .catch(function(err) {
+        console.error('Failed to load future predictions:', err);
+        if (skeleton) skeleton.classList.remove('active');
+        // Show empty state without mutating its text (preserves original "No Predictions" message)
+        if (emptyState) emptyState.style.display = '';
+      });
+  }
+
+  window._loadFuturePredictions = loadFuturePredictions;
+  window._renderFutureCard = _renderFutureCard;
 
   // ─── Theme toggle ───
 
@@ -272,6 +497,156 @@
     if (btn) btn.addEventListener('click', toggleTheme);
   }
 
+  // ─── Show/hide skeleton loader ───
+
+  function _showSkeleton() {
+    const skeleton = document.getElementById('skeleton-area');
+    const emptyState = document.getElementById('empty-state');
+    if (skeleton) skeleton.classList.add('active');
+    if (emptyState) emptyState.style.display = 'none';
+  }
+
+  function _hideSkeleton() {
+    const skeleton = document.getElementById('skeleton-area');
+    const emptyState = document.getElementById('empty-state');
+    if (skeleton) skeleton.classList.remove('active');
+    if (emptyState) emptyState.style.display = '';  // restore default in case error occurred
+  }
+
+  // ─── Shared: swap <main> content without page reload ───
+  // Exposed on window so the global resolvePredictions() can use it too.
+
+  function _swapMainContent() {
+    return fetch('/')
+      .then(r => r.text())
+      .then(html => {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const newMain = doc.querySelector('main');
+        const oldMain = document.querySelector('main');
+        if (newMain && oldMain) {
+          oldMain.replaceWith(newMain);
+        }
+        // Re-init components that were in the swapped <main>
+        if (typeof Chart !== 'undefined') initPerformanceChart();
+        animateCounters();
+        initFreshness();
+      });
+  }
+
+  window._swapMainContent = _swapMainContent;
+
+  // ─── Toast notification (fixed outside <main> — survives DOM swaps) ───
+
+  function _showToast(message, type, duration) {
+    type = type || 'success';
+    duration = duration || 4000;
+
+    var root = document.getElementById('toast-root');
+    if (!root) return;
+
+    var toast = document.createElement('div');
+    toast.className = 'toast-float ' + type;
+    toast.textContent = message;
+    root.appendChild(toast);
+
+    // Auto-dismiss after duration
+    setTimeout(function () {
+      toast.classList.add('dismissing');
+      // Remove from DOM after animation completes
+      setTimeout(function () {
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+      }, 300);
+    }, duration);
+  }
+
+  window._showToast = _showToast;
+
+  // ─── Refresh live data without page reload ───
+
+  function refreshLiveData() {
+    const btn = document.getElementById('refresh-btn');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Refreshing...';
+    }
+
+    // Show skeleton immediately so user sees activity
+    _showSkeleton();
+
+    fetch('/api/live/refresh', { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.n_total > 0) {
+          // Fetch the full dashboard HTML and swap <main> content
+          // instead of location.reload() to avoid the page flash
+          return _swapMainContent().catch(() => {
+            // If HTML fetch fails after a successful API refresh, fall back
+            // to a full page reload so the user still sees fresh data
+            location.reload();
+          });
+        } else {
+          _hideSkeleton();
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Refresh Now';
+          }
+          console.log('Refresh returned no games:', data);
+        }
+      })
+      .catch(err => {
+        console.error('Refresh failed:', err);
+        _hideSkeleton();
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'Refresh Now';
+        }
+      });
+  }
+
+  window.refreshLiveData = refreshLiveData;
+
+  // ─── Auto-refresh on first load if no data ───
+
+  function autoRefreshIfEmpty() {
+    const nBets = parseInt(document.querySelector('.stat-value')?.textContent || '0', 10);
+    if (nBets === 0) {
+      console.log('No data found — auto-refreshing from live engine...');
+      refreshLiveData();
+    }
+  }
+
+  // ─── Sport filter ───
+
+  window.filterBySport = function(sport) {
+    // Update active button
+    document.querySelectorAll('.sport-filter-btn').forEach(function(btn) {
+      btn.classList.toggle('active', btn.getAttribute('data-sport') === sport);
+    });
+
+    // Show/hide game cards
+    var cards = document.querySelectorAll('.game-card');
+    var visibleCount = 0;
+    cards.forEach(function(card) {
+      if (sport === 'all') {
+        card.classList.remove('hidden-by-filter');
+        visibleCount++;
+      } else {
+        var cardSport = card.getAttribute('data-sport');
+        if (cardSport === sport) {
+          card.classList.remove('hidden-by-filter');
+          visibleCount++;
+        } else {
+          card.classList.add('hidden-by-filter');
+        }
+      }
+    });
+
+    // Update count badge
+    var countEl = document.getElementById('total-bets-count');
+    if (countEl) countEl.textContent = visibleCount;
+  };
+
   // ─── Init ───
 
   function init() {
@@ -283,6 +658,16 @@
     initFreshness();
     initWebSocket();
     initKeyboardNav();
+
+    // Detect which page we're on and act accordingly
+    var futureContainer = document.getElementById('future-cards');
+    if (futureContainer) {
+      // Future Predictions page: load async
+      loadFuturePredictions();
+    } else {
+      // Dashboard page: auto-refresh if empty
+      setTimeout(autoRefreshIfEmpty, 1500);
+    }
   }
 
   if (document.readyState === 'loading') {
@@ -298,7 +683,6 @@ function resolvePredictions() {
   const btn = document.getElementById('resolve-btn');
   const text = document.getElementById('resolve-text');
   const spinner = document.getElementById('resolve-spinner');
-  const result = document.getElementById('resolve-result');
 
   btn.disabled = true;
   text.textContent = 'Resolving...';
@@ -308,22 +692,32 @@ function resolvePredictions() {
     .then(r => r.json())
     .then(data => {
       if (data.error) {
-        result.className = 'toast error';
-        result.textContent = 'Error: ' + data.error;
+        if (window._showToast) {
+          window._showToast('Error: ' + data.error, 'error');
+        }
       } else {
-        result.className = 'toast success';
-        result.textContent = 'Resolved ' + data.resolved + ' predictions. Refreshing...';
-        setTimeout(() => location.reload(), 1000);
+        if (window._showToast) {
+          window._showToast('Resolved ' + data.resolved + ' predictions. Loading fresh data...', 'success', 3000);
+        }
+        // Use async HTML swap instead of location.reload() to avoid page flash
+        setTimeout(() => {
+          const swap = window._swapMainContent;
+          if (swap) {
+            swap().catch(() => location.reload());
+          } else {
+            location.reload();
+          }
+        }, 1000);
       }
     })
     .catch(err => {
-      result.className = 'toast error';
-      result.textContent = 'Request failed: ' + err.message;
+      if (window._showToast) {
+        window._showToast('Request failed: ' + err.message, 'error');
+      }
     })
     .finally(() => {
       btn.disabled = false;
       text.textContent = 'Resolve Predictions';
       spinner.classList.add('hidden');
-      result.classList.remove('hidden');
     });
 }

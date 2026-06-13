@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import json
 import logging
-import pickle
 import warnings
 from datetime import datetime
 from pathlib import Path
@@ -37,6 +36,12 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+
+from betting_intel.utils.safe_serialize import (
+    safe_pickle_dump, safe_pickle_load,
+    safe_joblib_dump, safe_joblib_load,
+    ModelIntegrityError,
+)
 
 warnings.filterwarnings("ignore")
 
@@ -167,10 +172,9 @@ def export_predictions(
         "metadata": metadata,
     }
 
-    # Save to disk
+    # Save to disk with hash verification
     export_path = output_dir / PREDICTIONS_FILENAME
-    with open(export_path, "wb") as f:
-        pickle.dump(export_package, f, protocol=pickle.HIGHEST_PROTOCOL)
+    safe_pickle_dump(export_package, export_path)
 
     # Also save human-readable metadata
     meta_path = output_dir / METADATA_FILENAME
@@ -209,8 +213,7 @@ def load_latest_predictions(
         return None
 
     try:
-        with open(export_path, "rb") as f:
-            package = pickle.load(f)
+        package = safe_pickle_load(export_path)
 
         df = package.get("predictions_df")
         if df is None or df.empty:
@@ -231,6 +234,9 @@ def load_latest_predictions(
 
         return df
 
+    except (FileNotFoundError, ModelIntegrityError) as e:
+        logger.warning(f"Pipeline predictions integrity error: {e}")
+        return None
     except Exception as e:
         logger.warning(f"Failed to load pipeline predictions: {e}")
         return None
@@ -267,7 +273,7 @@ def export_full_model_artifacts(
     model_name = "engine_ensemble"
 
     model_path = output_dir / f"{model_name}.joblib"
-    joblib.dump(ensemble, model_path)
+    safe_joblib_dump(ensemble, model_path)
 
     metadata = {
         "model_name": model_name,
@@ -311,7 +317,7 @@ def load_engine_model(
         return None, None
 
     try:
-        model = joblib.load(model_path)
+        model = safe_joblib_load(model_path)
         metadata = {}
         if meta_path.exists():
             with open(meta_path) as f:
@@ -322,6 +328,9 @@ def load_engine_model(
             f"({metadata.get('n_features', '?')} features)"
         )
         return model, metadata
+    except (ModelIntegrityError, FileNotFoundError) as e:
+        logger.warning(f"Pre-trained model integrity check failed: {e}")
+        return None, None
     except Exception as e:
         logger.warning(f"Failed to load pre-trained model: {e}")
         return None, None

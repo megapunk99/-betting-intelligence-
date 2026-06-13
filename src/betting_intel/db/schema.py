@@ -124,3 +124,69 @@ class PipelineRun(Base):
 
     def __repr__(self) -> str:
         return f"<PipelineRun {self.run_id}: {self.status}>"
+
+
+class MarketOdds(Base):
+    """
+    Stores historical market odds snapshots from TheOddsAPI.
+
+    Every time the engine refreshes odds, each game's consensus lines are
+    stored here with a timestamp. Over time this builds a rich history of
+    real market data that can be used for training the MarketInefficiencySystem
+    instead of relying on the ELO proxy.
+
+    Each game can have MULTIPLE snapshots (one per refresh cycle), allowing:
+    - Line movement analysis (how odds changed from open to close)
+    - Closing line value (CLV) tracking
+    - Historical market-implied probability computation
+    """
+
+    __tablename__ = "market_odds"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    game_id: Mapped[str] = mapped_column(String(100), index=True)
+    game_date: Mapped[str] = mapped_column(String(10), index=True)  # YYYY-MM-DD
+    sport_key: Mapped[str] = mapped_column(String(50), default="basketball_nba")
+
+    # Teams
+    home_team: Mapped[str] = mapped_column(String(100))
+    away_team: Mapped[str] = mapped_column(String(100))
+    home_team_short: Mapped[str] = mapped_column(String(50), default="")
+    away_team_short: Mapped[str] = mapped_column(String(50), default="")
+
+    # Consensus market lines
+    home_ml: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    away_ml: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    spread: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    market_total: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    over_odds: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    under_odds: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Market-implied probabilities (computed at storage time)
+    home_implied_prob: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    away_implied_prob: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    vig_removed_home_prob: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Consensus quality
+    n_books_ml: Mapped[int] = mapped_column(Integer, default=0)
+    n_books_total: Mapped[int] = mapped_column(Integer, default=0)
+    ml_std: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Source
+    source: Mapped[str] = mapped_column(String(20), default="theoddsapi")
+
+    # Timestamp
+    captured_at: Mapped[str] = mapped_column(String(30), index=True)  # ISO 8601
+
+    # Composite index for fast lookup by game + latest snapshot
+    __table_args__ = (
+        # Primary query pattern: find latest snapshot for a specific game
+        # Also used by get_market_probs_for_date_range to filter by date
+        {"sqlite_autoincrement": True},
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<MarketOdds {self.game_id}: {self.home_team_short} vs "
+            f"{self.away_team_short} @ {self.captured_at[:19]}>"
+        )

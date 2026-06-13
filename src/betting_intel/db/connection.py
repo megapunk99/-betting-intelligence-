@@ -54,26 +54,42 @@ class DatabaseManager:
     """Manages database engine and sessions with connection pooling."""
 
     def __init__(self, database_url: Optional[str] = None):
-        self.database_url = database_url or settings.database_url
+        if database_url:
+            self.database_url = database_url
+        elif hasattr(settings, 'database_url') and getattr(settings, 'database_url', None):
+            self.database_url = settings.database_url
+        else:
+            # Build SQLite URL from the nba_db_path setting
+            db_path = getattr(settings, 'nba_db_path', './data/nba_data.db')
+            self.database_url = f"sqlite:///{db_path}"
         self._engine = None
         self._session_factory = None
 
     @property
     def engine(self):
         if self._engine is None:
+            is_sqlite = self.database_url.startswith("sqlite")
             connect_args = {}
-            # SQLite specific configuration
-            if self.database_url.startswith("sqlite"):
-                connect_args["check_same_thread"] = False
 
-            self._engine = create_engine(
-                self.database_url,
-                connect_args=connect_args,
-                pool_pre_ping=True,
-                pool_size=5,
-                max_overflow=10,
-                echo=False,
-            )
+            if is_sqlite:
+                # SQLite's SingletonThreadPool doesn't support pool_size/max_overflow
+                connect_args["check_same_thread"] = False
+                self._engine = create_engine(
+                    self.database_url,
+                    connect_args=connect_args,
+                    pool_pre_ping=True,
+                    echo=False,
+                )
+            else:
+                self._engine = create_engine(
+                    self.database_url,
+                    connect_args=connect_args,
+                    pool_pre_ping=True,
+                    pool_size=5,
+                    max_overflow=10,
+                    echo=False,
+                )
+
             logger.debug("Database engine created: %s", self.database_url)
         return self._engine
 

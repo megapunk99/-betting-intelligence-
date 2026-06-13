@@ -366,51 +366,195 @@
 
 .footer-sub { display: block; font-size: 0.6rem; color: var(--green); font-weight: 700; margin-top: 0.05rem; }
 
-/* ── Empty State ────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════
+   SKELETON LOADING — matching prediction card layout
+   ═══════════════════════════════════════════════════════════════════════ */
 
-.premium-empty {
-  position: relative; padding: 4rem 2rem; text-align: center;
-  background: rgba(12, 12, 20, 0.6); border: 1px solid var(--border);
-  border-radius: var(--radius-lg); overflow: hidden;
+.future-skeleton {
+  display: none;
 }
 
-.empty-glow {
-  position: absolute; top: 50%; left: 50%; width: 300px; height: 300px;
-  transform: translate(-50%, -50%);
-  background: radial-gradient(circle, rgba(0, 230, 118, 0.05) 0%, transparent 60%);
+.future-skeleton.active {
+  display: block;
+}
+
+.skel-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+  gap: 1rem; margin-bottom: 2rem;
+}
+
+@media (max-width: 540px) {
+  .skel-cards-grid { grid-template-columns: 1fr; }
+}
+
+.skel-pred-card {
+  background: rgba(16, 16, 30, 0.85);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 1.25rem;
+}
+
+.skel-card-header {
+  display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;
+}
+
+.skel-card-body {
+  display: flex; gap: 1.25rem; margin-bottom: 1rem;
+}
+
+.skel-teams { flex: 1; display: flex; flex-direction: column; gap: 0.4rem; }
+
+.skel-pred-display {
+  flex-shrink: 0; min-width: 110px;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem;
+}
+
+.skel-quarters { margin-bottom: 0.75rem; }
+
+.skel-quarters-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4rem;
+}
+
+.skel-quarter-cell {
+  display: flex; flex-direction: column; align-items: center; gap: 0.3rem;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border);
+  border-radius: 8px; padding: 0.6rem 0.4rem;
+}
+
+.skel-footer {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border);
+}
+
+/* Skeleton element sizes */
+.skel-league-badge { width: 48px; height: 16px; border-radius: 4px; }
+.skel-date { width: 80px; height: 14px; border-radius: 3px; }
+.skel-edge-badge { width: 72px; height: 22px; border-radius: 6px; margin-left: auto; }
+.skel-team-row { width: 100%; height: 16px; border-radius: 3px; }
+.skel-vs-row { width: 40%; height: 12px; border-radius: 3px; margin: 0 auto; }
+.skel-pred-value { width: 64px; height: 28px; border-radius: 4px; }
+.skel-pred-market { width: 90px; height: 12px; border-radius: 3px; }
+.skel-pred-bar { width: 100px; height: 8px; border-radius: 4px; }
+.skel-section-label { width: 120px; height: 12px; border-radius: 3px; margin-bottom: 0.5rem; }
+.skel-q-label { width: 24px; height: 10px; border-radius: 3px; }
+.skel-q-bars { width: 40px; height: 32px; border-radius: 4px; }
+.skel-q-total { width: 32px; height: 14px; border-radius: 3px; }
+.skel-footer-item { width: 100%; height: 32px; border-radius: 4px; }
+
+/* Skeleton base + animation (shared with dashboard skeletons) */
+.skel {
+  background: var(--bg-elevated);
+  position: relative;
+  overflow: hidden;
+}
+
+.skel-shimmer::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255,255,255,0.03) 40%,
+    rgba(255,255,255,0.06) 50%,
+    rgba(255,255,255,0.03) 60%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: skel-shimmer 1.8s ease-in-out infinite;
+}
+
+@keyframes skel-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+[data-theme="light"] .skel-shimmer::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0,0,0,0.03) 40%,
+    rgba(0,0,0,0.06) 50%,
+    rgba(0,0,0,0.03) 60%,
+    transparent 100%
+  );
+}
+
+/* ── Card fade-in animation ─── */
+
+@keyframes card-fade-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.pred-card.fade-in {
+  animation: card-fade-in 0.4s ease-out both;
+}
+
+/* ── Empty State — skeleton cards with overlay ───────────────── */
+
+.future-empty-wrapper {
+  position: relative;
+  margin-bottom: 2rem;
+}
+
+.future-empty-wrapper .skel-pred-card {
   pointer-events: none;
+  user-select: none;
 }
 
-.premium-empty .empty-icon {
-  position: relative; z-index: 1;
-  color: rgba(0, 230, 118, 0.3); margin-bottom: 1rem;
+/* Muted skeleton: no shimmer, just structural outlines */
+.future-empty-wrapper .skel {
+  background: var(--bg-elevated);
+  opacity: 0.3;
+  position: relative;
+  overflow: hidden;
 }
 
-.premium-empty h3 {
-  position: relative; z-index: 1;
-  font-size: 1.2rem; font-weight: 800; color: var(--text); margin-bottom: 0.5rem;
+/* Keep the grid layout identical to real cards */
+.future-empty-wrapper .skel-cards-grid {
+  margin-bottom: 0;
 }
 
-.premium-empty p {
-  position: relative; z-index: 1;
-  color: var(--text-muted); font-size: 0.85rem;
+.future-empty-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  z-index: 5;
+  background: rgba(7, 7, 13, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
 }
 
-.empty-loading {
-  display: flex; justify-content: center; gap: 0.35rem; margin-top: 1.25rem;
+[data-theme="light"] .future-empty-overlay {
+  background: rgba(245, 245, 250, 0.7);
 }
 
-.loading-dot {
-  width: 5px; height: 5px; border-radius: 50%;
-  background: var(--green);
-  animation: loading-bounce 1.2s ease-in-out infinite;
+.future-empty-overlay .empty-icon {
+  color: var(--text-dim);
+  margin-bottom: 0.75rem;
+  opacity: 0.4;
 }
-.loading-dot:nth-child(2) { animation-delay: 0.2s; }
-.loading-dot:nth-child(3) { animation-delay: 0.4s; }
 
-@keyframes loading-bounce {
-  0%, 80%, 100% { transform: scale(0.6); opacity: 0.3; }
-  40% { transform: scale(1); opacity: 1; }
+.future-empty-overlay h3 {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: 0.4rem;
+}
+
+.future-empty-overlay p {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  max-width: 360px;
+  line-height: 1.5;
 }
 
 /* ── Methodology ────────────────────────────────────────────────── */
@@ -458,6 +602,8 @@
   .prediction-display { text-align: left; }
   .quarters-grid { grid-template-columns: repeat(2, 1fr); }
   .card-footer { grid-template-columns: 1fr; }
+  .skel-cards-grid { grid-template-columns: 1fr; }
+  .skel-quarters-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 480px) {

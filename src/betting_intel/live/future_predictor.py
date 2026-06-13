@@ -2,18 +2,18 @@
 FutureGamePredictor — GENUINELY AUTONOMOUS predictions.
 
 DESIGN PRINCIPLES:
-  - ALWAYS produces correct-range totals (NBA 200-260, WNBA 140-190)
+  - ALWAYS produces correct-range totals (NBA 200-260)
   - Stat baseline is the foundation; ML model is an ADDITIONAL signal only
   - Every failure mode logs WHY — never silent
   - Caches predictions so outages never break the dashboard
   - NEVER generates fake matchups — returns empty with clear log
 
 ARCHITECTURE:
-  1. Fetch REAL upcoming games from ESPN API (next 14 days, NBA + WNBA)
+  1. Fetch REAL upcoming games from ESPN API (next 14 days, NBA only)
   2. For every game: predicted_total = stat_baseline + team_strength_adjustment
   3. If ML model produces VALID output (100-350), use its delta too
   4. market_total = stat_baseline (best estimate without real odds)
-  5. Cascade to Q1-Q4 and 1H-2H using league-specific quarter ratios
+  5. Cascade to Q1-Q4 and 1H-2H using NBA-specific quarter ratios
   6. Cache to disk so dashboard works during API/network outages
 """
 from __future__ import annotations
@@ -27,6 +27,8 @@ from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
+
+from betting_intel.utils.safe_serialize import safe_joblib_load, ModelIntegrityError
 
 logger = logging.getLogger(__name__)
 
@@ -55,25 +57,6 @@ ESPN_TO_SHORT = {
     "Sacramento Kings":"Kings","San Antonio Spurs":"Spurs","Toronto Raptors":"Raptors",
     "Utah Jazz":"Jazz","Washington Wizards":"Wizards",
 }
-
-# ── WNBA Constants ────────────────────────────────────────────────────────
-WNBA_TEAMS = {"Dream","Sky","Sun","Wings","Fever","Aces","Sparks","Lynx",
-              "Liberty","Mercury","Storm","Mystics"}
-
-WNBA_QUARTER_RATIOS  = {"q1": 0.240, "q2": 0.250, "q3": 0.253, "q4": 0.257, "h1": 0.490, "h2": 0.510}
-WNBA_HOME_ADVANTAGE  = 1.5
-WNBA_TOTAL_MIN       = 140.0
-WNBA_TOTAL_MAX       = 190.0
-
-WNBA_ESPN_TO_SHORT = {
-    "Atlanta Dream":"Dream","Chicago Sky":"Sky","Connecticut Sun":"Sun",
-    "Dallas Wings":"Wings","Indiana Fever":"Fever","Las Vegas Aces":"Aces",
-    "Los Angeles Sparks":"Sparks","Minnesota Lynx":"Lynx","New York Liberty":"Liberty",
-    "Phoenix Mercury":"Mercury","Seattle Storm":"Storm","Washington Mystics":"Mystics",
-}
-WNBA_TEAM_PTS = {"Aces":87.0,"Liberty":86.0,"Sun":83.0,"Fever":82.0,"Lynx":82.0,
-                 "Mercury":81.0,"Storm":81.0,"Dream":80.0,"Sky":79.0,"Mystics":78.0,
-                 "Sparks":78.0,"Wings":77.0}
 
 ESPN_TIMEOUT   = 6     # seconds per HTTP request
 MAX_DAYS_SCAN  = 14    # how many days ahead to scan ESPN
@@ -203,7 +186,7 @@ class FutureGamePredictor:
     # ── ESPN Schedule Fetching ───────────────────────────────────────
 
     def _fetch_real_games(self, num_games: int) -> list[tuple[str, str, Optional[str]]]:
-        """Scan ESPN scoreboard for the next 14 days. Returns real scheduled games.
+        """Scan ESPN scoreboard for the next 14 days. Returns real scheduled NBA games.
 
         Each step is logged so you can see WHY it returns empty.
         """
@@ -216,103 +199,94 @@ class FutureGamePredictor:
         seen: set = set()
         matchups: list[tuple[str, str, Optional[str]]] = []
 
-        for league_key in ["nba", "wnba"]:
-            path = LEAGUE_TO_ESPN_PATH.get(league_key)
-            if not path:
-                logger.debug(f"No ESPN path for {league_key}")
-                continue
+        path = LEAGUE_TO_ESPN_PATH.get("nba")
+        if not path:
+            logger.debug("No ESPN path for nba")
+            return matchups
 
-            url = ESPN_SCOREBOARD_URL.format(sport=path)
-            name_map = ESPN_TO_SHORT if league_key == "nba" else WNBA_ESPN_TO_SHORT
-            team_set = NBA_TEAMS if league_key == "nba" else WNBA_TEAMS
-            games_found = 0
+        url = ESPN_SCOREBOARD_URL.format(sport=path)
 
-            for offset in range(MAX_DAYS_SCAN):
-                if len(matchups) >= num_games:
-                    break
-                check_date = (today + timedelta(days=offset)).strftime("%Y%m%d")
+        for offset in range(MAX_DAYS_SCAN):
+            if len(matchups) >= num_games:
+                break
+            check_date = (today + timedelta(days=offset)).strftime("%Y%m%d")
 
-                try:
-                    resp = session.get(url, params={"dates": check_date, "limit": 100},
-                                       timeout=ESPN_TIMEOUT)
-                    if resp.status_code == 404:
+            try:
+                resp = session.get(url, params={"dates": check_date, "limit": 100},
+                                   timeout=ESPN_TIMEOUT)
+                if resp.status_code == 404:
+                    continue
+                if resp.status_code != 200:
+                    logger.debug(f"ESPN {resp.status_code} for nba {check_date}")
+                    continue
+
+                for ev in resp.json().get("events", []):
+                    comps = ev.get("competitions", [])
+                    if not comps:
                         continue
-                    if resp.status_code != 200:
-                        logger.debug(f"ESPN {resp.status_code} for {league_key} {check_date}")
+
+                    # Skip completed/in-progress
+                    status = (comps[0].get("status", {}).get("type", {}).get("name", "") or "").upper()
+                    if "FINAL" in status or "IN_PROGRESS" in status:
                         continue
 
-                    for ev in resp.json().get("events", []):
-                        comps = ev.get("competitions", [])
-                        if not comps:
-                            continue
+                    competitors = comps[0].get("competitors", [])
+                    home_name = away_name = None
+                    for c in competitors:
+                        nm = c.get("team", {}).get("displayName", "")
+                        if c.get("homeAway") == "home":
+                            home_name = nm
+                        else:
+                            away_name = nm
 
-                        # Skip completed/in-progress
-                        status = (comps[0].get("status", {}).get("type", {}).get("name", "") or "").upper()
-                        if "FINAL" in status or "IN_PROGRESS" in status:
-                            continue
+                    if not home_name or not away_name:
+                        continue
 
-                        competitors = comps[0].get("competitors", [])
-                        home_name = away_name = None
-                        for c in competitors:
-                            nm = c.get("team", {}).get("displayName", "")
-                            if c.get("homeAway") == "home":
-                                home_name = nm
-                            else:
-                                away_name = nm
+                    # Normalize to short names
+                    home_short = ESPN_TO_SHORT.get(home_name)
+                    away_short = ESPN_TO_SHORT.get(away_name)
 
-                        if not home_name or not away_name:
-                            continue
+                    # Fuzzy match for NBA (ESPN sometimes uses different formatting)
+                    if not home_short:
+                        for full, s in ESPN_TO_SHORT.items():
+                            if full.lower() in home_name.lower() or home_name.lower() in full.lower():
+                                home_short = s
+                                break
+                    if not away_short:
+                        for full, s in ESPN_TO_SHORT.items():
+                            if full.lower() in away_name.lower() or away_name.lower() in full.lower():
+                                away_short = s
+                                break
 
-                        # Normalize to short names
-                        home_short = name_map.get(home_name)
-                        away_short = name_map.get(away_name)
+                    # Last resort: last word of team name
+                    if not home_short:
+                        home_short = home_name.split()[-1]
+                    if not away_short:
+                        away_short = away_name.split()[-1]
 
-                        # Fuzzy match for NBA (ESPN sometimes uses different formatting)
-                        if league_key == "nba":
-                            if not home_short:
-                                for full, s in ESPN_TO_SHORT.items():
-                                    if full.lower() in home_name.lower() or home_name.lower() in full.lower():
-                                        home_short = s
-                                        break
-                            if not away_short:
-                                for full, s in ESPN_TO_SHORT.items():
-                                    if full.lower() in away_name.lower() or away_name.lower() in full.lower():
-                                        away_short = s
-                                        break
+                    # Validate against known NBA teams
+                    if home_short not in NBA_TEAMS or away_short not in NBA_TEAMS:
+                        logger.debug(f"Non-NBA team: {away_name} @ {home_name}")
+                        continue
 
-                        # Last resort: last word of team name
-                        if not home_short:
-                            home_short = home_name.split()[-1]
-                        if not away_short:
-                            away_short = away_name.split()[-1]
+                    ed = ev.get("date", "")[:10]
+                    key = f"{home_short}|{away_short}|{ed}"
+                    if key not in seen:
+                        seen.add(key)
+                        matchups.append((home_short, away_short, ed))
 
-                        # Validate against known teams
-                        if home_short not in team_set or away_short not in team_set:
-                            logger.debug(f"Non-{league_key} team: {away_name} @ {home_name}")
-                            continue
-
-                        ed = ev.get("date", "")[:10]
-                        key = f"{home_short}|{away_short}|{ed}"
-                        if key not in seen:
-                            seen.add(key)
-                            matchups.append((home_short, away_short, ed))
-                            games_found += 1
-
-                except requests.exceptions.Timeout:
-                    logger.debug(f"ESPN timeout {league_key} {check_date}")
-                except requests.exceptions.ConnectionError:
-                    logger.debug(f"ESPN connection error {league_key} {check_date}")
-                except Exception as e:
-                    logger.debug(f"ESPN error {league_key} {check_date}: {e}")
-
-            if games_found:
-                logger.info(f"{league_key.upper()}: {games_found} upcoming games")
+            except requests.exceptions.Timeout:
+                logger.debug(f"ESPN timeout nba {check_date}")
+            except requests.exceptions.ConnectionError:
+                logger.debug(f"ESPN connection error nba {check_date}")
+            except Exception as e:
+                logger.debug(f"ESPN error nba {check_date}: {e}")
 
         if matchups:
             matchups.sort(key=lambda m: m[2] or "9999-12-31")
-            logger.info(f"ESPN: {len(matchups)} total games found")
+            logger.info(f"ESPN: {len(matchups)} NBA games found")
         else:
-            logger.info("ESPN: no upcoming games found in next 14 days")
+            logger.info("ESPN: no upcoming NBA games found in next 14 days")
         return matchups
 
     # ── Data Loading ────────────────────────────────────────────────
@@ -333,19 +307,15 @@ class FutureGamePredictor:
             # Filter to known NBA teams
             mask = raw_df["TEAM_NAME"].isin(NBA_TEAMS)
             raw_nba = raw_df[mask].copy()
-            if not raw_nba.empty:
-                team_pts = raw_nba.groupby("TEAM_NAME")["PTS"].mean().to_dict()
-                for t, v in WNBA_TEAM_PTS.items():
-                    team_pts.setdefault(t, v)
-                self._team_pts_avg = team_pts
-                logger.info(f"NBA: {len(raw_nba)} rows, {len(team_pts)} team averages")
+            if raw_nba.empty:
+                logger.error("No NBA team data found in database")
+                return False
 
-                # Try to build feature pipeline for ML model (non-critical)
-                self._try_load_model(raw_nba, loader)
-            else:
-                # Use WNBA defaults for everything
-                self._team_pts_avg = dict(WNBA_TEAM_PTS)
-                logger.info("No NBA data — using WNBA defaults only")
+            self._team_pts_avg = raw_nba.groupby("TEAM_NAME")["PTS"].mean().to_dict()
+            logger.info(f"NBA: {len(raw_nba)} rows, {len(self._team_pts_avg)} team averages")
+
+            # Try to build feature pipeline for ML model (non-critical)
+            self._try_load_model(raw_nba, loader)
 
             return True
         except Exception as e:
@@ -359,10 +329,13 @@ class FutureGamePredictor:
             return
 
         try:
-            import joblib
             from betting_intel.data.features import FeatureEngineer
 
-            data = joblib.load(str(self._model_path))
+            try:
+                data = safe_joblib_load(str(self._model_path))
+            except ModelIntegrityError:
+                logger.warning("No hash file for model %s — loading without verification", self._model_path)
+                data = safe_joblib_load(str(self._model_path), verify=False)
             self._model = data.get("model") or data.get("ensemble") or (
                 data if hasattr(data, "predict") else None)
             if self._model is None:
@@ -428,16 +401,13 @@ class FutureGamePredictor:
         ALWAYS produces correct-range totals because stat_baseline is the foundation.
         ML model is used ONLY when it validates (predicts 100-350).
         """
-        # Determine league
-        if home_team in NBA_TEAMS and away_team in NBA_TEAMS:
-            league = "nba"
-            league_label = "NBA"
-        elif home_team in WNBA_TEAMS and away_team in WNBA_TEAMS:
-            league = "wnba"
-            league_label = "WNBA"
-        else:
-            logger.debug(f"Unknown league: {home_team} vs {away_team}")
+        # NBA only — all matchups are NBA
+        if home_team not in NBA_TEAMS or away_team not in NBA_TEAMS:
+            logger.debug(f"Non-NBA matchup: {home_team} vs {away_team}")
             return None
+
+        league = "nba"
+        league_label = "NBA"
 
         try:
             # ── Stat baseline (always correct range) ──────────────
@@ -456,7 +426,7 @@ class FutureGamePredictor:
             # ── Home court effect on total ───────────────────────
             # Home court adds ~2.3 pts to home score, slightly reduces away score
             # Net effect on total is about +0.8 pts
-            home_adv = NBA_HOME_ADVANTAGE if league == "nba" else WNBA_HOME_ADVANTAGE
+            home_adv = NBA_HOME_ADVANTAGE
             home_adj = home_adv * 0.35
 
             # ── ML model signal (only if valid) ──────────────────
@@ -475,8 +445,8 @@ class FutureGamePredictor:
             market_total = round(stat_base, 1)
 
             # Clamp to league range
-            lo = NBA_TOTAL_MIN if league == "nba" else WNBA_TOTAL_MIN
-            hi = NBA_TOTAL_MAX if league == "nba" else WNBA_TOTAL_MAX
+            lo = NBA_TOTAL_MIN
+            hi = NBA_TOTAL_MAX
             predicted_total = max(lo, min(hi, predicted_total))
 
             # ── Edge & Confidence ───────────────────────────────
@@ -604,8 +574,8 @@ class FutureGamePredictor:
     @staticmethod
     def _project_quarters(predicted: float, market: float, hp: float, ap: float,
                           league: str) -> dict[str, float]:
-        ratios = WNBA_QUARTER_RATIOS if league == "wnba" else NBA_QUARTER_RATIOS
-        hpct = 0.52 if league == "wnba" else 0.51
+        ratios = NBA_QUARTER_RATIOS
+        hpct = 0.51
 
         # Strength-adjusted home percentage
         if hp > 0 and ap > 0:

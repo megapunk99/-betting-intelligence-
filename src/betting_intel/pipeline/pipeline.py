@@ -194,9 +194,7 @@ class PredictionPipeline(
         if self.args.live:
             self._train_all_data_model(self.features_df)
 
-        # ── 4a2. Train multi-league models (WNBA, Euroleague, NCAAB...) ─
-        if self.args.live:
-            self.train_multi_league_models()
+        # ── 4a2. Multi-league training removed — NBA only ────────────
 
         # ── 4b. Predict tomorrow's games (live mode) ───────────────────
         # _run_tomorrow_predictions -> predict_tomorrow_games handles the fallback
@@ -205,11 +203,7 @@ class PredictionPipeline(
         if self.args.live and self.model is not None:
             self._run_tomorrow_predictions()
 
-        # ── 4c. Predict multi-league games (WNBA, Euroleague, NCAAB...) ─
-        if self.args.live:
-            multi_league_preds = self.predict_multi_league_games()
-            if multi_league_preds:
-                self._merge_multi_league_predictions(multi_league_preds)
+        # ── 4c. Multi-league predictions removed — NBA only ──────────
 
         # ── 5. Edge detection ─────────────────────────────────────────
         edges = self.detect_edges(self.predictions_df)
@@ -393,36 +387,3 @@ class PredictionPipeline(
                 self.results["tomorrow_recommendations"] = tomorrow_recs
                 self.tomorrow_recommendations_final = tomorrow_recs
 
-    def _merge_multi_league_predictions(self, multi_league_preds: List[Dict[str, Any]]):
-        """Merge multi-league predictions into tomorrow recommendations."""
-        if not multi_league_preds:
-            return
-
-        # Convert to recommendation format
-        ml_recs = []
-        for tp in multi_league_preds:
-            edge = abs(tp.get("edge_pct", 0))
-            if edge < self.args.min_edge:
-                continue
-            direction = tp.get("direction", "over")
-            league = tp.get("league", "nba")
-            rec = {
-                "team": tp.get("home_team", "?"),
-                "bet_type": f"total_{direction}",
-                "edge": edge,
-                "confidence": tp.get("confidence", "medium"),
-                "odds": tp.get("implied_odds", {}).get("home_moneyline" if direction == "over" else "away_moneyline", -110),
-                "market_total": tp.get("market_total", 0),
-                "predicted_total": tp.get("predicted_total", 0),
-                "expected_value": edge,
-                "league": league,
-            }
-            ml_recs.append(rec)
-
-        if ml_recs:
-            # Merge with existing tomorrow recommendations
-            existing = self.tomorrow_recommendations_final
-            self.tomorrow_recommendations_final = existing + ml_recs
-            leagues = set(r.get("league", "?") for r in ml_recs)
-            print(f"  🔗  Merged {len(ml_recs)} multi-league predictions into recommendations")
-            print(f"      Leagues: {', '.join(leagues)}")

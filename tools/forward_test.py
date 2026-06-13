@@ -63,26 +63,18 @@ try:
 except ImportError:
     ODDS_AVAILABLE = False
 
-# Player injury impact module
-try:
-    from betting_intel.data.player_injury import PlayerInjuryFetcher, GameInjuryData
-    INJURY_AVAILABLE = True
-except ImportError:
-    INJURY_AVAILABLE = False
+# Injury modules were removed during cleanup — all imports disabled.
+# The Phase 3 injury assessment block still runs but won't find any data.
+INJURY_AVAILABLE = False
+ESPN_INTEGRATOR_AVAILABLE = False
+INJURY_ADJUSTER_AVAILABLE = False
 
-# ESPN injury integrator — merges official status with prop-based detection
-try:
-    from betting_intel.data.espn_injury_integrator import ESPNInjuryIntegrator, MergedGameInjuryData
-    ESPN_INTEGRATOR_AVAILABLE = True
-except ImportError:
-    ESPN_INTEGRATOR_AVAILABLE = False
-
-# Injury adjuster — adjusts features for missing players
-try:
-    from betting_intel.data.injury_adjuster import InjuryAdjuster
-    INJURY_ADJUSTER_AVAILABLE = True
-except ImportError:
-    INJURY_ADJUSTER_AVAILABLE = False
+# Stub type for forward references in function signatures
+class GameInjuryData: pass
+class MergedGameInjuryData: pass
+class PlayerInjuryFetcher: pass
+class ESPNInjuryIntegrator: pass
+class InjuryAdjuster: pass
 
 # ---- ANSI Colors ----
 GREEN = "\033[92m"
