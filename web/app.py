@@ -259,6 +259,33 @@ HERE = Path(__file__).resolve().parent
 PROJECT_ROOT = HERE.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+# ── Async helper: run blocking code in thread pool ─────────────────────
+
+import concurrent.futures
+
+_thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+
+async def run_blocking(fn, *args, timeout: float = 45.0):
+    """Run a blocking/sync function in a thread so it doesn't block the event loop.
+
+    Args:
+        fn: The blocking function to call.
+        timeout: Maximum seconds to wait before raising asyncio.TimeoutError.
+
+    Returns:
+        The return value of fn.
+
+    Raises:
+        asyncio.TimeoutError: If fn doesn't complete within timeout seconds.
+    """
+    loop = asyncio.get_event_loop()
+    return await asyncio.wait_for(
+        loop.run_in_executor(_thread_pool, fn, *args),
+        timeout=timeout,
+    )
+
+
 # ── App ──────────────────────────────────────────────────────────────────
 
 app = FastAPI(title="Betting Intelligence", version="0.3.0")
@@ -554,10 +581,15 @@ def load_resolved_bets(max_age_days: int = 30) -> list[dict]:
 @app.post("/api/live/refresh")
 @app.get("/api/live/refresh")
 async def live_refresh():
-    """Force-refresh live predictions from odds sources."""
+    """Force-refresh live predictions from odds sources.
+
+    Runs the blocking refresh_now() in a thread pool so it doesn't
+    block the async event loop. Times out after 45 seconds to prevent
+    hanging the server when odds sources are unreachable.
+    """
     try:
         engine = get_live_engine()
-        snapshot = engine.refresh_now()
+        snapshot = await run_blocking(engine.refresh_now, timeout=45.0)
         return JSONResponse(content={
             "n_total": snapshot.n_total,
             "n_today": snapshot.n_today,
@@ -566,6 +598,14 @@ async def live_refresh():
             "fresh_odds": snapshot.fresh_odds,
             "refreshed": True,
             "generated_at": snapshot.generated_at,
+        })
+    except asyncio.TimeoutError:
+        logger.warning("Live refresh timed out after 45s — odds sources unreachable")
+        return JSONResponse(content={
+            "n_total": 0, "n_today": 0, "n_tomorrow": 0,
+            "n_live": 0, "fresh_odds": False, "refreshed": False,
+            "error": "timed_out",
+            "message": "Odds sources timed out. Check your API keys and try again.",
         })
     except (ValueError, RuntimeError, ConnectionError, OSError) as e:
         logger.error(f"Live refresh failed: {e}")
@@ -902,7 +942,7 @@ async def api_refresh():
     """JSON API — refresh predictions and return summary."""
     try:
         engine = get_live_engine()
-        snapshot = engine.refresh_now()
+        snapshot = await run_blocking(engine.refresh_now, timeout=45.0)
         bets = [_livegame_to_bet(g) for g in snapshot.next_two_days]
         total_stake = 0.0  # No stake info from live engine directly
         return JSONResponse(content={
@@ -913,6 +953,12 @@ async def api_refresh():
             "n_today": snapshot.n_today,
             "n_tomorrow": snapshot.n_tomorrow,
             "refreshed": True,
+        })
+    except asyncio.TimeoutError:
+        return JSONResponse(content={
+            "total_bets": 0, "games_available": 0,
+            "total_stake": 0, "generated_at": datetime.now().isoformat(),
+            "refreshed": False, "error": "timed_out",
         })
     except Exception as e:
         logger.error(f"Refresh API failed: {e}")
@@ -933,9 +979,10 @@ async def api_resolve():
     try:
         from betting_intel.analytics.tracker import ResultsTracker
         tracker = ResultsTracker()
-        n = tracker.resolve_all()
+        n = await run_blocking(tracker.resolve_all, timeout=30.0)
         # Refresh live engine after resolving so we get fresh predictions
-        ctx = _games_context(force_refresh=True)
+        # Use force_refresh=False to avoid blocking again — just show what's cached
+        ctx = _games_context(force_refresh=False)
         return JSONResponse(content={
             "resolved": n,
             "message": f"Resolved {n} predictions and refreshed live engine",
@@ -944,6 +991,8 @@ async def api_resolve():
             "n_clear": ctx["n_clear"],
             "generated_at": ctx["generated_at"],
         })
+    except asyncio.TimeoutError:
+        return JSONResponse(content={"error": "timed_out", "resolved": 0}, status_code=504)
     except Exception as e:
         logger.error(f"Resolve failed: {e}")
         return JSONResponse(content={"error": str(e), "resolved": 0}, status_code=500)

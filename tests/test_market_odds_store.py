@@ -999,7 +999,235 @@ class TestGetStats:
 
 
 # ====================================================================
-#  SECTION 8: Edge Cases & Integration
+#  SECTION 8: get_closing_vs_opening_prob
+# ====================================================================
+
+
+class TestGetClosingVsOpeningProb:
+    """Unit tests for get_closing_vs_opening_prob.
+
+    This method returns (opening_prob, closing_prob) by querying ALL
+    snapshots for a game, ordered by captured_at ascending. Opening =
+    first snapshot, closing = last snapshot.
+    """
+
+    def _seed_game(
+        self,
+        store: MarketOddsStore,
+        game_id: str = "GAME_CLV_001",
+        date: str = "2025-01-15",
+        home_team: str = "Boston Celtics",
+        away_team: str = "Los Angeles Lakers",
+        home_short: str = "Celtics",
+        away_short: str = "Lakers",
+        home_ml: float = -150.0,
+        away_ml: float = +130.0,
+    ):
+        """Helper: log a single odds snapshot."""
+        store.log_snapshot(
+            game_id=game_id, game_date=date,
+            home_team=home_team, away_team=away_team,
+            home_team_short=home_short, away_team_short=away_short,
+            home_ml=home_ml, away_ml=away_ml,
+        )
+
+    def test_two_snapshots_return_opening_and_closing(self, store: MarketOddsStore):
+        """Two snapshots: opening (first) = -150 line, closing (last) = -300 line."""
+        self._seed_game(store, game_id="GAME_CLV_1", home_ml=-150.0, away_ml=+130.0)
+        self._seed_game(store, game_id="GAME_CLV_1", home_ml=-300.0, away_ml=+250.0)
+
+        opening, closing = store.get_closing_vs_opening_prob(
+            "Boston Celtics", "Los Angeles Lakers", "2025-01-15"
+        )
+        assert opening is not None
+        assert closing is not None
+        # Opening: -150/+130 → vig-free ~0.58
+        assert 0.55 < opening < 0.60
+        # Closing: -300/+250 → vig-free ~0.75
+        assert closing > 0.70
+        assert closing > opening  # Line moved in favor of home team
+
+    def test_single_snapshot_returns_same_value(self, store: MarketOddsStore):
+        """Single snapshot: opening == closing."""
+        self._seed_game(store, game_id="GAME_CLV_2", home_ml=-150.0, away_ml=+130.0)
+
+        opening, closing = store.get_closing_vs_opening_prob(
+            "Celtics", "Lakers", "2025-01-15"
+        )
+        assert opening is not None
+        assert closing is not None
+        assert opening == closing
+
+    def test_no_snapshots_returns_none(self, store: MarketOddsStore):
+        """No snapshots stored: returns (None, None)."""
+        opening, closing = store.get_closing_vs_opening_prob(
+            "Boston Celtics", "Los Angeles Lakers", "2025-01-15"
+        )
+        assert opening is None
+        assert closing is None
+
+    def test_three_snapshots_line_movement(self, store: MarketOddsStore):
+        """Three snapshots tracking line movement: opening from first, closing from last."""
+        # Opening: -150
+        self._seed_game(store, game_id="GAME_CLV_3", home_ml=-150.0, away_ml=+130.0)
+        # Line moved to -200
+        self._seed_game(store, game_id="GAME_CLV_3", home_ml=-200.0, away_ml=+175.0)
+        # Closing: -250
+        self._seed_game(store, game_id="GAME_CLV_3", home_ml=-250.0, away_ml=+210.0)
+
+        opening, closing = store.get_closing_vs_opening_prob(
+            "Celtics", "Lakers", "2025-01-15"
+        )
+        assert opening is not None
+        assert closing is not None
+        # Opening should be ~0.58 (from -150/+130)
+        assert 0.55 < opening < 0.60
+        # Closing should be ~0.71 (from -250/+210)
+        assert closing > 0.68
+        assert closing > opening
+
+    def test_line_moved_against_home_team(self, store: MarketOddsStore):
+        """Line moves against home team: closing < opening."""
+        # Opening: home favored at -150
+        self._seed_game(store, game_id="GAME_CLV_4", home_ml=-150.0, away_ml=+130.0,
+                        home_team="Boston Celtics", away_team="Los Angeles Lakers")
+        # Closing: home became underdog
+        self._seed_game(store, game_id="GAME_CLV_4", home_ml=+120.0, away_ml=-140.0,
+                        home_team="Boston Celtics", away_team="Los Angeles Lakers")
+
+        opening, closing = store.get_closing_vs_opening_prob(
+            "Celtics", "Lakers", "2025-01-15"
+        )
+        assert opening is not None
+        assert closing is not None
+        # Opening: -150 → ~0.58 vig-free
+        assert opening > 0.55
+        # Closing: +120 → ~0.45 vig-free
+        assert closing < 0.50
+        assert closing < opening  # Line moved against home
+
+    def test_swapped_orientation(self, store: MarketOddsStore):
+        """Query with teams in swapped order (home=away_record, away=home_record).
+        Opening/closing should be from the QUERY's home team perspective."""
+        self._seed_game(store, game_id="GAME_CLV_5", home_ml=-150.0, away_ml=+130.0,
+                        home_team="Boston Celtics", away_team="Los Angeles Lakers")
+        self._seed_game(store, game_id="GAME_CLV_5", home_ml=-300.0, away_ml=+250.0,
+                        home_team="Boston Celtics", away_team="Los Angeles Lakers")
+
+        # Query with Lakers as 'home' (swapped)
+        opening, closing = store.get_closing_vs_opening_prob(
+            "Lakers", "Celtics", "2025-01-15"
+        )
+        assert opening is not None
+        assert closing is not None
+        # Opening: Lakers are away at -150 for home (Celtics), so Lakers prob = 1 - 0.58 = ~0.42
+        assert 0.38 < opening < 0.48
+        # Closing: Lakers prob = 1 - 0.75 = ~0.25
+        assert 0.18 < closing < 0.32
+        assert closing < opening  # Lakers got less likely to win
+
+    def test_short_name_match(self, store: MarketOddsStore):
+        """Query using short team names (Celtics/Lakers instead of full names)."""
+        self._seed_game(store, game_id="GAME_CLV_6", home_ml=-150.0, away_ml=+130.0)
+        self._seed_game(store, game_id="GAME_CLV_6", home_ml=-300.0, away_ml=+250.0)
+
+        opening, closing = store.get_closing_vs_opening_prob(
+            "Celtics", "Lakers", "2025-01-15"
+        )
+        assert opening is not None
+        assert closing is not None
+        assert 0.55 < opening < 0.60
+        assert closing > 0.70
+
+    def test_wrong_date_returns_none(self, store: MarketOddsStore):
+        """Game exists but query uses wrong date: returns (None, None)."""
+        self._seed_game(store, game_id="GAME_CLV_7", date="2025-01-10")
+        opening, closing = store.get_closing_vs_opening_prob(
+            "Celtics", "Lakers", "2025-01-15"
+        )
+        assert opening is None
+        assert closing is None
+
+    def test_wrong_teams_returns_none(self, store: MarketOddsStore):
+        """Date matches but wrong teams: returns (None, None)."""
+        self._seed_game(store, game_id="GAME_CLV_8",
+                        home_team="Miami Heat", away_team="New York Knicks",
+                        home_short="Heat", away_short="Knicks")
+        opening, closing = store.get_closing_vs_opening_prob(
+            "Celtics", "Lakers", "2025-01-15"
+        )
+        assert opening is None
+        assert closing is None
+
+    def test_no_vig_free_odds(self, store: MarketOddsStore):
+        """Game stored without moneyline odds: returns (None, None)."""
+        store.log_snapshot(
+            game_id="GAME_CLV_9", game_date="2025-01-15",
+            home_team="Boston Celtics", away_team="Los Angeles Lakers",
+            home_team_short="Celtics", away_team_short="Lakers",
+            home_ml=None, away_ml=None,
+        )
+        opening, closing = store.get_closing_vs_opening_prob(
+            "Celtics", "Lakers", "2025-01-15"
+        )
+        assert opening is None
+        assert closing is None
+
+    def test_only_one_snapshot_has_odds(self, store: MarketOddsStore):
+        """Multiple snapshots but only one has moneyline data."""
+        # First snapshot: no odds (vig_removed_home_prob = None)
+        store.log_snapshot(
+            game_id="GAME_CLV_10", game_date="2025-01-15",
+            home_team="Boston Celtics", away_team="Los Angeles Lakers",
+            home_team_short="Celtics", away_team_short="Lakers",
+            home_ml=None, away_ml=None,
+        )
+        # Second snapshot: with odds
+        store.log_snapshot(
+            game_id="GAME_CLV_10", game_date="2025-01-15",
+            home_team="Boston Celtics", away_team="Los Angeles Lakers",
+            home_team_short="Celtics", away_team_short="Lakers",
+            home_ml=-150.0, away_ml=+130.0,
+        )
+
+        opening, closing = store.get_closing_vs_opening_prob(
+            "Celtics", "Lakers", "2025-01-15"
+        )
+        # First snapshot has no vig-free prob → opening = None (no market data at that point)
+        # Second snapshot has odds → closing = ~0.58
+        assert opening is None
+        assert closing is not None
+        assert 0.55 < closing < 0.60
+
+    def test_multiple_games_same_date_different_matchups(self, store: MarketOddsStore):
+        """Multiple games on same date: query returns correct opening/closing per matchup."""
+        # Game 1: Celtics @ Lakers
+        self._seed_game(store, game_id="GAME_CLV_M1", home_ml=-150.0, away_ml=+130.0)
+        # Game 2: Heat @ Knicks
+        store.log_snapshot(
+            game_id="GAME_CLV_M2", game_date="2025-01-15",
+            home_team="Miami Heat", away_team="New York Knicks",
+            home_team_short="Heat", away_team_short="Knicks",
+            home_ml=-110.0, away_ml=-110.0,
+        )
+
+        celtics_opening, celtics_closing = store.get_closing_vs_opening_prob(
+            "Celtics", "Lakers", "2025-01-15"
+        )
+        assert celtics_opening is not None
+        assert celtics_closing is not None
+        assert 0.55 < celtics_opening < 0.60
+
+        heat_opening, heat_closing = store.get_closing_vs_opening_prob(
+            "Heat", "Knicks", "2025-01-15"
+        )
+        assert heat_opening is not None
+        assert heat_closing is not None
+        assert heat_opening == pytest.approx(0.5, abs=0.01)
+
+
+# ====================================================================
+#  SECTION 9: Edge Cases & Integration
 # ====================================================================
 
 

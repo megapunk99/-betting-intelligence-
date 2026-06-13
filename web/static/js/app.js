@@ -517,13 +517,17 @@
   // Exposed on window so the global resolvePredictions() can use it too.
 
   function _swapMainContent() {
-    return fetch('/')
-      .then(r => r.text())
-      .then(html => {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-        const newMain = doc.querySelector('main');
-        const oldMain = document.querySelector('main');
+    var controller = new AbortController();
+    var timeoutId = setTimeout(function() { controller.abort(); }, 15000);
+
+    return fetch('/', { signal: controller.signal })
+      .then(function(r) { return r.text(); })
+      .then(function(html) {
+        clearTimeout(timeoutId);
+        var parser = new DOMParser();
+        var doc = parser.parseFromString(html, 'text/html');
+        var newMain = doc.querySelector('main');
+        var oldMain = document.querySelector('main');
         if (newMain && oldMain) {
           oldMain.replaceWith(newMain);
         }
@@ -531,6 +535,13 @@
         if (typeof Chart !== 'undefined') initPerformanceChart();
         animateCounters();
         initFreshness();
+      })
+      .catch(function(err) {
+        clearTimeout(timeoutId);
+        if (err.name === 'AbortError') {
+          _showToast('Page load timed out', 'error', 3000);
+        }
+        throw err;
       });
   }
 
@@ -564,43 +575,81 @@
 
   // ─── Refresh live data without page reload ───
 
+  var REFRESH_TIMEOUT_MS = 50000;  // 50 seconds max wait for refresh
+  var SKELETON_FALLBACK_MS = 55000; // Show empty state after 55s if nothing happens
+
   function refreshLiveData() {
-    const btn = document.getElementById('refresh-btn');
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = 'Refreshing...';
-    }
+    var btn = document.getElementById('refresh-btn');
+    var refreshBtn2 = document.querySelector('.action-bar .btn-secondary');
+
+    // Disable all refresh buttons
+    [btn, refreshBtn2].forEach(function(b) {
+      if (b) { b.disabled = true; b.textContent = 'Refreshing...'; }
+    });
 
     // Show skeleton immediately so user sees activity
     _showSkeleton();
 
-    fetch('/api/live/refresh', { method: 'POST' })
-      .then(r => r.json())
-      .then(data => {
+    // Safety timer: if refresh takes too long, hide skeleton and show empty state
+    var skeletonTimer = setTimeout(function() {
+      _hideSkeleton();
+      _showToast('Refresh timed out. Try again or check API keys.', 'error', 6000);
+      [btn, refreshBtn2].forEach(function(b) {
+        if (b) { b.disabled = false; b.textContent = b === btn ? 'Refresh Now' : '\u21B5 Refresh'; }
+      });
+    }, SKELETON_FALLBACK_MS);
+
+    // Create AbortController for timeout
+    var controller = new AbortController();
+    var timeoutId = setTimeout(function() { controller.abort(); }, REFRESH_TIMEOUT_MS);
+
+    fetch('/api/live/refresh', {
+      method: 'POST',
+      signal: controller.signal,
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        clearTimeout(timeoutId);
+        clearTimeout(skeletonTimer);
+
         if (data.n_total > 0) {
           // Fetch the full dashboard HTML and swap <main> content
           // instead of location.reload() to avoid the page flash
-          return _swapMainContent().catch(() => {
+          _swapMainContent().catch(function() {
             // If HTML fetch fails after a successful API refresh, fall back
             // to a full page reload so the user still sees fresh data
             location.reload();
           });
         } else {
           _hideSkeleton();
-          if (btn) {
-            btn.disabled = false;
-            btn.textContent = 'Refresh Now';
+          [btn, refreshBtn2].forEach(function(b) {
+            if (b) { b.disabled = false; b.textContent = b === btn ? 'Refresh Now' : '\u21B5 Refresh'; }
+          });
+
+          if (data.error === 'timed_out') {
+            _showToast('Odds sources timed out. Check API keys.', 'error', 5000);
+          } else if (data.error) {
+            _showToast('Error: ' + data.error, 'error', 5000);
+          } else {
+            _showToast('No games found. Try again later.', 'info', 4000);
           }
-          console.log('Refresh returned no games:', data);
         }
       })
-      .catch(err => {
-        console.error('Refresh failed:', err);
-        _hideSkeleton();
-        if (btn) {
-          btn.disabled = false;
-          btn.textContent = 'Refresh Now';
+      .catch(function(err) {
+        clearTimeout(timeoutId);
+        clearTimeout(skeletonTimer);
+
+        if (err.name === 'AbortError') {
+          _showToast('Request timed out. Odds sources unreachable.', 'error', 6000);
+        } else {
+          console.error('Refresh failed:', err);
+          _showToast('Connection failed. Server may be busy.', 'error', 5000);
         }
+
+        _hideSkeleton();
+        [btn, refreshBtn2].forEach(function(b) {
+          if (b) { b.disabled = false; b.textContent = b === btn ? 'Refresh Now' : '\u21B5 Refresh'; }
+        });
       });
   }
 
@@ -609,8 +658,12 @@
   // ─── Auto-refresh on first load if no data ───
 
   function autoRefreshIfEmpty() {
-    const nBets = parseInt(document.querySelector('.stat-value')?.textContent || '0', 10);
-    if (nBets === 0) {
+    var statValue = document.querySelector('.stat-value');
+    if (!statValue) return;
+    var nBets = parseInt(statValue.textContent || '0', 10);
+    // Only auto-refresh if both live bets AND resolved bets are empty
+    var nResolved = parseInt(document.querySelector('.stat-sub')?.textContent || '0', 10);
+    if (nBets === 0 && nResolved === 0) {
       console.log('No data found — auto-refreshing from live engine...');
       refreshLiveData();
     }
@@ -680,42 +733,51 @@
 /* Global: resolvePredictions (called from onclick) */
 
 function resolvePredictions() {
-  const btn = document.getElementById('resolve-btn');
-  const text = document.getElementById('resolve-text');
-  const spinner = document.getElementById('resolve-spinner');
+  var btn = document.getElementById('resolve-btn');
+  var text = document.getElementById('resolve-text');
+  var spinner = document.getElementById('resolve-spinner');
+
+  if (!btn || !text || !spinner) return;
 
   btn.disabled = true;
   text.textContent = 'Resolving...';
   spinner.classList.remove('hidden');
 
-  fetch('/api/resolve')
-    .then(r => r.json())
-    .then(data => {
+  var controller = new AbortController();
+  var timeoutId = setTimeout(function() { controller.abort(); }, 35000);
+
+  fetch('/api/resolve', { signal: controller.signal })
+    .then(function(r) {
+      clearTimeout(timeoutId);
+      if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Request failed'); });
+      return r.json();
+    })
+    .then(function(data) {
       if (data.error) {
-        if (window._showToast) {
-          window._showToast('Error: ' + data.error, 'error');
-        }
+        if (window._showToast) window._showToast('Error: ' + data.error, 'error', 5000);
       } else {
-        if (window._showToast) {
-          window._showToast('Resolved ' + data.resolved + ' predictions. Loading fresh data...', 'success', 3000);
-        }
+        var msg = 'Resolved ' + data.resolved + ' predictions';
+        if (window._showToast) window._showToast(msg, 'success', 3000);
         // Use async HTML swap instead of location.reload() to avoid page flash
-        setTimeout(() => {
-          const swap = window._swapMainContent;
+        setTimeout(function() {
+          var swap = window._swapMainContent;
           if (swap) {
-            swap().catch(() => location.reload());
+            swap().catch(function() { location.reload(); });
           } else {
             location.reload();
           }
         }, 1000);
       }
     })
-    .catch(err => {
-      if (window._showToast) {
-        window._showToast('Request failed: ' + err.message, 'error');
+    .catch(function(err) {
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') {
+        if (window._showToast) window._showToast('Resolve timed out', 'error', 5000);
+      } else {
+        if (window._showToast) window._showToast(err.message || 'Request failed', 'error', 5000);
       }
     })
-    .finally(() => {
+    .finally(function() {
       btn.disabled = false;
       text.textContent = 'Resolve Predictions';
       spinner.classList.add('hidden');

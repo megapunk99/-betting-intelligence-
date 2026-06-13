@@ -1019,3 +1019,225 @@ class TestLoadPredictionsFromJsonl:
         assert temp_tracker._raw_predictions[0]["model_name"] == "forward_test_ensemble"
         assert temp_tracker._raw_predictions[0]["source"] == "forward_test_results.json"
         assert temp_tracker._raw_predictions[1]["is_clear_pick"] is True
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  CLV COMPUTATION — compute_clv
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestComputeCLV:
+    """Tests for compute_clv() — Closing Line Value computation.
+
+    CLV = (opening_market_prob + edge_pct) - closing_market_prob
+    Positive = our predicted line beat the closing market.
+    """
+
+    def test_positive_clv_beats_market(self, temp_tracker: ResultsTracker):
+        """We predicted 3% edge and closing line only moved 1% → CLV = +0.02."""
+        temp_tracker._resolved_bets = [
+            ResolvedBet(
+                home_team="Celtics", away_team="Lakers",
+                game_date="2026-01-15", edge_pct=0.03,  # We predicted 3% edge
+            )
+        ]
+        # Mock store: opening=0.50, closing=0.52 (market moved 2% toward our prediction but we predicted 3%)
+        mock_store = MagicMock()
+        mock_store.get_closing_vs_opening_prob.return_value = (0.50, 0.52)
+
+        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+            temp_tracker.compute_clv()
+
+        bet = temp_tracker._resolved_bets[0]
+        assert bet.closing_implied_prob == 0.52
+        assert bet.predicted_implied_prob == 0.53  # 0.50 + 0.03
+        assert bet.clv == pytest.approx(0.01, abs=0.001)  # 0.53 - 0.52 = +0.01
+
+    def test_negative_clv_market_moved_against(self, temp_tracker: ResultsTracker):
+        """We predicted 2% edge but closing line moved 5% against us → CLV = -0.03."""
+        temp_tracker._resolved_bets = [
+            ResolvedBet(
+                home_team="Celtics", away_team="Lakers",
+                game_date="2026-01-15", edge_pct=0.02,
+            )
+        ]
+        # Opening=0.50, closing=0.55 (market moved to favor our team by 5%,
+        # but we only predicted 2% → the market moved MORE than we predicted)
+        mock_store = MagicMock()
+        mock_store.get_closing_vs_opening_prob.return_value = (0.50, 0.55)
+
+        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+            temp_tracker.compute_clv()
+
+        bet = temp_tracker._resolved_bets[0]
+        assert bet.closing_implied_prob == 0.55
+        assert bet.predicted_implied_prob == 0.52  # 0.50 + 0.02
+        assert bet.clv == pytest.approx(-0.03, abs=0.001)  # 0.52 - 0.55 = -0.03
+
+    def test_zero_edge_clv_is_market_movement(self, temp_tracker: ResultsTracker):
+        """Edge=0, market moved 2% → CLV = -0.02 (we just tracked the market, didn't beat it)."""
+        temp_tracker._resolved_bets = [
+            ResolvedBet(
+                home_team="Celtics", away_team="Lakers",
+                game_date="2026-01-15", edge_pct=0.0,
+            )
+        ]
+        mock_store = MagicMock()
+        mock_store.get_closing_vs_opening_prob.return_value = (0.48, 0.50)
+
+        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+            temp_tracker.compute_clv()
+
+        bet = temp_tracker._resolved_bets[0]
+        assert bet.clv == pytest.approx(-0.02, abs=0.001)  # 0.48 - 0.50 = -0.02
+
+    def test_negative_edge_still_proper_clv(self, temp_tracker: ResultsTracker):
+        """Negative edge (we predicted against the market) with closing line movement."""
+        temp_tracker._resolved_bets = [
+            ResolvedBet(
+                home_team="Celtics", away_team="Lakers",
+                game_date="2026-01-15", edge_pct=-0.02,  # We bet against the home team
+            )
+        ]
+        # Opening=0.55, closing=0.50 (market moved 5% against home team)
+        # Our prediction = 0.55 + (-0.02) = 0.53 → CLV = 0.53 - 0.50 = +0.03 (we correctly called the fade)
+        mock_store = MagicMock()
+        mock_store.get_closing_vs_opening_prob.return_value = (0.55, 0.50)
+
+        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+            temp_tracker.compute_clv()
+
+        bet = temp_tracker._resolved_bets[0]
+        assert bet.clv == pytest.approx(0.03, abs=0.001)
+
+    def test_no_market_data_clv_none(self, temp_tracker: ResultsTracker):
+        """No odds data available → CLV stays None."""
+        temp_tracker._resolved_bets = [
+            ResolvedBet(
+                home_team="Celtics", away_team="Lakers",
+                game_date="2026-01-15", edge_pct=0.03,
+            )
+        ]
+        mock_store = MagicMock()
+        mock_store.get_closing_vs_opening_prob.return_value = (None, None)
+
+        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+            temp_tracker.compute_clv()
+
+        bet = temp_tracker._resolved_bets[0]
+        assert bet.clv is None
+        assert bet.closing_implied_prob is None
+        assert bet.predicted_implied_prob is None
+
+    def test_no_resolved_bets_is_noop(self, temp_tracker: ResultsTracker):
+        """No resolved bets → compute_clv does nothing."""
+        # No bets added
+        mock_store = MagicMock()
+        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+            temp_tracker.compute_clv()
+        mock_store.get_closing_vs_opening_prob.assert_not_called()
+
+    def test_missing_team_fields_skipped(self, temp_tracker: ResultsTracker):
+        """Bets without home/away team or game_date are skipped gracefully."""
+        temp_tracker._resolved_bets = [
+            ResolvedBet(home_team="", away_team="", game_date="", edge_pct=0.03),
+            ResolvedBet(home_team="Celtics", away_team="", game_date="2026-01-15", edge_pct=0.03),
+        ]
+        mock_store = MagicMock()
+        mock_store.get_closing_vs_opening_prob.return_value = (0.50, 0.52)
+
+        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+            temp_tracker.compute_clv()
+
+        # Both bets should be skipped (empty home/away or missing team)
+        assert temp_tracker._resolved_bets[0].clv is None
+        assert temp_tracker._resolved_bets[1].clv is None
+        mock_store.get_closing_vs_opening_prob.assert_not_called()
+
+    def test_multiple_bets_all_computed(self, temp_tracker: ResultsTracker):
+        """Multiple bets: each gets CLV computed independently."""
+        temp_tracker._resolved_bets = [
+            ResolvedBet(home_team="Celtics", away_team="Lakers",
+                        game_date="2026-01-15", edge_pct=0.03),
+            ResolvedBet(home_team="Heat", away_team="Knicks",
+                        game_date="2026-01-15", edge_pct=0.01),
+        ]
+
+        mock_store = MagicMock()
+
+        def side_effect(home_team, away_team, game_date):
+            if home_team == "Celtics":
+                return (0.50, 0.52)
+            elif home_team == "Heat":
+                return (0.48, 0.49)
+            return (None, None)
+
+        mock_store.get_closing_vs_opening_prob.side_effect = side_effect
+
+        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+            temp_tracker.compute_clv()
+
+        # Celtics: 0.50 + 0.03 = 0.53, clv = 0.53 - 0.52 = +0.01
+        assert temp_tracker._resolved_bets[0].clv == pytest.approx(0.01, abs=0.001)
+        # Heat: 0.48 + 0.01 = 0.49, clv = 0.49 - 0.49 = 0.0
+        assert temp_tracker._resolved_bets[1].clv == pytest.approx(0.0, abs=0.001)
+
+    def test_exception_in_store_handled_gracefully(self, temp_tracker: ResultsTracker):
+        """Store raises exception → bet is skipped (no crash)."""
+        temp_tracker._resolved_bets = [
+            ResolvedBet(home_team="Celtics", away_team="Lakers",
+                        game_date="2026-01-15", edge_pct=0.03),
+        ]
+        mock_store = MagicMock()
+        mock_store.get_closing_vs_opening_prob.side_effect = ValueError("DB error")
+
+        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+            temp_tracker.compute_clv()  # Should not raise
+
+        assert temp_tracker._resolved_bets[0].clv is None
+
+    def test_clv_in_report_with_data(self, temp_tracker: ResultsTracker):
+        """generate_report() populates CLV metrics when compute_clv succeeds."""
+        temp_tracker._resolved_bets = [
+            ResolvedBet(
+                result="WIN", profit_dollars=90.0, stake_dollars=100.0,
+                game_date="2026-01-15", model_name="m1", league="NBA", bet_type="total",
+                home_team="Celtics", away_team="Lakers", edge_pct=0.03,
+            ),
+            ResolvedBet(
+                result="LOSS", profit_dollars=-100.0, stake_dollars=100.0,
+                game_date="2026-01-15", model_name="m1", league="NBA", bet_type="total",
+                home_team="Heat", away_team="Knicks", edge_pct=0.01,
+            ),
+        ]
+
+        mock_store = MagicMock()
+
+        def side_effect(home_team, away_team, game_date):
+            if home_team == "Celtics":
+                return (0.50, 0.52)
+            return (0.48, 0.49)
+
+        mock_store.get_closing_vs_opening_prob.side_effect = side_effect
+
+        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+            report = temp_tracker.generate_report()
+
+        # CLV metrics should be populated
+        assert report.avg_clv is not None
+        # Celtics: 0.01, Heat: 0.0 → avg = 0.005
+        assert report.avg_clv == pytest.approx(0.005, abs=0.001)
+        assert report.clv_wins == 1  # Celtics: +0.01 > 0
+        assert report.clv_losses == 0  # Heat: 0.0 is not < 0
+        assert report.clv_win_rate == 1.0  # 1/1
+
+    def test_clv_in_report_empty_bets(self, temp_tracker: ResultsTracker):
+        """generate_report() with no resolved bets → CLV metrics are None."""
+        mock_store = MagicMock()
+        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+            report = temp_tracker.generate_report()
+
+        assert report.avg_clv is None
+        assert report.clv_wins == 0
+        assert report.clv_losses == 0
+        assert report.clv_win_rate is None
