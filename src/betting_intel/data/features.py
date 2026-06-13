@@ -1200,38 +1200,6 @@ class FeatureEngineer:
             ("h2h_avg_margin", 0.0),
             # Home-away differentials (diff = 0 means teams are equal)
             ("_diff_", 0.0),
-            # ════════════════════════════════════════════════════════
-            #  v4.0 — REFEREE TENDENCY FEATURES
-            #  Populated at runtime from NBA referee assignment data.
-            #  Zeros during training (no historical ref data), real
-            #  values during live prediction.
-            # ════════════════════════════════════════════════════════
-            ("ref_fouls_delta", 0.0),
-            ("ref_ft_delta", 0.0),
-            ("ref_pts_delta", 0.0),
-            ("ref_home_bias", 0.0),
-            ("ref_is_tight_crew", 0.0),
-            ("ref_is_loose_crew", 0.0),
-            ("ref_tight_all_stars", 0.0),
-            ("ref_loose_all_stars", 0.0),
-            ("ref_has_tony_brothers", 0.0),
-            ("ref_has_scott_foster", 0.0),
-            ("ref_has_marc_davis", 0.0),
-            ("ref_has_ed_malloy", 0.0),
-            # ════════════════════════════════════════════════════════
-            #  v4.0 — LINE MOVEMENT VELOCITY FEATURES
-            #  Populated at runtime by LineMovementTracker.
-            # ════════════════════════════════════════════════════════
-            ("line_n_snapshots", 0.0),
-            ("line_age_hours", 0.0),
-            ("line_movement_ml", 0.0),
-            ("line_movement_spread", 0.0),
-            ("line_movement_total", 0.0),
-            ("line_velocity_ml_1h", 0.0),
-            ("line_velocity_ml_4h", 0.0),
-            ("line_velocity_total_1h", 0.0),
-            ("line_velocity_total_4h", 0.0),
-            ("line_sharp_signal", 0.0),
         ]
 
         for col in df.columns:
@@ -1314,11 +1282,5 @@ class FeatureEngineer:
             "ts_pct_home", "ts_pct_away",
             "reb_pct_home", "reb_pct_away",
             "home_tz", "away_tz",  # Intermediate: use tz_diff instead
-            # ═══════════════════════════════════════════════════════
-            #  ref_* and line_* features — runtime-only features
-            #  populated by the live prediction engine. They ARE
-            #  valid features (model should train on them when
-            #  historical ref/line data is available). Not excluded.
-            # ═══════════════════════════════════════════════════════
         }
         return [c for c in df.columns if c not in exclude and np.issubdtype(df[c].dtype, np.number)]

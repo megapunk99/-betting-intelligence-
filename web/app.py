@@ -176,28 +176,6 @@ _FEATURE_DESCRIPTIONS: dict[str, str] = {
     "sos": "Strength of schedule",
     "sos_trend": "SOS trend",
 
-    # Referee
-    "ref_fouls_delta": "Ref foul rate",
-    "ref_ft_delta": "Ref FT rate",
-    "ref_home_bias": "Ref home bias",
-    "ref_is_tight_crew": "Ref: tight crew",
-    "ref_is_loose_crew": "Ref: loose crew",
-    "ref_tight_all_stars": "Ref: tight all-star",
-    "ref_loose_all_stars": "Ref: loose all-star",
-    "ref_has_tony_brothers": "Ref: Tony Brothers",
-    "ref_has_scott_foster": "Ref: Scott Foster",
-    "ref_has_marc_davis": "Ref: Marc Davis",
-    "ref_has_ed_malloy": "Ref: Ed Malloy",
-
-    # Line movement
-    "line_n_snapshots": "Line snapshots",
-    "line_age_hours": "Line age",
-    "line_movement_ml": "ML line movement",
-    "line_movement_spread": "Spread movement",
-    "line_movement_total": "Total movement",
-    "line_velocity_ml": "ML velocity",
-    "line_velocity_total": "Total velocity",
-    "line_sharp_signal": "Sharp action signal",
 }
 
 
