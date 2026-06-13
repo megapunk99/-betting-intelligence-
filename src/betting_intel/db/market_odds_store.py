@@ -434,6 +434,85 @@ class MarketOddsStore:
         finally:
             session.close()
 
+    def get_closing_vs_opening_prob(
+        self,
+        home_team: str,
+        away_team: str,
+        game_date: str,
+    ) -> tuple[Optional[float], Optional[float]]:
+        """
+        Get both the opening and closing vig-free home win probabilities.
+
+        Opening = first snapshot logged for this game.
+        Closing = last (most recent) snapshot before game start.
+
+        Returns:
+            (opening_home_prob, closing_home_prob) or (None, None) if no data.
+        """
+        from betting_intel.db.schema import MarketOdds
+
+        session = self._db.get_session()
+        try:
+            from sqlalchemy import or_, and_, asc
+
+            records = (
+                session.query(MarketOdds)
+                .filter(
+                    MarketOdds.game_date == game_date,
+                    or_(
+                        and_(
+                            or_(
+                                MarketOdds.home_team == home_team,
+                                MarketOdds.home_team_short == home_team,
+                            ),
+                            or_(
+                                MarketOdds.away_team == away_team,
+                                MarketOdds.away_team_short == away_team,
+                            ),
+                        ),
+                        and_(
+                            or_(
+                                MarketOdds.home_team == away_team,
+                                MarketOdds.home_team_short == away_team,
+                            ),
+                            or_(
+                                MarketOdds.away_team == home_team,
+                                MarketOdds.away_team_short == home_team,
+                            ),
+                        ),
+                    ),
+                )
+                .order_by(asc(MarketOdds.captured_at))
+                .all()
+            )
+
+            if not records:
+                return (None, None)
+
+            first = records[0]
+            last = records[-1]
+
+            def _prob_for_home(r, home_target: str) -> Optional[float]:
+                if r.vig_removed_home_prob is None:
+                    return None
+                stored_full = (r.home_team or "").lower()
+                stored_short = (r.home_team_short or "").lower()
+                target = home_target.lower()
+                if stored_full == target or stored_short == target:
+                    return float(r.vig_removed_home_prob)
+                return float(1.0 - r.vig_removed_home_prob)
+
+            opening = _prob_for_home(first, home_team)
+            closing = _prob_for_home(last, home_team)
+
+            return (opening, closing)
+
+        except Exception:
+            logger.debug(f"Failed to get opening/closing probs for {home_team} vs {away_team}", exc_info=True)
+            return (None, None)
+        finally:
+            session.close()
+
     # ── Stats ─────────────────────────────────────────────────────────────
 
     def get_stats(self) -> dict:

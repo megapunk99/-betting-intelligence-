@@ -1,13 +1,12 @@
-"""Feature Store — Phase 2.8 of the Professional Betting Intelligence Platform.
+"""Feature Store — market inefficiency computation.
 
-Versioned storage of team, schedule, and player features.
+All feature modules have been consolidated. The only active module
+is market_inefficiency.py, which computes market inefficiency target
+variables for the ML pipeline.
 
-Store:
-    Team Features: offensive_rating, defensive_rating, pace, net_rating
-    Schedule Features: rest_days, back_to_back, travel_distance, home_away
-    Player Features: injury_status, usage_rate, minutes
-
-All features are versioned with timestamps.
+The FeatureStore (store.py) and FeatureBuilder (builder.py) were
+dead code — the V2 versioned feature store that was never connected
+to the live pipeline. Only market_inefficiency.py is actively used.
 """
 
 from betting_intel.features.store import (
@@ -17,11 +16,13 @@ from betting_intel.features.store import (
     PlayerFeatureRecord,
     FeatureVersion,
 )
-from betting_intel.features.builder import (
-    FeatureBuilder,
-    build_team_features,
-    build_schedule_features,
-    build_player_features,
+from betting_intel.features.market_inefficiency import (
+    MarketInefficiencyComputer,
+    compute_market_inefficiency_targets,
+    spread_to_implied_prob,
+    margin_to_implied_prob,
+    american_to_implied_prob,
+    remove_vig,
 )
 
 __all__ = [
@@ -30,8 +31,10 @@ __all__ = [
     "ScheduleFeatureRecord",
     "PlayerFeatureRecord",
     "FeatureVersion",
-    "FeatureBuilder",
-    "build_team_features",
-    "build_schedule_features",
-    "build_player_features",
+    "MarketInefficiencyComputer",
+    "compute_market_inefficiency_targets",
+    "spread_to_implied_prob",
+    "margin_to_implied_prob",
+    "american_to_implied_prob",
+    "remove_vig",
 ]

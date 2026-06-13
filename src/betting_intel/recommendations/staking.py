@@ -121,7 +121,7 @@ class KellyStaker:
         max_league_exposure_pct: float = 0.30,  # Max 30% on any single league
         max_daily_bets: int = 20,
         drawdown_recovery: bool = True,
-        min_edge_threshold: float = 0.01,      # Minimum 1% edge to bet
+        min_edge_threshold: float = 0.03,      # Minimum 3% edge to bet (was 1%)
         confidence_multipliers: Optional[dict[str, float]] = None,
     ):
         self.initial_bankroll = initial_bankroll

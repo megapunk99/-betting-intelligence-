@@ -102,6 +102,11 @@ class ResolvedBet:
     roi: float = 0.0                 # profit / stake
     is_clear_pick: bool = False
 
+    # ── Closing Line Value (filled by compute_clv) ───────────────────
+    closing_implied_prob: Optional[float] = None  # Closing market-implied home win prob
+    predicted_implied_prob: Optional[float] = None  # Our predicted home win prob
+    clv: Optional[float] = None  # Closing Line Value: positive = we beat the market
+
 
 @dataclass
 class StrategyPerformance:
@@ -152,6 +157,12 @@ class PerformanceReport:
     daily_pnl: list[dict] = field(default_factory=list)
     model_comparison: dict[str, dict] = field(default_factory=dict)
     league_comparison: dict[str, dict] = field(default_factory=dict)
+
+    # Closing Line Value metrics
+    avg_clv: Optional[float] = None  # Average CLV across all resolved bets
+    clv_wins: int = 0  # Number of bets where we beat the closing line
+    clv_losses: int = 0  # Number of bets where the closing line beat us
+    clv_win_rate: Optional[float] = None  # % of bets with positive CLV
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -366,6 +377,16 @@ class ResultsTracker:
                 "roi": round(perf.roi, 4),
             }
 
+        # ── CLV metrics ─────────────────────────────────────────────
+        self.compute_clv()
+        clv_values = [b.clv for b in self._resolved_bets if b.clv is not None]
+        if clv_values:
+            report.avg_clv = round(sum(clv_values) / len(clv_values), 4)
+            report.clv_wins = sum(1 for c in clv_values if c > 0)
+            report.clv_losses = sum(1 for c in clv_values if c < 0)
+            total_clv_bets = report.clv_wins + report.clv_losses
+            report.clv_win_rate = round(report.clv_wins / total_clv_bets, 4) if total_clv_bets > 0 else None
+
         # ── Recent bets (last 50) ───────────────────────────────────
         report.recent_bets = sorted(
             self._resolved_bets,
@@ -374,6 +395,76 @@ class ResultsTracker:
         )[:50]
 
         return report
+
+    # ── CLV Computation ───────────────────────────────────────────────────
+
+    def compute_clv(self) -> None:
+        """
+        Compute Closing Line Value (CLV) for all resolved bets.
+
+        CLV measures whether our predicted line was better than the closing
+        market line. Positive CLV means we identified market inefficiency.
+        This is the single most important metric in sports betting analytics.
+
+        For each resolved bet with real market odds data:
+          1. Query MarketOddsStore for opening AND closing vig-free home probs
+          2. Our predicted prob = opening_prob + edge_pct (our edge prediction)
+          3. CLV = our_predicted_prob - closing_prob
+             - Positive: we predicted a line BETTER than where the market settled
+             - Negative: the market moved against our prediction
+             - Zero: our edge was exactly the market movement (neutral)
+          4. Store clv, closing_implied_prob, predicted_implied_prob
+
+        NOTE: Requires odds data in MarketOddsStore. Bets from before the store
+        was set up will have no CLV data until the store accumulates history.
+        """
+        if not self._resolved_bets:
+            return
+
+        try:
+            from betting_intel.db.market_odds_store import MarketOddsStore
+            store = MarketOddsStore()
+        except Exception:
+            logger.debug("MarketOddsStore not available — cannot compute CLV")
+            return
+
+        clv_count = 0
+        for bet in self._resolved_bets:
+            if not bet.home_team or not bet.away_team or not bet.game_date:
+                continue
+
+            try:
+                # Get BOTH opening and closing market probabilities
+                opening_prob, closing_prob = store.get_closing_vs_opening_prob(
+                    home_team=bet.home_team,
+                    away_team=bet.away_team,
+                    game_date=bet.game_date[:10],
+                )
+
+                if opening_prob is None or closing_prob is None:
+                    continue
+
+                bet.closing_implied_prob = closing_prob
+
+                # Our predicted probability at prediction time:
+                # We predicted the market was wrong by edge_pct.
+                # So our true belief = opening_market_prob + edge_pct
+                our_prob = opening_prob + bet.edge_pct
+                bet.predicted_implied_prob = round(our_prob, 4)
+
+                # True CLV = our_prob - closing_prob
+                # Positive = we saw value that the market didn't fully price in
+                # (the closing line didn't fully move against our prediction)
+                bet.clv = round(our_prob - closing_prob, 4)
+
+                clv_count += 1
+
+            except Exception as e:
+                logger.debug(f"CLV computation failed for {bet.matchup}: {e}")
+                continue
+
+        if clv_count > 0:
+            logger.info(f"Computed CLV for {clv_count}/{len(self._resolved_bets)} resolved bets")
 
     def check_alerts(self, report: Optional[PerformanceReport] = None) -> list[StrategyPerformance]:
         """

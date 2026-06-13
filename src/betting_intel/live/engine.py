@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 ODDS_CACHE_TTL_SECONDS = 300       # Refresh odds every 5 minutes
 PREDICTION_REFRESH_INTERVAL = 60   # Re-generate predictions every 60s
 LIVE_GAME_LEEWAY_MINUTES = 60      # Game is "live" if started within 60 min of now
+MIN_EDGE_THRESHOLD = 0.03          # No recommendations below 3% edge
 
 
 # ── Data Models ───────────────────────────────────────────────────────────
@@ -1015,9 +1016,16 @@ class LivePredictionEngine:
                         # The predicted_error IS the edge
                         predicted_error = result.edge_pct if result.edge_pct is not None else 0.0
 
-                        game.edge_pct = predicted_error
-                        game.direction = "home" if predicted_error > 0 else "away"
-                        game.confidence = (result.confidence_label or "low").lower()
+                        # Apply minimum edge threshold: no recommendations below 3%
+                        if abs(predicted_error) < MIN_EDGE_THRESHOLD:
+                            game.edge_pct = 0.0
+                            game.direction = "neutral"
+                            game.confidence = "low"
+                            game.stake_dollars = 0.0
+                        else:
+                            game.edge_pct = predicted_error
+                            game.direction = "home" if predicted_error > 0 else "away"
+                            game.confidence = (result.confidence_label or "low").lower()
 
                         # Compute Kelly stake recommendation
                         if predicted_error >= 0:
