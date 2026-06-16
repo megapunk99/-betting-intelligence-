@@ -28,6 +28,23 @@ class TestRobustPredictionSystem:
         y = ((X[:, 0] + X[:, 1] - X[:, 2]) > 0).astype(int)
         return X, y
 
+    @staticmethod
+    def _make_fast_system(**kwargs):
+        """Create a RobustPredictionSystem with reduced estimators for fast testing."""
+        from betting_intel.models.robust_ensemble import RobustPredictionSystem
+        # Override defaults: 30 estimators instead of 800 for tree models
+        fast_params = dict(
+            calibrate=False,
+            n_folds=3,
+            min_train_samples=30,
+            use_stacking=False,
+            rf_params={"n_estimators": 30, "n_jobs": 1},
+            lgb_params={"n_estimators": 30, "verbose": -1},
+            xgb_params={"n_estimators": 30, "verbosity": 0},
+        )
+        fast_params.update(kwargs)
+        return RobustPredictionSystem(**fast_params)
+
     def test_import(self):
         """Verify the module imports correctly."""
         from betting_intel.models.robust_ensemble import (
@@ -42,7 +59,7 @@ class TestRobustPredictionSystem:
         from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
-        system = RobustPredictionSystem(calibrate=False, n_folds=3, min_train_samples=30)
+        system = self._make_fast_system()
         system.fit(X, y, verbose=False)
 
         assert system._fitted
@@ -59,7 +76,7 @@ class TestRobustPredictionSystem:
         from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
-        system = RobustPredictionSystem(calibrate=True, n_folds=3, min_train_samples=30)
+        system = self._make_fast_system(calibrate=True)
         system.fit(X, y, verbose=False)
 
         result = system.predict_with_details(X[0])
@@ -73,7 +90,7 @@ class TestRobustPredictionSystem:
         from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
-        system = RobustPredictionSystem(calibrate=False, n_folds=3, min_train_samples=30)
+        system = self._make_fast_system()
         system.fit(X, y, verbose=False)
 
         # Should work with (1, n_features) input
@@ -107,7 +124,7 @@ class TestRobustPredictionSystem:
         """Test compute_edge with valid market odds."""
         from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
-        system = RobustPredictionSystem(calibrate=False, n_folds=3, min_train_samples=30)
+        system = self._make_fast_system()
         X, y = sample_data
         system.fit(X, y, verbose=False)
 
@@ -128,7 +145,7 @@ class TestRobustPredictionSystem:
         """Test compute_edge with None odds returns neutral."""
         from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
-        system = RobustPredictionSystem(calibrate=False, n_folds=3, min_train_samples=30)
+        system = self._make_fast_system()
         X, y = sample_data
         system.fit(X, y, verbose=False)
 
@@ -142,7 +159,7 @@ class TestRobustPredictionSystem:
         from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
-        system = RobustPredictionSystem(calibrate=False, n_folds=3, min_train_samples=30)
+        system = self._make_fast_system()
         system.fit(X, y, feature_names=[f"feat_{i}" for i in range(X.shape[1])], verbose=False)
 
         importance = system.get_feature_importance(top_n=5)
@@ -157,7 +174,7 @@ class TestRobustPredictionSystem:
         from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
-        system = RobustPredictionSystem(calibrate=False, n_folds=3, min_train_samples=30)
+        system = self._make_fast_system()
         system.fit(X, y, verbose=False)
 
         summary = system.get_summary()
@@ -171,7 +188,7 @@ class TestRobustPredictionSystem:
         from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
-        system = RobustPredictionSystem(calibrate=False, n_folds=3, min_train_samples=30)
+        system = self._make_fast_system()
         system.fit(X, y, verbose=False)
 
         diag = system.get_model_diagnostics()
@@ -185,7 +202,7 @@ class TestRobustPredictionSystem:
         from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
-        system = RobustPredictionSystem(calibrate=False, n_folds=3, min_train_samples=30)
+        system = self._make_fast_system()
         system.fit(X, y, verbose=False)
 
         path = tmp_path / "test_system.joblib"
@@ -220,7 +237,7 @@ class TestRobustPredictionSystem:
         from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
-        system = RobustPredictionSystem(calibrate=False, n_folds=3, min_train_samples=30)
+        system = self._make_fast_system()
         system.fit(X, y, verbose=False)
 
         preds = system.predict(X[:10], threshold=0.5)
@@ -232,7 +249,7 @@ class TestRobustPredictionSystem:
         from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
-        system = RobustPredictionSystem(calibrate=True, n_folds=3, min_train_samples=30)
+        system = self._make_fast_system(calibrate=True)
         system.fit(X, y, verbose=False)
 
         summary = system.get_summary()

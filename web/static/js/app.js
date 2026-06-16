@@ -59,16 +59,22 @@
             return gradient;
           },
           fill: true,
-          borderWidth: 2,
-          pointRadius: 3,
-          pointHoverRadius: 5,
-          pointBackgroundColor: cumulative[cumulative.length - 1] >= 0 ? '#00e676' : '#ff5252',
+          borderWidth: 2.5,
+          pointRadius: 2.5,
+          pointHoverRadius: 6,
+          pointBackgroundColor: function(ctx) {
+            var c = cumulative;
+            var idx = ctx.dataIndex;
+            if (idx === 0) return c[0] >= 0 ? '#00e676' : '#ff5252';
+            return c[idx] >= c[idx - 1] ? '#00e676' : '#ff5252';
+          },
           tension: 0.3,
         }]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: { duration: 800, easing: 'easeOutQuart' },
         plugins: {
           legend: { display: false },
           tooltip: {
@@ -77,6 +83,8 @@
             borderWidth: 1,
             titleColor: '#9494a8',
             bodyColor: '#e8e8f0',
+            padding: 10,
+            cornerRadius: 6,
             callbacks: {
               label: (ctx) => {
                 const val = ctx.parsed.y;
@@ -93,7 +101,7 @@
           },
           y: {
             display: true,
-            grid: { color: 'rgba(255,255,255,0.03)' },
+            grid: { color: 'rgba(255,255,255,0.03)', drawBorder: false },
             ticks: {
               color: '#5c5c70', font: { size: 10 },
               callback: (val) => (val >= 0 ? '+' : '') + '$' + val.toFixed(0),
@@ -101,7 +109,26 @@
           }
         },
         interaction: { intersect: false, mode: 'index' }
-      }
+      },
+      plugins: [{
+        id: 'zeroLine',
+        beforeDraw: function(chart) {
+          var yScale = chart.scales.y;
+          if (!yScale) return;
+          var ctx = chart.ctx;
+          var yZero = yScale.getPixelForValue(0);
+          if (yZero < yScale.top || yZero > yScale.bottom) return;
+          ctx.save();
+          ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(chart.chartArea.left, yZero);
+          ctx.lineTo(chart.chartArea.right, yZero);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }]
     });
   }
 
@@ -430,16 +457,57 @@
           return;
         }
 
-        // Render cards with staggered fade-in
+        // Build league filter tabs from prediction data
+        var leagues = [];
+        var leagueSet = {};
+        preds.forEach(function(p) {
+          var league = (p.league || 'NBA').toLowerCase();
+          if (!leagueSet[league]) {
+            leagueSet[league] = true;
+            leagues.push(league);
+          }
+        });
+        leagues.sort();
+
+        var filterContainer = document.getElementById('future-sport-filters');
+        if (filterContainer && leagues.length > 1) {
+          filterContainer.style.display = '';
+          filterContainer.innerHTML = '';
+
+          // All button
+          var allBtn = document.createElement('button');
+          allBtn.className = 'sport-filter-btn active';
+          allBtn.setAttribute('data-sport', 'all');
+          allBtn.textContent = 'All (' + preds.length + ')';
+          allBtn.onclick = function() { filterFutureBySport('all'); };
+          filterContainer.appendChild(allBtn);
+
+          // Per-league buttons
+          leagues.forEach(function(l) {
+            var count = preds.filter(function(p) {
+              return (p.league || 'NBA').toLowerCase() === l;
+            }).length;
+            var display = l.charAt(0).toUpperCase() + l.slice(1);
+            var btn = document.createElement('button');
+            btn.className = 'sport-filter-btn';
+            btn.setAttribute('data-sport', l);
+            btn.innerHTML = display + ' <span class="filter-count">(' + count + ')</span>';
+            btn.onclick = function() { filterFutureBySport(l); };
+            filterContainer.appendChild(btn);
+          });
+        }
+
+        // Render cards with staggered fade-in — set data-sport attribute for filtering
         preds.forEach(function(pred, i) {
           var card = _renderFutureCard(pred);
+          card.setAttribute('data-sport', (pred.league || 'NBA').toLowerCase());
           card.classList.add('fade-in');
           card.style.animationDelay = (i * 80) + 'ms';
           container.appendChild(card);
         });
 
         // Animate the counters
-        if (typeof animateCounters === 'function') animateCounters();
+        animateCounters();
       })
       .catch(function(err) {
         console.error('Failed to load future predictions:', err);
@@ -448,6 +516,35 @@
         if (emptyState) emptyState.style.display = '';
       });
   }
+
+  // ─── Future Predictions: League filter ───
+
+  window.filterFutureBySport = function(sport) {
+    // Update active button
+    document.querySelectorAll('#future-sport-filters .sport-filter-btn').forEach(function(btn) {
+      btn.classList.toggle('active', btn.getAttribute('data-sport') === sport);
+    });
+
+    // Show/hide prediction cards
+    var cards = document.querySelectorAll('#future-cards .pred-card');
+    var visibleCount = 0;
+    cards.forEach(function(card) {
+      var cardSport = card.getAttribute('data-sport');
+      if (sport === 'all' || cardSport === sport) {
+        card.classList.remove('hidden-by-filter');
+        visibleCount++;
+      } else {
+        card.classList.add('hidden-by-filter');
+      }
+    });
+
+    // Update count badge
+    var countEl = document.getElementById('future-count');
+    if (countEl) {
+      var total = cards.length;
+      countEl.textContent = sport === 'all' ? total : visibleCount;
+    }
+  };
 
   window._loadFuturePredictions = loadFuturePredictions;
   window._renderFutureCard = _renderFutureCard;

@@ -106,8 +106,8 @@
 
 .pred-card:hover {
   border-color: var(--border-hover);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.03);
 }
 
 .pred-card.best-card {
@@ -115,11 +115,21 @@
 }
 
 .pred-card.best-card::before {
-  content: 'BEST BET'; position: absolute; top: 12px; right: -26px;
-  padding: 0.15rem 2.2rem;
+  content: 'BEST BET'; position: absolute; top: 14px; right: -28px;
+  padding: 0.15rem 2.4rem;
   background: linear-gradient(135deg, var(--green), #00b84a);
   color: #000; font-size: 0.5rem; font-weight: 800;
   letter-spacing: 0.1em; transform: rotate(45deg); z-index: 10;
+  box-shadow: 0 2px 8px rgba(0, 230, 118, 0.25);
+}
+
+@media (max-width: 480px) {
+  .pred-card.best-card { overflow: hidden; }
+  .pred-card.best-card::before {
+    top: 10px; right: -32px;
+    padding: 0.1rem 2.4rem;
+    font-size: 0.45rem;
+  }
 }
 
 /* ── Card Header ────────────────────────────────────────────────── */
@@ -137,6 +147,14 @@
 .card-league-badge.nba {
   background: var(--green-dim); color: var(--green);
   border: 1px solid rgba(0, 230, 118, 0.15);
+}
+.card-league-badge.euroleague {
+  background: rgba(0, 200, 200, 0.12); color: #00c8c8;
+  border: 1px solid rgba(0, 200, 200, 0.15);
+}
+.card-league-badge.nfl {
+  background: rgba(180, 60, 255, 0.12); color: #b43cff;
+  border: 1px solid rgba(180, 60, 255, 0.15);
 }
 .card-league-badge.wnba {
   background: var(--purple-dim); color: var(--purple);
@@ -257,6 +275,13 @@
 .quarter-cell {
   background: rgba(255,255,255,0.02); border: 1px solid var(--border);
   border-radius: 8px; padding: 0.6rem 0.4rem; text-align: center;
+  transition: all 0.2s ease;
+}
+
+.quarter-cell:hover {
+  background: rgba(255,255,255,0.04);
+  border-color: var(--border-light);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.15);
 }
 
 .quarter-label {
@@ -267,13 +292,12 @@
 .quarter-bars {
   display: flex; justify-content: center; align-items: flex-end;
   gap: 3px; height: 44px; margin-bottom: 0.3rem;
+}.q-bar { width: 20px; border-radius: 3px 3px 0 0;
+  display: flex; align-items: flex-start; justify-content: center;
+  transition: height 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); min-height: 3px;
 }
 
-.q-bar {
-  width: 20px; border-radius: 3px 3px 0 0;
-  display: flex; align-items: flex-start; justify-content: center;
-  transition: height 0.5s ease; min-height: 3px;
-}
+
 
 .q-bar span { font-size: 0.5rem; font-weight: 700; color: rgba(255,255,255,0.7); margin-top: 2px; line-height: 1; }
 
@@ -298,6 +322,12 @@
 .half-cell {
   background: rgba(255,255,255,0.02); border: 1px solid var(--border);
   border-radius: 8px; padding: 0.6rem; text-align: center;
+  transition: all 0.2s ease;
+}
+
+.half-cell:hover {
+  background: rgba(255,255,255,0.04);
+  border-color: var(--border-light);
 }
 
 .half-label {
@@ -576,7 +606,7 @@
   border-radius: var(--radius); padding: 1.25rem; text-align: center;
   transition: all 0.2s;
 }
-.method-card:hover { border-color: var(--border-hover); transform: translateY(-1px); }
+.method-card:hover { border-color: var(--border-hover); transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
 
 .method-icon { color: var(--green); margin-bottom: 0.5rem; opacity: 0.5; }
 
@@ -590,6 +620,13 @@
   color: var(--text-dim); font-size: 0.65rem;
   border-top: 1px solid var(--border);
   background: rgba(7, 7, 13, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+/* ── League filter (reuses dashboard .sport-filters styles) ──── */
+.pred-card.hidden-by-filter {
+  display: none;
 }
 
 /* ── Responsive ──────────────────────────────────────────────────── */

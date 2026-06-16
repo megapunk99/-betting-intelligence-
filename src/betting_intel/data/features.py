@@ -2,12 +2,14 @@
 Feature engineering: transforms raw game data into predictive features.
 All features should be calculable BEFORE the game starts (no lookahead bias).
 
-v2.2 — Enhanced features:
-  - EMA (exponential moving average) rolling stats — more weight to recent games
-  - Trend slope calculator — detect if teams are improving/declining
-  - Travel distance & fatigue — haversine distance, time zone shifts, cumulative fatigue
-  - Consecutive road games counter
-  - Enhanced fatigue model (fatigue score, 3in4 nights, rest squared)
+v5.1 — ULTIMATE FEATURE SET:
+  - ALL v2.2/v3.0/v3.1 features preserved (rolling stats, EMAs, trends,
+    travel, fatigue, ELO, moneyline-specific, opponent-adjusted, etc.)
+  - Target encoding: team_id → historical win rate + avg margin (A)
+  - Seasonality: day_of_week, month, season_phase (B)
+  - Comprehensive Fatigue Index: games in last N days × rest quality (C)
+  - Coach change proxy: early-season performance shifts (D)
+  - Home/away splits: team's performance at home vs on road
 """
 
 import pandas as pd
@@ -15,10 +17,7 @@ import numpy as np
 from typing import List, Optional, Tuple, Dict
 from dataclasses import dataclass
 
-from betting_intel.config import ROLLING_WINDOWS, MAX_REST_DAYS
-
-
-# ── Constants for Advanced Features ───────────────────────────────────────
+from betting_intel.config import ROLLING_WINDOWS, MAX_REST_DAYS    # ── Constants for Advanced Features ───────────────────────────────────────
 
 # NBA team arena coordinates (lat, lon) for travel distance calculation
 NBA_TEAM_CENTERS: Dict[str, Tuple[float, float]] = {
@@ -37,6 +36,56 @@ NBA_TEAM_CENTERS: Dict[str, Tuple[float, float]] = {
     "Trail Blazers": (45.532, -122.667), "Kings": (38.580, -121.500),
     "Spurs": (29.427, -98.437), "Raptors": (43.643, -79.379),
     "Jazz": (40.768, -111.901), "Wizards": (38.898, -77.021),
+    # NCAAB — ACC (approximate campus locations)
+    "Duke": (36.001, -78.938), "UNC": (35.904, -79.047),
+    "Virginia": (38.032, -78.511), "NC State": (35.785, -78.682),
+    "Clemson": (34.679, -82.839), "Miami": (25.713, -80.276),
+    "Florida State": (30.442, -84.299), "Virginia Tech": (37.229, -80.426),
+    "Louisville": (38.215, -85.741), "Syracuse": (43.037, -76.134),
+    "Notre Dame": (41.699, -86.237), "Pittsburgh": (40.444, -79.962),
+    # NCAAB — Big Ten
+    "Michigan State": (42.701, -84.482), "Michigan": (42.278, -83.738),
+    "Purdue": (40.424, -86.921), "Indiana": (39.173, -86.514),
+    "Illinois": (40.102, -88.227), "Ohio State": (40.002, -83.026),
+    "Wisconsin": (43.074, -89.393), "Iowa": (41.660, -91.536),
+    "Maryland": (38.989, -76.947), "Rutgers": (40.501, -74.447),
+    "Penn State": (40.793, -77.861), "Minnesota": (44.977, -93.228),
+    "Northwestern": (42.058, -87.674), "UCLA": (34.071, -118.410),
+    "USC": (34.021, -118.288), "Washington": (47.651, -122.305),
+    "Oregon": (44.058, -123.073), "Oregon State": (44.565, -123.279),
+    # NCAAB — SEC
+    "Kentucky": (38.030, -84.508), "Tennessee": (35.951, -83.930),
+    "Alabama": (33.214, -87.542), "Auburn": (32.607, -85.491),
+    "Florida": (29.647, -82.345), "Arkansas": (36.071, -94.176),
+    "LSU": (30.413, -91.184), "Texas A&M": (30.616, -96.335),
+    "Mississippi State": (33.456, -88.791), "South Carolina": (33.996, -81.029),
+    "Ole Miss": (34.366, -89.537), "Georgia": (33.946, -83.377),
+    "Oklahoma": (35.206, -97.443), "Texas": (30.283, -97.733),
+    # NCAAB — Big 12
+    "Kansas": (38.955, -95.247), "Baylor": (31.549, -97.116),
+    "Houston": (29.722, -95.350), "Texas Tech": (33.580, -101.876),
+    "Iowa State": (42.026, -93.650), "TCU": (32.722, -97.340),
+    "West Virginia": (39.651, -79.986), "Kansas State": (39.193, -96.583),
+    "BYU": (40.249, -111.649), "Cincinnati": (39.131, -84.514),
+    "UCF": (28.600, -81.200), "Arizona": (32.229, -110.949),
+    "Arizona State": (33.423, -111.932), "Colorado": (40.008, -105.267),
+    "Utah": (40.765, -111.848),
+    # NCAAB — Big East
+    "UConn": (41.807, -72.254), "Marquette": (43.038, -87.930),
+    "Villanova": (40.038, -75.337), "Creighton": (41.256, -95.985),
+    "Xavier": (39.149, -84.475), "Providence": (41.845, -71.440),
+    "St. John's": (40.728, -73.794), "Butler": (39.840, -86.173),
+    "Seton Hall": (40.742, -74.175), "Georgetown": (38.907, -77.072),
+    # NCAAB — Others
+    "Gonzaga": (47.669, -117.405), "Saint Mary's": (37.929, -122.050),
+    "San Diego State": (32.775, -117.073), "Memphis": (35.118, -89.937),
+    "VCU": (37.542, -77.455), "Dayton": (39.735, -84.179),
+    "Grand Canyon": (33.513, -112.133), "Princeton": (40.345, -74.659),
+    "Liberty": (37.348, -79.178), "James Madison": (38.437, -78.873),
+    "San Francisco": (37.780, -122.452), "Santa Clara": (37.350, -121.937),
+    "Loyola Chicago": (41.998, -87.658), "Saint Louis": (38.636, -90.220),
+    "Drake": (41.599, -93.652), "Indiana State": (39.471, -87.408),
+    # Default for un-mapped NCAAB teams (central US)
 }
 
 # NBA team time zones (EST = -5, CST = -6, MST = -7, PST = -8)
@@ -48,7 +97,620 @@ NBA_TEAM_TZ: Dict[str, int] = {
     "Mavericks": -6, "Rockets": -6, "Grizzlies": -6, "Spurs": -6,
     "Jazz": -7, "Nuggets": -7, "Suns": -7, "Trail Blazers": -8,
     "Kings": -8, "Warriors": -8, "Lakers": -8, "Clippers": -8,
+    # NCAAB — approximate
+    "Duke": -5, "UNC": -5, "Virginia": -5, "NC State": -5,
+    "Clemson": -5, "Miami": -5, "Florida State": -5, "Virginia Tech": -5,
+    "Louisville": -5, "Syracuse": -5, "Notre Dame": -5, "Pittsburgh": -5,
+    "Michigan State": -5, "Michigan": -5, "Purdue": -5, "Indiana": -5,
+    "Illinois": -6, "Ohio State": -5, "Wisconsin": -6, "Iowa": -6,
+    "Maryland": -5, "Rutgers": -5, "Penn State": -5, "Minnesota": -6,
+    "Northwestern": -6, "UCLA": -8, "USC": -8, "Washington": -8,
+    "Oregon": -8, "Kentucky": -5, "Tennessee": -5, "Alabama": -6,
+    "Auburn": -6, "Florida": -5, "Arkansas": -6, "LSU": -6,
+    "Texas A&M": -6, "Oklahoma": -6, "Texas": -6, "Kansas": -6,
+    "Baylor": -6, "Houston": -6, "Texas Tech": -6, "Iowa State": -6,
+    "Arizona": -7, "Arizona State": -7, "Colorado": -7, "Utah": -7,
+    "BYU": -7, "UConn": -5, "Gonzaga": -8, "San Diego State": -8,
+    "Saint Mary's": -8, "Memphis": -6, "VCU": -5, "Dayton": -5,
 }
+
+
+# ── NBA Backfill Constants ───────────────────────────────────────────────
+# NBA per-team averages for backfilling NaN rolling features.
+# Pre-defined constants avoid data leakage from dataset statistics.
+_NBA_NA_FILL: list[tuple[str, float]] = [
+    # Opponent-allowed rolling averages (must come before base stats)
+    ("avg_reb_allowed", 43.0),
+    ("avg_ast_allowed", 25.0),
+    ("avg_stl_allowed", 7.5),
+    ("avg_blk_allowed", 5.0),
+    ("avg_tov_allowed", 13.0),
+    ("avg_pf_allowed", 19.0),
+    ("avg_pts_allowed", 114.5),
+    ("avg_fgm_allowed", 42.0),
+    ("avg_fga_allowed", 88.0),
+    ("avg_fg3m_allowed", 13.5),
+    ("avg_fg3a_allowed", 38.0),
+    ("avg_ftm_allowed", 18.0),
+    ("avg_fta_allowed", 23.0),
+    ("avg_oreb_allowed", 10.0),
+    ("avg_dreb_allowed", 33.0),
+    # Off/def comparisons (must come before generic diff)
+    ("offense_vs_defense", 1.0),
+    ("defense_vs_offense", 1.0),
+    # Rate stats (10g variants before base)
+    ("three_pt_rate_10g", 0.38),
+    ("ft_rate_10g", 0.26),
+    ("ast_ratio_10g", 0.18),
+    ("ts_pct_10g", 0.57),
+    ("reb_pct_10g", 0.50),
+    ("three_pt_rate", 0.38),
+    ("ft_rate", 0.26),
+    ("ast_ratio", 0.18),
+    ("ts_pct", 0.57),
+    ("reb_pct", 0.50),
+    # Opponent features
+    ("opp_avg_pts_scored", 114.5),
+    ("opp_avg_pts_allowed", 114.5),
+    ("opp_avg_pm", 0.0),
+    ("opp_trailing_margin", 0.0),
+    ("adj_opp_avg_pm", 0.0),
+    # Trend slopes for boxscore stats
+    ("trend_fgm", 0.0),
+    ("trend_fga", 0.0),
+    ("trend_reb", 0.0),
+    ("trend_ast", 0.0),
+    ("trend_stl", 0.0),
+    ("trend_blk", 0.0),
+    ("trend_tov", 0.0),
+    ("trend_pts", 0.0),
+    ("trend_pm", 0.0),
+    # EMA for boxscore stats
+    ("ema_fgm", 42.0),
+    ("ema_fga", 88.0),
+    ("ema_reb", 43.0),
+    ("ema_ast", 25.0),
+    ("ema_stl", 7.5),
+    ("ema_blk", 5.0),
+    ("ema_tov", 13.0),
+    ("ema_pf", 19.0),
+    ("ema_pts", 114.5),
+    ("ema_pm", 0.0),
+    ("ema_margin", 0.0),
+    # Boxscore stat rolling averages
+    ("avg_fg3_pct", 0.355),
+    ("avg_ft_pct", 0.780),
+    ("avg_fgm", 42.0),
+    ("avg_fga", 88.0),
+    ("avg_fg3m", 13.5),
+    ("avg_fg3a", 38.0),
+    ("avg_ftm", 18.0),
+    ("avg_fta", 23.0),
+    ("avg_oreb", 10.0),
+    ("avg_dreb", 33.0),
+    ("avg_reb", 43.0),
+    ("avg_ast", 25.0),
+    ("avg_stl", 7.5),
+    ("avg_blk", 5.0),
+    ("avg_tov", 13.0),
+    ("avg_pf", 19.0),
+    ("avg_pace", 100.0),
+    ("avg_efg", 0.54),
+    ("avg_pts", 114.5),
+    ("avg_pm", 0.0),
+    ("avg_margin", 0.0),
+    ("margin_volatility", 12.0),
+    ("last_3_margin", 0.0),
+    # Win rates & momentum
+    ("win_pct", 0.5),
+    ("win_streak", 0.0),
+    ("weighted_momentum", 0.5),
+    ("form_score", 0.5),
+    # Pace
+    ("pace", 100.0),
+    # Efficiency
+    ("efg", 0.54),
+    # Points / z-scores
+    ("pts_zscore", 0.0),
+    # Strength of schedule
+    ("sos_trend", 0.0),
+    ("sos", 0.0),
+    # Travel / cumulative
+    ("cum_travel", 0.0),
+    # Elo ratings
+    ("elo_slope", 0.0),
+    # Moneyline features (v3.1)
+    ("composite_power", 0.5),
+    ("power_diff", 0.0),
+    ("perf_vs_expected_raw", 0.0),
+    ("perf_vs_expected", 0.0),
+    ("perf_vs_expected_diff", 0.0),
+    ("consistency", 0.5),
+    ("consistency_diff", 0.0),
+    ("form_diff", 0.0),
+    ("home_away_split_diff", 0.0),
+    ("recent_win_pct_home", 0.5),
+    ("recent_win_pct_away", 0.5),
+    ("h2h_win_rate", 0.5),
+    ("h2h_avg_margin", 0.0),
+    # Home-away differentials (diff = 0 means teams are equal)
+    ("_diff_", 0.0),
+    # v5.1 features: target encoding
+    ("target_win_rate", 0.5),
+    ("target_margin", 0.0),
+    # v5.1 features: seasonality
+    ("dow_sin", 0.0),
+    ("dow_cos", 1.0),
+    ("month_sin", 0.0),
+    ("month_cos", 1.0),
+    ("season_phase", 1.0),
+    ("days_since_asb", 0.0),
+    ("days_into_season", 15.0),
+    ("is_weekend", 0),
+    # v5.1 features: fatigue index
+    ("fatigue_index", 0.3),
+    ("games_3d", 1.0),
+    ("games_5d", 2.0),
+    ("games_7d", 3.0),
+    # v5.1 features: home/away splits
+    ("home_win_rate_at_home", 0.6),
+    ("away_win_rate_on_road", 0.4),
+    ("home_advantage_edge", 0.0),
+    # v5.1 features: coach change proxy
+    ("perf_shift_z", 0.0),
+    ("system_change_flag", 0),
+    ("system_changes_10g", 0.0),
+    ("system_changes_diff", 0.0),
+]
+
+
+# ── NCAAB-Specific Backfill Constants ────────────────────────────────────
+# NCAAB per-team stats: avg ~70 pts, lower pace, less 3-point usage.
+_NCAAB_NA_FILL: list[tuple[str, float]] = [
+    # Opponent-allowed rolling averages (must come before base stats)
+    ("avg_reb_allowed", 33.0),
+    ("avg_ast_allowed", 13.0),
+    ("avg_stl_allowed", 6.5),
+    ("avg_blk_allowed", 3.5),
+    ("avg_tov_allowed", 11.0),
+    ("avg_pf_allowed", 16.0),
+    ("avg_pts_allowed", 70.0),
+    ("avg_fgm_allowed", 25.0),
+    ("avg_fga_allowed", 56.0),
+    ("avg_fg3m_allowed", 7.0),
+    ("avg_fg3a_allowed", 21.0),
+    ("avg_ftm_allowed", 13.0),
+    ("avg_fta_allowed", 18.0),
+    ("avg_oreb_allowed", 9.0),
+    ("avg_dreb_allowed", 24.0),
+    # Off/def comparisons
+    ("offense_vs_defense", 1.0),
+    ("defense_vs_offense", 1.0),
+    # Rate stats
+    ("three_pt_rate_10g", 0.36),
+    ("ft_rate_10g", 0.31),
+    ("ast_ratio_10g", 0.15),
+    ("ts_pct_10g", 0.53),
+    ("reb_pct_10g", 0.50),
+    ("three_pt_rate", 0.36),
+    ("ft_rate", 0.31),
+    ("ast_ratio", 0.15),
+    ("ts_pct", 0.53),
+    ("reb_pct", 0.50),
+    # Opponent features
+    ("opp_avg_pts_scored", 70.0),
+    ("opp_avg_pts_allowed", 70.0),
+    ("opp_avg_pm", 0.0),
+    ("opp_trailing_margin", 0.0),
+    ("adj_opp_avg_pm", 0.0),
+    # Trend slopes
+    ("trend_fgm", 0.0),
+    ("trend_fga", 0.0),
+    ("trend_reb", 0.0),
+    ("trend_ast", 0.0),
+    ("trend_stl", 0.0),
+    ("trend_blk", 0.0),
+    ("trend_tov", 0.0),
+    ("trend_pts", 0.0),
+    ("trend_pm", 0.0),
+    # EMA for boxscore stats
+    ("ema_fgm", 25.0),
+    ("ema_fga", 56.0),
+    ("ema_reb", 33.0),
+    ("ema_ast", 13.0),
+    ("ema_stl", 6.5),
+    ("ema_blk", 3.5),
+    ("ema_tov", 11.0),
+    ("ema_pf", 16.0),
+    ("ema_pts", 70.0),
+    ("ema_pm", 0.0),
+    ("ema_margin", 0.0),
+    # Boxscore stat rolling averages
+    ("avg_fg3_pct", 0.34),
+    ("avg_ft_pct", 0.73),
+    ("avg_fgm", 25.0),
+    ("avg_fga", 56.0),
+    ("avg_fg3m", 7.0),
+    ("avg_fg3a", 21.0),
+    ("avg_ftm", 13.0),
+    ("avg_fta", 18.0),
+    ("avg_oreb", 9.0),
+    ("avg_dreb", 24.0),
+    ("avg_reb", 33.0),
+    ("avg_ast", 13.0),
+    ("avg_stl", 6.5),
+    ("avg_blk", 3.5),
+    ("avg_tov", 11.0),
+    ("avg_pf", 16.0),
+    ("avg_pace", 70.0),
+    ("avg_efg", 0.51),
+    ("avg_pts", 70.0),
+    ("avg_pm", 0.0),
+    ("avg_margin", 0.0),
+    ("margin_volatility", 15.0),
+    ("last_3_margin", 0.0),
+    # Win rates & momentum
+    ("win_pct", 0.5),
+    ("win_streak", 0.0),
+    ("weighted_momentum", 0.5),
+    ("form_score", 0.5),
+    # Pace
+    ("pace", 70.0),
+    # Efficiency
+    ("efg", 0.51),
+    # Points / z-scores
+    ("pts_zscore", 0.0),
+    # SOS
+    ("sos_trend", 0.0),
+    ("sos", 0.0),
+    # Travel
+    ("cum_travel", 0.0),
+    # ELO
+    ("elo_slope", 0.0),
+    # Moneyline features
+    ("composite_power", 0.5),
+    ("power_diff", 0.0),
+    ("perf_vs_expected_raw", 0.0),
+    ("perf_vs_expected", 0.0),
+    ("perf_vs_expected_diff", 0.0),
+    ("consistency", 0.5),
+    ("consistency_diff", 0.0),
+    ("form_diff", 0.0),
+    ("home_away_split_diff", 0.0),
+    ("recent_win_pct_home", 0.5),
+    ("recent_win_pct_away", 0.5),
+    ("h2h_win_rate", 0.5),
+    ("h2h_avg_margin", 0.0),
+    # Home-away differentials
+    ("_diff_", 0.0),
+    # Target encoding
+    ("target_win_rate", 0.5),
+    ("target_margin", 0.0),
+    # Seasonality
+    ("dow_sin", 0.0),
+    ("dow_cos", 1.0),
+    ("month_sin", 0.0),
+    ("month_cos", 1.0),
+    ("season_phase", 1.0),
+    ("days_since_asb", 0.0),
+    ("days_into_season", 15.0),
+    ("is_weekend", 0),
+    # Fatigue
+    ("fatigue_index", 0.3),
+    ("games_3d", 1.0),
+    ("games_5d", 2.0),
+    ("games_7d", 3.0),
+    # Home/away splits
+    ("home_win_rate_at_home", 0.6),
+    ("away_win_rate_on_road", 0.4),
+    ("home_advantage_edge", 0.0),
+    # Coach change proxy
+    ("perf_shift_z", 0.0),
+    ("system_change_flag", 0),
+    ("system_changes_10g", 0.0),
+    ("system_changes_diff", 0.0),
+]
+
+
+# ── Euroleague-Specific Backfill Constants ────────────────────────────────
+# Euroleague per-team stats: avg ~78 pts, moderate pace (~72),
+# higher foul rate, lower 3PT volume than NBA.
+# Total points per game ~156 (half of NBA's ~228).
+_EUROLEAGUE_NA_FILL: list[tuple[str, float]] = [
+    # Opponent-allowed rolling averages (must come before base stats)
+    ("avg_reb_allowed", 33.0),
+    ("avg_ast_allowed", 17.0),
+    ("avg_stl_allowed", 6.5),
+    ("avg_blk_allowed", 3.0),
+    ("avg_tov_allowed", 12.0),
+    ("avg_pf_allowed", 20.0),
+    ("avg_pts_allowed", 78.0),
+    ("avg_fgm_allowed", 27.0),
+    ("avg_fga_allowed", 58.0),
+    ("avg_fg3m_allowed", 8.0),
+    ("avg_fg3a_allowed", 23.0),
+    ("avg_ftm_allowed", 16.0),
+    ("avg_fta_allowed", 21.0),
+    ("avg_oreb_allowed", 9.0),
+    ("avg_dreb_allowed", 24.0),
+    # Off/def comparisons
+    ("offense_vs_defense", 1.0),
+    ("defense_vs_offense", 1.0),
+    # Rate stats
+    ("three_pt_rate_10g", 0.38),
+    ("ft_rate_10g", 0.33),
+    ("ast_ratio_10g", 0.17),
+    ("ts_pct_10g", 0.55),
+    ("reb_pct_10g", 0.50),
+    ("three_pt_rate", 0.38),
+    ("ft_rate", 0.33),
+    ("ast_ratio", 0.17),
+    ("ts_pct", 0.55),
+    ("reb_pct", 0.50),
+    # Opponent features
+    ("opp_avg_pts_scored", 78.0),
+    ("opp_avg_pts_allowed", 78.0),
+    ("opp_avg_pm", 0.0),
+    ("opp_trailing_margin", 0.0),
+    ("adj_opp_avg_pm", 0.0),
+    # Trend slopes
+    ("trend_fgm", 0.0),
+    ("trend_fga", 0.0),
+    ("trend_reb", 0.0),
+    ("trend_ast", 0.0),
+    ("trend_stl", 0.0),
+    ("trend_blk", 0.0),
+    ("trend_tov", 0.0),
+    ("trend_pts", 0.0),
+    ("trend_pm", 0.0),
+    # EMA for boxscore stats
+    ("ema_fgm", 27.0),
+    ("ema_fga", 58.0),
+    ("ema_reb", 33.0),
+    ("ema_ast", 17.0),
+    ("ema_stl", 6.5),
+    ("ema_blk", 3.0),
+    ("ema_tov", 12.0),
+    ("ema_pf", 20.0),
+    ("ema_pts", 78.0),
+    ("ema_pm", 0.0),
+    ("ema_margin", 0.0),
+    # Boxscore stat rolling averages
+    ("avg_fg3_pct", 0.35),
+    ("avg_ft_pct", 0.78),
+    ("avg_fgm", 27.0),
+    ("avg_fga", 58.0),
+    ("avg_fg3m", 8.0),
+    ("avg_fg3a", 23.0),
+    ("avg_ftm", 16.0),
+    ("avg_fta", 21.0),
+    ("avg_oreb", 9.0),
+    ("avg_dreb", 24.0),
+    ("avg_reb", 33.0),
+    ("avg_ast", 17.0),
+    ("avg_stl", 6.5),
+    ("avg_blk", 3.0),
+    ("avg_tov", 12.0),
+    ("avg_pf", 20.0),
+    ("avg_pace", 72.0),
+    ("avg_efg", 0.52),
+    ("avg_pts", 78.0),
+    ("avg_pm", 0.0),
+    ("avg_margin", 0.0),
+    ("margin_volatility", 14.0),
+    ("last_3_margin", 0.0),
+    # Win rates & momentum
+    ("win_pct", 0.5),
+    ("win_streak", 0.0),
+    ("weighted_momentum", 0.5),
+    ("form_score", 0.5),
+    # Pace
+    ("pace", 72.0),
+    # Efficiency
+    ("efg", 0.52),
+    # Points / z-scores
+    ("pts_zscore", 0.0),
+    # SOS
+    ("sos_trend", 0.0),
+    ("sos", 0.0),
+    # Travel
+    ("cum_travel", 0.0),
+    # ELO
+    ("elo_slope", 0.0),
+    # Moneyline features
+    ("composite_power", 0.5),
+    ("power_diff", 0.0),
+    ("perf_vs_expected_raw", 0.0),
+    ("perf_vs_expected", 0.0),
+    ("perf_vs_expected_diff", 0.0),
+    ("consistency", 0.5),
+    ("consistency_diff", 0.0),
+    ("form_diff", 0.0),
+    ("home_away_split_diff", 0.0),
+    ("recent_win_pct_home", 0.5),
+    ("recent_win_pct_away", 0.5),
+    ("h2h_win_rate", 0.5),
+    ("h2h_avg_margin", 0.0),
+    # Home-away differentials
+    ("_diff_", 0.0),
+    # Target encoding
+    ("target_win_rate", 0.5),
+    ("target_margin", 0.0),
+    # Seasonality
+    ("dow_sin", 0.0),
+    ("dow_cos", 1.0),
+    ("month_sin", 0.0),
+    ("month_cos", 1.0),
+    ("season_phase", 1.0),
+    ("days_since_asb", 0.0),
+    ("days_into_season", 15.0),
+    ("is_weekend", 0),
+    # Fatigue
+    ("fatigue_index", 0.3),
+    ("games_3d", 1.0),
+    ("games_5d", 2.0),
+    ("games_7d", 3.0),
+    # Home/away splits
+    ("home_win_rate_at_home", 0.6),
+    ("away_win_rate_on_road", 0.4),
+    ("home_advantage_edge", 0.0),
+    # Coach change proxy
+    ("perf_shift_z", 0.0),
+    ("system_change_flag", 0),
+    ("system_changes_10g", 0.0),
+    ("system_changes_diff", 0.0),
+]
+
+
+# ── NFL-Specific Backfill Constants ──────────────────────────────────────
+# NFL per-team stats: avg ~22 pts, slow pace (~65 possessions),
+# no basketball-specific stats (fgm, reb, ast, etc.).
+# Basketball-only feature columns won't be created for NFL data,
+# so those fill values are set to 0.0 and won't be hit.
+_NFL_NA_FILL: list[tuple[str, float]] = [
+    # Opponent-allowed rolling averages (must come before base stats)
+    ("avg_reb_allowed", 0.0),
+    ("avg_ast_allowed", 0.0),
+    ("avg_stl_allowed", 0.0),
+    ("avg_blk_allowed", 0.0),
+    ("avg_tov_allowed", 0.0),
+    ("avg_pf_allowed", 0.0),
+    ("avg_pts_allowed", 22.0),
+    ("avg_fgm_allowed", 0.0),
+    ("avg_fga_allowed", 0.0),
+    ("avg_fg3m_allowed", 0.0),
+    ("avg_fg3a_allowed", 0.0),
+    ("avg_ftm_allowed", 0.0),
+    ("avg_fta_allowed", 0.0),
+    ("avg_oreb_allowed", 0.0),
+    ("avg_dreb_allowed", 0.0),
+    # Off/def comparisons
+    ("offense_vs_defense", 1.0),
+    ("defense_vs_offense", 1.0),
+    # Rate stats (all N/A for football → 0.0)
+    ("three_pt_rate_10g", 0.0),
+    ("ft_rate_10g", 0.0),
+    ("ast_ratio_10g", 0.0),
+    ("ts_pct_10g", 0.0),
+    ("reb_pct_10g", 0.0),
+    ("three_pt_rate", 0.0),
+    ("ft_rate", 0.0),
+    ("ast_ratio", 0.0),
+    ("ts_pct", 0.0),
+    ("reb_pct", 0.0),
+    # Opponent features
+    ("opp_avg_pts_scored", 22.0),
+    ("opp_avg_pts_allowed", 22.0),
+    ("opp_avg_pm", 0.0),
+    ("opp_trailing_margin", 0.0),
+    ("adj_opp_avg_pm", 0.0),
+    # Trend slopes (basketball stats → 0.0)
+    ("trend_fgm", 0.0),
+    ("trend_fga", 0.0),
+    ("trend_reb", 0.0),
+    ("trend_ast", 0.0),
+    ("trend_stl", 0.0),
+    ("trend_blk", 0.0),
+    ("trend_tov", 0.0),
+    ("trend_pts", 0.0),
+    ("trend_pm", 0.0),
+    # EMA for boxscore stats (N/A → 0.0)
+    ("ema_fgm", 0.0),
+    ("ema_fga", 0.0),
+    ("ema_reb", 0.0),
+    ("ema_ast", 0.0),
+    ("ema_stl", 0.0),
+    ("ema_blk", 0.0),
+    ("ema_tov", 0.0),
+    ("ema_pf", 0.0),
+    ("ema_pts", 22.0),
+    ("ema_pm", 0.0),
+    ("ema_margin", 0.0),
+    # Boxscore stat rolling averages (N/A → 0.0)
+    ("avg_fg3_pct", 0.0),
+    ("avg_ft_pct", 0.0),
+    ("avg_fgm", 0.0),
+    ("avg_fga", 0.0),
+    ("avg_fg3m", 0.0),
+    ("avg_fg3a", 0.0),
+    ("avg_ftm", 0.0),
+    ("avg_fta", 0.0),
+    ("avg_oreb", 0.0),
+    ("avg_dreb", 0.0),
+    ("avg_reb", 0.0),
+    ("avg_ast", 0.0),
+    ("avg_stl", 0.0),
+    ("avg_blk", 0.0),
+    ("avg_tov", 0.0),
+    ("avg_pf", 0.0),
+    ("avg_pace", 65.0),
+    ("avg_efg", 0.0),
+    ("avg_pts", 22.0),
+    ("avg_pm", 0.0),
+    ("avg_margin", 0.0),
+    ("margin_volatility", 16.0),
+    ("last_3_margin", 0.0),
+    # Win rates & momentum
+    ("win_pct", 0.5),
+    ("win_streak", 0.0),
+    ("weighted_momentum", 0.5),
+    ("form_score", 0.5),
+    # Pace
+    ("pace", 65.0),
+    # Efficiency (N/A → 0.0)
+    ("efg", 0.0),
+    # Points / z-scores
+    ("pts_zscore", 0.0),
+    # SOS
+    ("sos_trend", 0.0),
+    ("sos", 0.0),
+    # Travel
+    ("cum_travel", 0.0),
+    # ELO
+    ("elo_slope", 0.0),
+    # Moneyline features
+    ("composite_power", 0.5),
+    ("power_diff", 0.0),
+    ("perf_vs_expected_raw", 0.0),
+    ("perf_vs_expected", 0.0),
+    ("perf_vs_expected_diff", 0.0),
+    ("consistency", 0.5),
+    ("consistency_diff", 0.0),
+    ("form_diff", 0.0),
+    ("home_away_split_diff", 0.0),
+    ("recent_win_pct_home", 0.5),
+    ("recent_win_pct_away", 0.5),
+    ("h2h_win_rate", 0.5),
+    ("h2h_avg_margin", 0.0),
+    # Home-away differentials
+    ("_diff_", 0.0),
+    # Target encoding
+    ("target_win_rate", 0.5),
+    ("target_margin", 0.0),
+    # Seasonality
+    ("dow_sin", 0.0),
+    ("dow_cos", 1.0),
+    ("month_sin", 0.0),
+    ("month_cos", 1.0),
+    ("season_phase", 1.0),
+    ("days_since_asb", 0.0),
+    ("days_into_season", 15.0),
+    ("is_weekend", 0),
+    # Fatigue
+    ("fatigue_index", 0.3),
+    ("games_3d", 1.0),
+    ("games_5d", 2.0),
+    ("games_7d", 3.0),
+    # Home/away splits
+    ("home_win_rate_at_home", 0.6),
+    ("away_win_rate_on_road", 0.4),
+    ("home_advantage_edge", 0.0),
+    # Coach change proxy
+    ("perf_shift_z", 0.0),
+    ("system_change_flag", 0),
+    ("system_changes_10g", 0.0),
+    ("system_changes_diff", 0.0),
+]
 
 
 class FeatureEngineer:
@@ -56,18 +718,24 @@ class FeatureEngineer:
 
     v2.2 features include EMA rolling stats, trend slopes, travel distance,
     and enhanced fatigue modeling for more accurate predictions.
+
+    Supports NBA, NCAAB, Euroleague, and NFL via the ``league`` parameter
+    in ``build_all_features``.
     """
 
     def __init__(self, rolling_windows: Optional[List[int]] = None):
         self.rolling_windows = rolling_windows or ROLLING_WINDOWS
 
-    def build_all_features(self, games_df: pd.DataFrame, raw_df: pd.DataFrame) -> pd.DataFrame:
+    def build_all_features(self, games_df: pd.DataFrame, raw_df: pd.DataFrame,
+                           league: str = "NBA") -> pd.DataFrame:
         """
         Build the full feature set from game-level data.
 
         Args:
             games_df: Merged home/away game dataset from NBADataLoader
             raw_df: Raw team-level game logs
+            league: "NBA" (default), "NCAAB", "Euroleague", or "NFL". Selects
+                    league-appropriate backfill constants for rolling features.
 
         Returns:
             DataFrame with features, no lookahead bias
@@ -392,10 +1060,23 @@ class FeatureEngineer:
         df = self._add_elo_features(df)
 
         # ── Moneyline-Specific Features (v3.1) ──────────────────────────
-        # Features designed specifically for win/loss classification,
-        # not total points regression. These capture team quality,
-        # matchup dynamics, and performance relative to expectations.
         df = self._add_moneyline_features(df)
+
+        # ══════════════════════════════════════════════════════════════════
+        #  v5.1 — NEW ENHANCED FEATURES
+        # ══════════════════════════════════════════════════════════════════
+
+        # ── A: Target Encoding — team quality features ──────────────────
+        df = self._add_target_encoding_features(df)
+
+        # ── B: Seasonality — day of week, month, season phase ──────────
+        df = self._add_seasonality_features(df)
+
+        # ── C: Comprehensive Fatigue Index ─────────────────────────────
+        df = self._add_fatigue_index(df)
+
+        # ── D: Home/Away Performance Splits ─────────────────────────────
+        df = self._add_home_away_splits(df)
 
         # ── Clean Up ──────────────────────────────────────────────────
         df = df.drop(columns=["rest_home_key", "rest_away_key"], errors="ignore")
@@ -403,12 +1084,15 @@ class FeatureEngineer:
         # Drop intermediate WL string columns but keep WL_num for feature selection
         df = df.drop(columns=["WL_num_home", "WL_num_away"], errors="ignore")
 
+        # Drop raw calendar columns (sin/cos encoded versions are kept)
+        df = df.drop(columns=["dow", "month"], errors="ignore")
+
         # ── Backfill NAs with league-average defaults ──────────────────
         # Rolling features (avg_pts_*, avg_pm_*, ema_*, etc.) are NaN for
         # each team's first game(s) of the season since there's no prior
         # history to compute from. We fill with sensible defaults so no
         # training data is dropped.
-        df = self.backfill_features(df)
+        df = self.backfill_features(df, league=league)
 
         return df
 
@@ -881,6 +1565,311 @@ class FeatureEngineer:
 
         return df
 
+    # ── A: Target Encoding Features (v5.1) ───────────────────────────
+
+    def _add_target_encoding_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Replace raw TEAM_ID integers with informative rolling averages.
+
+        The model shouldn't treat team IDs as numbers (team 1610612738 is
+        not "better" than team 1610612739). Instead, we create target-
+        encoded features: each team's historical win rate and margin
+        computed chronologically (no lookahead).
+
+        Features:
+          - team_win_rate_home/away: Rolling win rate for each team
+          - team_avg_margin_home/away: Rolling average margin
+          - team_win_rate_diff: home_win_rate - away_win_rate
+          - team_margin_diff: home_margin - away_margin
+        """
+        df = df.copy()
+
+        for suffix, team_prefix in [("home", "home"), ("away", "away")]:
+            team_id_col = f"TEAM_ID_{suffix}"
+            wl_num_col = f"WL_num_{team_prefix}"
+            pm_col = f"team_plus_minus_{team_prefix}"
+
+            # Rolling win rate (already exists as win_pct_10g, but add
+            # a direct team-quality signal using ALL history, not just 10g)
+            df[f"target_win_rate_{suffix}"] = (
+                df.groupby(team_id_col)[wl_num_col]
+                .transform(lambda x: x.expanding(min_periods=1).mean().shift(1))
+            )
+
+            # Rolling average margin (expanding = all available history)
+            df[f"target_margin_{suffix}"] = (
+                df.groupby(team_id_col)[pm_col]
+                .transform(lambda x: x.expanding(min_periods=1).mean().shift(1))
+            )
+
+        # Differential features
+        df["target_win_rate_diff"] = df["target_win_rate_home"] - df["target_win_rate_away"]
+        df["target_margin_diff"] = df["target_margin_home"] - df["target_margin_away"]
+
+        return df
+
+    # ── B: Seasonality Features (v5.1) ───────────────────────────────
+
+    def _add_seasonality_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add calendar-based features that capture time-of-season effects.
+
+        NBA teams have different performance patterns:
+        - Early season (Oct-Nov): teams still gelling, more variance
+        - Mid season (Dec-Jan): "dog days" — fatigue + travel wear
+        - Post-ASB (Feb-Apr): playoff push — stronger performances
+        - Day of week: Sunday afternoon games play differently from
+          Tuesday night games (rest advantage, travel patterns)
+
+        Features:
+          - day_of_week: 0=Mon..6=Sun (sin/cos encoded for cyclicity)
+          - month: 1-12 (sin/cos encoded)
+          - season_phase: early(0), mid(1), playoff_push(2)
+          - days_since_all_star: days after ASB (playoff push signal)
+          - is_weekend: 1 if Fri/Sat/Sun game
+        """
+        df = df.copy()
+
+        if "GAME_DATE" not in df.columns:
+            return df
+
+        # Parse dates if needed
+        if not pd.api.types.is_datetime64_any_dtype(df["GAME_DATE"]):
+            df["GAME_DATE"] = pd.to_datetime(df["GAME_DATE"])
+
+        # Day of week
+        df["dow"] = df["GAME_DATE"].dt.dayofweek  # 0=Monday
+        df["dow_sin"] = np.sin(2 * np.pi * df["dow"] / 7)
+        df["dow_cos"] = np.cos(2 * np.pi * df["dow"] / 7)
+        df["is_weekend"] = (df["dow"] >= 4).astype(int)  # Fri, Sat, Sun
+
+        # Month
+        df["month"] = df["GAME_DATE"].dt.month
+        df["month_sin"] = np.sin(2 * np.pi * df["month"] / 12)
+        df["month_cos"] = np.cos(2 * np.pi * df["month"] / 12)
+
+        # Season phase
+        def _season_phase(date):
+            m = date.month
+            if m in (10, 11):
+                return 0  # Early season
+            elif m in (12, 1):
+                return 1  # Mid season / dog days
+            elif m in (2, 3):
+                return 2  # Playoff push
+            elif m in (4, 5, 6):
+                return 3  # Playoffs / end of regular
+            return 1
+
+        df["season_phase"] = df["GAME_DATE"].apply(_season_phase).astype(int)
+
+        # Days since All-Star break (approximate: Feb 15)
+        year = df["GAME_DATE"].dt.year
+        asb_date = pd.to_datetime(year.astype(str) + "-02-15")
+        df["days_since_asb"] = ((df["GAME_DATE"] - asb_date).dt.days).clip(-60, 90)
+        df["days_since_asb"] = df["days_since_asb"].fillna(0)
+
+        # Days into season (from Oct 1)
+        season_start = pd.to_datetime(year.astype(str) + "-10-01")
+        df["days_into_season"] = ((df["GAME_DATE"] - season_start).dt.days).clip(0, 365).fillna(0)
+
+        return df
+
+    # ── C: Comprehensive Fatigue Index (v5.1) ────────────────────────
+
+    def _add_fatigue_index(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Build a comprehensive fatigue index (v5.1 — vectorized).
+
+        Uses a fully vectorized approach instead of slow .rolling().apply()
+        to count games in recent windows and compute a composite index.
+
+        Features:
+          - fatigue_index_home/away: 0-1 scalar (higher = more fatigued)
+          - fatigue_index_diff: home - away
+          - games_3d_home/away: games played in last 3 days
+          - games_5d_home/away: games played in last 5 days
+          - games_7d_home/away: games played in last 7 days
+        """
+        df = df.copy()
+
+        # Ensure GAME_DATE is datetime
+        if "GAME_DATE" not in df.columns:
+            return df
+        if not pd.api.types.is_datetime64_any_dtype(df["GAME_DATE"]):
+            df["GAME_DATE"] = pd.to_datetime(df["GAME_DATE"])
+
+        for suffix in ["home", "away"]:
+            team_id_col = f"TEAM_ID_{suffix}"
+
+            # Compute day gaps between consecutive games for each team
+            day_gaps = df.groupby(team_id_col)["GAME_DATE"].transform(
+                lambda x: x.diff().dt.days
+            )
+
+            for window_days, col_name in [(3, "3d"), (5, "5d"), (7, "7d")]:
+                # Binary: was each game within `window_days` of the previous?
+                within_window = (day_gaps <= window_days).astype(float)
+                # Rolling count of games in window (vectorized)
+                temp_df = pd.DataFrame({
+                    "team_id": df[team_id_col],
+                    "within": within_window,
+                })
+                result = (
+                    temp_df.groupby("team_id")["within"]
+                    .transform(
+                        lambda x: x.rolling(window_days, min_periods=1).sum().shift(1)
+                    )
+                )
+                df[f"games_{col_name}_{suffix}"] = result.fillna(0).astype(int)
+
+        # Fatigue index = weighted combination of signals
+        rest_quality_home = 1.0 - np.clip(df.get("rest_home_days", 3).fillna(3) / 7.0, 0, 1)
+        rest_quality_away = 1.0 - np.clip(df.get("rest_away_days", 3).fillna(3) / 7.0, 0, 1)
+
+        games_5d_home = df.get("games_5d_home", 0).fillna(0)
+        games_5d_away = df.get("games_5d_away", 0).fillna(0)
+
+        travel_penalty_home = np.clip(df.get("cum_travel_home", 0).fillna(0) / 3000.0, 0, 1)
+        travel_penalty_away = np.clip(df.get("cum_travel_away", 0).fillna(0) / 3000.0, 0, 1)
+
+        b2b_home = df.get("is_b2b_home", 0).fillna(0)
+        b2b_away = df.get("is_b2b_away", 0).fillna(0)
+
+        df["fatigue_index_home"] = (
+            0.40 * rest_quality_home
+            + 0.30 * np.clip(games_5d_home / 4.0, 0, 1)
+            + 0.15 * travel_penalty_home
+            + 0.15 * b2b_home
+        )
+        df["fatigue_index_away"] = (
+            0.40 * rest_quality_away
+            + 0.30 * np.clip(games_5d_away / 4.0, 0, 1)
+            + 0.15 * travel_penalty_away
+            + 0.15 * b2b_away
+        )
+        df["fatigue_index_diff"] = df["fatigue_index_home"] - df["fatigue_index_away"]
+
+        return df
+
+    # ── D: Home/Away Performance Splits (v5.1) ───────────────────────
+
+    def _add_home_away_splits(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Compute home/away venue performance differentials.
+
+        Some teams have significant home/away splits (e.g., Denver Nuggets
+        at altitude). These features capture how much better/worse each
+        team plays at their venue vs on the road.
+
+        Features:
+          - home_advantage_home: home team's home win rate
+          - home_advantage_away: away team's road win rate
+          - home_advantage_diff: home_advantage_home - (1 - home_advantage_away)
+        """
+        df = df.copy()
+
+        # For the home team: how often do they win AT HOME?
+        home_id_col = "TEAM_ID_home"
+        df["home_win_rate_at_home"] = (
+            df.groupby(home_id_col)["WL_num_home"]
+            .transform(lambda x: x.expanding(min_periods=1).mean().shift(1))
+        )
+
+        # For the away team: how often do they win ON THE ROAD?
+        away_id_col = "TEAM_ID_away"
+        df["away_win_rate_on_road"] = (
+            df.groupby(away_id_col)["WL_num_away"]
+            .transform(lambda x: x.expanding(min_periods=1).mean().shift(1))
+        )
+
+        # This game's expected home advantage = home's home win rate
+        # vs away's road loss rate (1 - away_road_win_rate)
+        df["home_advantage_edge"] = (
+            df["home_win_rate_at_home"].fillna(0.5)
+            - (1.0 - df["away_win_rate_on_road"].fillna(0.5))
+        )
+
+        # ── D2: Coach Change Proxy Detection (v5.1) ───────────────────────
+        df = self._add_coach_change_features(df)
+        return df
+
+    def _add_coach_change_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Proxy detection of coaching/system changes via performance anomalies.
+
+        A coaching change typically causes a sudden shift in:
+          - Performance vs expectation (perf_vs_expected)
+          - Margin volatility (higher variance as team adjusts)
+          - Pace of play (new systems change game speed)
+
+        Instead of trying to scrape which teams changed coaches mid-season
+        (which requires an external API), we detect anomalous shifts in
+        rolling performance that could indicate a system change.
+
+        Features:
+          - perf_shift_home/away: z-score of last 3 games' perf vs rolling norm
+          - system_change_home/away: 1 if large anomalous shift detected
+          - coach_change_count_home/away: rolling count of detected shifts
+
+        This is a PROXY — it may catch non-coach-change anomalies too
+        (key injuries, trades, etc.), which is actually desirable since
+        those also affect game outcomes.
+        """
+        df = df.copy()
+
+        for suffix, team_prefix in [("home", "home"), ("away", "away")]:
+            team_id_col = f"TEAM_ID_{suffix}"
+            perf_col = f"perf_vs_expected_{suffix}"
+            pm_col = f"team_plus_minus_{team_prefix}"
+
+            if perf_col not in df.columns:
+                continue
+
+            # Use pre-z-scored perf_vs_expected (already normalized)
+            # Compute rolling mean and std for anomaly detection
+            rolling_mean = (
+                df.groupby(team_id_col)[perf_col]
+                .transform(lambda x: x.rolling(15, min_periods=5).mean().shift(1))
+            )
+            rolling_std = (
+                df.groupby(team_id_col)[perf_col]
+                .transform(lambda x: x.rolling(15, min_periods=5).std().shift(1))
+            )
+
+            # Recent 3-game average vs rolling 15-game norm
+            recent_3g = (
+                df.groupby(team_id_col)[perf_col]
+                .transform(lambda x: x.rolling(3, min_periods=2).mean().shift(1))
+            )
+
+            # Z-score of recent performance vs historical norm
+            df[f"perf_shift_z_{suffix}"] = np.where(
+                rolling_std > 0.01,
+                (recent_3g - rolling_mean) / rolling_std,
+                0.0,
+            )
+
+            # Flag: absolute z-score > 2.0 = likely system change
+            df[f"system_change_flag_{suffix}"] = (
+                np.abs(df[f"perf_shift_z_{suffix}"]).fillna(0) > 2.0
+            ).astype(int)
+
+            # Rolling count of system changes in last 10 games
+            df[f"system_changes_10g_{suffix}"] = (
+                df.groupby(team_id_col)[f"system_change_flag_{suffix}"]
+                .transform(lambda x: x.rolling(10, min_periods=1).sum().shift(1))
+            )
+
+        # Differential features
+        if "system_changes_10g_home" in df.columns:
+            df["system_changes_diff"] = (
+                df["system_changes_10g_home"].fillna(0)
+                - df["system_changes_10g_away"].fillna(0)
+            )
+
+        return df
+
     # ── Moneyline-Specific Features (v3.1) ────────────────────────────
 
     def _add_moneyline_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -1056,7 +2045,7 @@ class FeatureEngineer:
 
         return df
 
-    def backfill_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    def backfill_features(self, df: pd.DataFrame, league: str = "NBA") -> pd.DataFrame:
         """
         Backfill NaN feature values with league-average constants ONLY.
 
@@ -1072,135 +2061,23 @@ class FeatureEngineer:
         history to compute from. This fills those gaps with pre-defined
         league-average constants, so no training data needs to be dropped
         and no future information leaks backward.
+
+        Args:
+            df: Feature DataFrame with potential NaN values.
+            league: "NBA" (default), "NCAAB", "Euroleague", or "NFL". Selects
+                    the appropriate set of league-average constants for backfill.
         """
         df = df.copy()
 
-        # Map column name patterns to sensible league-average constants
-        # These are pre-defined NBA season averages — NOT computed from data.
-        # Using constants ensures NO future information leaks into training.
-        # NOTE: Patterns are ordered LONGEST FIRST to prevent substring
-        # collisions. E.g., "avg_pts_allowed" must appear before "avg_pts"
-        # so that columns like "avg_pts_allowed_10g_home" don't match
-        # the generic "avg_pts" pattern and get the wrong fill value.
-        _NA_FILL: list[tuple[str, float]] = [
-            # --- Longest/most-specific patterns first ---
-            # Opponent-allowed rolling averages (must come before base stats)
-            ("avg_reb_allowed", 43.0),
-            ("avg_ast_allowed", 25.0),
-            ("avg_stl_allowed", 7.5),
-            ("avg_blk_allowed", 5.0),
-            ("avg_tov_allowed", 13.0),
-            ("avg_pf_allowed", 19.0),
-            ("avg_pts_allowed", 114.5),
-            ("avg_fgm_allowed", 42.0),
-            ("avg_fga_allowed", 88.0),
-            ("avg_fg3m_allowed", 13.5),
-            ("avg_fg3a_allowed", 38.0),
-            ("avg_ftm_allowed", 18.0),
-            ("avg_fta_allowed", 23.0),
-            ("avg_oreb_allowed", 10.0),
-            ("avg_dreb_allowed", 33.0),
-            # Off/def comparisons (must come before generic diff)
-            ("offense_vs_defense", 1.0),
-            ("defense_vs_offense", 1.0),
-            # Rate stats (10g variants before base)
-            ("three_pt_rate_10g", 0.38),
-            ("ft_rate_10g", 0.26),
-            ("ast_ratio_10g", 0.18),
-            ("ts_pct_10g", 0.57),
-            ("reb_pct_10g", 0.50),
-            ("three_pt_rate", 0.38),
-            ("ft_rate", 0.26),
-            ("ast_ratio", 0.18),
-            ("ts_pct", 0.57),
-            ("reb_pct", 0.50),
-            # Opponent features
-            ("opp_avg_pts_scored", 114.5),
-            ("opp_avg_pts_allowed", 114.5),
-            ("opp_avg_pm", 0.0),
-            ("opp_trailing_margin", 0.0),
-            ("adj_opp_avg_pm", 0.0),
-            # Trend slopes for boxscore stats
-            ("trend_fgm", 0.0),
-            ("trend_fga", 0.0),
-            ("trend_reb", 0.0),
-            ("trend_ast", 0.0),
-            ("trend_stl", 0.0),
-            ("trend_blk", 0.0),
-            ("trend_tov", 0.0),
-            ("trend_pts", 0.0),
-            ("trend_pm", 0.0),
-            # EMA for boxscore stats
-            ("ema_fgm", 42.0),
-            ("ema_fga", 88.0),
-            ("ema_reb", 43.0),
-            ("ema_ast", 25.0),
-            ("ema_stl", 7.5),
-            ("ema_blk", 5.0),
-            ("ema_tov", 13.0),
-            ("ema_pf", 19.0),
-            ("ema_pts", 114.5),
-            ("ema_pm", 0.0),
-            ("ema_margin", 0.0),
-            # Boxscore stat rolling averages
-            ("avg_fg3_pct", 0.355),
-            ("avg_ft_pct", 0.780),
-            ("avg_fgm", 42.0),
-            ("avg_fga", 88.0),
-            ("avg_fg3m", 13.5),
-            ("avg_fg3a", 38.0),
-            ("avg_ftm", 18.0),
-            ("avg_fta", 23.0),
-            ("avg_oreb", 10.0),
-            ("avg_dreb", 33.0),
-            ("avg_reb", 43.0),
-            ("avg_ast", 25.0),
-            ("avg_stl", 7.5),
-            ("avg_blk", 5.0),
-            ("avg_tov", 13.0),
-            ("avg_pf", 19.0),
-            ("avg_pace", 100.0),
-            ("avg_efg", 0.54),
-            ("avg_pts", 114.5),
-            ("avg_pm", 0.0),
-            ("avg_margin", 0.0),
-            ("margin_volatility", 12.0),
-            ("last_3_margin", 0.0),
-            # Win rates & momentum
-            ("win_pct", 0.5),
-            ("win_streak", 0.0),
-            ("weighted_momentum", 0.5),
-            ("form_score", 0.5),
-            # Pace
-            ("pace", 100.0),
-            # Efficiency
-            ("efg", 0.54),
-            # Points / z-scores
-            ("pts_zscore", 0.0),
-            # Strength of schedule
-            ("sos_trend", 0.0),
-            ("sos", 0.0),
-            # Travel / cumulative
-            ("cum_travel", 0.0),
-            # Elo ratings
-            ("elo_slope", 0.0),
-            # Moneyline features (v3.1)
-            ("composite_power", 0.5),
-            ("power_diff", 0.0),
-            ("perf_vs_expected_raw", 0.0),
-            ("perf_vs_expected", 0.0),
-            ("perf_vs_expected_diff", 0.0),
-            ("consistency", 0.5),
-            ("consistency_diff", 0.0),
-            ("form_diff", 0.0),
-            ("home_away_split_diff", 0.0),
-            ("recent_win_pct_home", 0.5),
-            ("recent_win_pct_away", 0.5),
-            ("h2h_win_rate", 0.5),
-            ("h2h_avg_margin", 0.0),
-            # Home-away differentials (diff = 0 means teams are equal)
-            ("_diff_", 0.0),
-        ]
+        # Select the right set of league-average constants
+        if league == "NCAAB":
+            _NA_FILL = _NCAAB_NA_FILL
+        elif league == "Euroleague":
+            _NA_FILL = _EUROLEAGUE_NA_FILL
+        elif league == "NFL":
+            _NA_FILL = _NFL_NA_FILL
+        else:
+            _NA_FILL = _NBA_NA_FILL
 
         for col in df.columns:
             if not df[col].isna().any():
@@ -1282,5 +2159,11 @@ class FeatureEngineer:
             "ts_pct_home", "ts_pct_away",
             "reb_pct_home", "reb_pct_away",
             "home_tz", "away_tz",  # Intermediate: use tz_diff instead
+            # v5.1: intermediate date columns
+            "dow", "month",  # Use sin/cos encoded versions instead
+            # v5.1: coach change intermediate columns
+            "perf_shift_z_home", "perf_shift_z_away",
+            "system_change_flag_home", "system_change_flag_away",
         }
         return [c for c in df.columns if c not in exclude and np.issubdtype(df[c].dtype, np.number)]
+
