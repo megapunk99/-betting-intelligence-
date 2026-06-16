@@ -32,28 +32,33 @@ ESPN_SUMMARY_URL = "https://site.api.espn.com/apis/site/v2/sports/{sport}/summar
 # Mapping from our league keys to ESPN sport paths
 LEAGUE_TO_ESPN_PATH: dict[str, str] = {
     "nba": "basketball/nba",
+    "ncaab": "basketball/mens-college-basketball",
+    "euroleague": "basketball/euroleague",
+    "nfl": "football/nfl",
 }
 
-# Mapping from ESPN team names to short names (for matching with DB)
-ESPN_TEAM_TO_SHORT: dict[str, str] = {
-    # NBA
-    "Atlanta Hawks": "Hawks", "Boston Celtics": "Celtics", "Brooklyn Nets": "Nets",
-    "Charlotte Hornets": "Hornets", "Chicago Bulls": "Bulls", "Cleveland Cavaliers": "Cavaliers",
-    "Dallas Mavericks": "Mavericks", "Denver Nuggets": "Nuggets", "Detroit Pistons": "Pistons",
-    "Golden State Warriors": "Warriors", "Houston Rockets": "Rockets", "Indiana Pacers": "Pacers",
-    "LA Clippers": "Clippers", "Los Angeles Lakers": "Lakers", "Memphis Grizzlies": "Grizzlies",
-    "Miami Heat": "Heat", "Milwaukee Bucks": "Bucks", "Minnesota Timberwolves": "Timberwolves",
-    "New Orleans Pelicans": "Pelicans", "New York Knicks": "Knicks",
-    "Oklahoma City Thunder": "Thunder", "Orlando Magic": "Magic",
-    "Philadelphia 76ers": "76ers", "Phoenix Suns": "Suns",
-    "Portland Trail Blazers": "Trail Blazers", "Sacramento Kings": "Kings",
-    "San Antonio Spurs": "Spurs", "Toronto Raptors": "Raptors",
-    "Utah Jazz": "Jazz", "Washington Wizards": "Wizards",
+# Mapping from ESPN team names to short names.
+# NBA+NCAAB names come from sport_configs.py (single source of truth).
+# ESPN-specific aliases (API name variants) are added on top.
+from betting_intel.live.sport_configs import ALL_TEAM_NAME_MAP
+
+# ESPN API occasionally returns alternate name variants for some teams
+_ESPN_NBA_ALIASES: dict[str, str] = {
+    # Some ESPN endpoints return full names instead of abbreviations
+    "Los Angeles Clippers": "Clippers",  # ESPN main API typo variant
 }
+
+# Build the complete ESPN map: base names + ESPN-specific aliases
+ESPN_TEAM_TO_SHORT: dict[str, str] = {}
+ESPN_TEAM_TO_SHORT.update(ALL_TEAM_NAME_MAP)
+ESPN_TEAM_TO_SHORT.update(_ESPN_NBA_ALIASES)
 
 # Default season dates per league (used to find the right year to query)
 LEAGUE_DEFAULT_MONTHS: dict[str, tuple[int, int]] = {
-    "nba": (10, 6),      # Oct-Jun
+    "nba": (10, 6),          # Oct-Jun
+    "ncaab": (11, 4),        # Nov-Apr
+    "euroleague": (9, 5),    # Sep-May
+    "nfl": (9, 2),             # Sep-Feb
 }
 
 # Cache the number of days in each month to avoid repeated calendar lookups

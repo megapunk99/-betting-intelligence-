@@ -458,16 +458,19 @@
         }
 
         // Build league filter tabs from prediction data
+        // Each entry stores both the lowercase key (for data-sport matching)
+        // and the original display name (for button text).
         var leagues = [];
         var leagueSet = {};
         preds.forEach(function(p) {
-          var league = (p.league || 'NBA').toLowerCase();
-          if (!leagueSet[league]) {
-            leagueSet[league] = true;
-            leagues.push(league);
+          var raw = p.league || 'NBA';
+          var key = raw.toLowerCase();
+          if (!leagueSet[key]) {
+            leagueSet[key] = true;
+            leagues.push({key: key, display: raw});
           }
         });
-        leagues.sort();
+        leagues.sort(function(a, b) { return a.display.localeCompare(b.display); });
 
         var filterContainer = document.getElementById('future-sport-filters');
         if (filterContainer && leagues.length > 1) {
@@ -485,14 +488,13 @@
           // Per-league buttons
           leagues.forEach(function(l) {
             var count = preds.filter(function(p) {
-              return (p.league || 'NBA').toLowerCase() === l;
+              return (p.league || 'NBA').toLowerCase() === l.key;
             }).length;
-            var display = l.charAt(0).toUpperCase() + l.slice(1);
             var btn = document.createElement('button');
             btn.className = 'sport-filter-btn';
-            btn.setAttribute('data-sport', l);
-            btn.innerHTML = display + ' <span class="filter-count">(' + count + ')</span>';
-            btn.onclick = function() { filterFutureBySport(l); };
+            btn.setAttribute('data-sport', l.key);
+            btn.innerHTML = l.display + ' <span class="filter-count">(' + count + ')</span>';
+            btn.onclick = function() { filterFutureBySport(l.key); };
             filterContainer.appendChild(btn);
           });
         }

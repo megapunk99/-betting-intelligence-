@@ -389,15 +389,15 @@ class StealthBrowser:
                     timezone_id="America/New_York",
                 )
 
+                page = context.new_page()
+
                 # Apply stealth if available
                 try:
                     from playwright_stealth import Stealth
-                    Stealth(context)
-                    logger.debug("Stealth plugin applied to Playwright context")
+                    Stealth(page)
+                    logger.debug("Stealth plugin applied to Playwright page")
                 except ImportError:
                     logger.debug("playwright-stealth not available, launching without stealth")
-
-                page = context.new_page()
 
                 # Intercept JSON API responses
                 api_responses: list[dict] = []

@@ -16,11 +16,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Use 3.11 as a canary alongside the full CI which tests 3.10, 3.11, 3.12
   PYTHON_VERSION: "3.11"
 
 jobs:
-  # ── Quick Test (single config, fast feedback) ──────────────────────────
   test:
     name: Tests
     runs-on: ubuntu-latest
@@ -43,16 +41,5 @@ jobs:
           pytest -v \
             --tb=short \
             -x \
-            -m "not slow and not integration" \
+            -m "not slow" \
             tests/
-
-      - name: Run production-mock integration test
-        run: |
-          pytest -v \
-            --tb=short \
-            --cov=src/betting_intel \
-            --cov-config=.coveragerc \
-            --cov-append \
-            --cov-report=xml:reports/coverage/coverage.xml \
-            -m "integration" \
-            tests/test_web_production_mock.py tests/test_scraper_level_mock.py

@@ -48,27 +48,8 @@
         <span class="stat-value {% if n_bets > 0 %}green{% else %}dim{% endif %}">{{ n_bets }}</span>
         <span class="stat-sub">{{ n_games }} games</span>
       </div>
-      <div class="stat-card">
-        <span class="stat-label">Win Rate</span>
-        {% set total_r = resolved_wins + resolved_losses %}
-        {% set winrate_r = (resolved_wins / total_r * 100)|round|int if total_r > 0 else '&#8212;' %}
-        <span class="stat-value {% if total_r > 0 and winrate_r >= 50 %}green{% elif total_r > 0 %}red{% else %}dim{% endif %}">
-          {% if total_r > 0 %}{{ winrate_r }}%{% else %}&#8212;{% endif %}
-        </span>
-        <span class="stat-sub">{{ resolved_wins }}/{{ total_r }} resolved</span>
-      </div>
-      <div class="stat-card">
-        <span class="stat-label">P&amp;L</span>
-        {% if resolved_pnl != 0 %}
-          <span class="stat-value {% if resolved_pnl > 0 %}green{% elif resolved_pnl < 0 %}red{% endif %}">
-            {{ "${:+.0f}".format(resolved_pnl) }}
-          </span>
-          <span class="stat-sub">{{ n_resolved }} resolved</span>
-        {% else %}
-          <span class="stat-value dim">&#8212;</span>
-          <span class="stat-sub">no results yet</span>
-        {% endif %}
-      </div>
+
+
       <div class="stat-card">
         <span class="stat-label">Avg Edge</span>
         {% set avg_e = bets|map(attribute='edge_pct')|select('defined')|list %}
@@ -85,16 +66,15 @@
       </div>
     </div>
 
-    <div class="action-bar">
-      <button id="resolve-btn" class="btn btn-primary" onclick="resolvePredictions()">
+    <div class="action-bar">        <button id="resolve-btn" class="btn btn-primary" onclick="resolvePredictions()" aria-label="Resolve pending predictions against actual scores">
         <span id="resolve-text">Resolve Predictions</span>
         <span id="resolve-spinner" class="spinner hidden"></span>
       </button>
-      <button class="btn btn-secondary btn-sm" onclick="refreshLiveData()">
+      <button class="btn btn-secondary btn-sm" onclick="refreshLiveData()" aria-label="Refresh predictions from live data sources">
         &#8635; Refresh
       </button>
       <span class="freshness">
-        Generated: <span id="gen-time">{{ generated_at[:19] }}</span>
+        Generated: <span id="gen-time">{{ generated_at[:19] if generated_at else '—' }}</span>
         {% if last_auto_resolve %}
         <span class="resolve-stamp">
           &middot; Auto-resolve: <span title="{{ last_auto_resolve }}">{{ last_auto_resolve[:19] }}</span>
@@ -103,74 +83,27 @@
       </span>
     </div>
 
-    {% if n_sport_count > 0 %}
-    <div class="sport-pnl-card">
-      <div class="sport-pnl-header">
-        <span class="chart-title">Profit by Sport</span>
-        <span class="stat-sub">{{ n_resolved }} resolved bets</span>
-      </div>
-      <div class="sport-pnl-grid">
-        {% for sp in sport_pnl %}
-        {% set sp_league = sp.league|lower %}
-        {% set winrate = (sp.wins / sp.n * 100)|round|int if sp.n > 0 else 0 %}
-        <div class="sport-pnl-item">
-          <div class="spi-header">
-            <span class="league-badge league-{{ sp_league }}">{{ sp.league }}</span>
-            <span class="spi-pnl {% if sp.profit > 0 %}pos{% elif sp.profit < 0 %}neg{% endif %}">
-              {{ "${:+.0f}".format(sp.profit) }}
-            </span>
-          </div>
-          <div class="spi-stats">
-            <span class="spi-stat">{{ sp.wins }}-{{ sp.losses }}</span>
-            <span class="spi-stat-sub">{{ winrate }}% win</span>
-          </div>
-          <div class="spi-bar-track">
-            {% set max_profit = sport_pnl|map(attribute='profit')|map('abs')|max|default(1) %}
-            {% set bar_pct = (sp.profit / max_profit * 50)|abs if max_profit > 0 else 0 %}
-            {% set bar_pct = [bar_pct, 100]|min %}
-            {% if sp.profit >= 0 %}
-            <div class="spi-bar-fill pos" style="width: {{ bar_pct }}%; margin-left: 50%;"></div>
-            {% else %}
-            <div class="spi-bar-fill neg" style="width: {{ bar_pct }}%; margin-left: {{ 50 - bar_pct }}%;"></div>
-            {% endif %}
-          </div>
-        </div>
-        {% endfor %}
-      </div>
-    </div>
-    {% endif %}
 
-    {% if n_resolved > 1 %}
-    <div class="chart-container" id="chart-container" data-profits="{{ chart_profits }}">
-      <div class="chart-title-row">
-        <span class="chart-title">Cumulative P&amp;L</span>
-        <a href="/api/resolved-bets/csv" class="btn btn-secondary btn-sm download-btn" download>
-          &#8681; Download CSV
-        </a>
-      </div>
-      <div class="chart-wrapper">
-        <canvas id="performance-chart"></canvas>
-      </div>
-    </div>
-    {% endif %}
+
+
 
     {% if bets %}
     <div class="section-header">
-      <h2 class="section-title">
+      <h2 class="section-title" id="predictions-heading">
         Predictions
-        <span class="badge-count" id="total-bets-count">{{ bets|length }}</span>
+        <span class="badge-count" id="total-bets-count" aria-label="Total predictions: {{ bets|length }}">{{ bets|length }}</span>
       </h2>
     </div>
 
     <!-- Sport filter tabs -->
     {% set sport_groups = bets|map(attribute='league')|unique|list|sort %}
     <div class="sport-filters" id="sport-filters">
-      <button class="sport-filter-btn active" data-sport="all" onclick="filterBySport('all')">
+      <button class="sport-filter-btn active" data-sport="all" onclick="filterBySport('all')" aria-label="Show all sports">
         All <span class="filter-count">({{ bets|length }})</span>
       </button>
       {% for league in sport_groups %}
       {% set count = bets|selectattr('league', 'equalto', league)|list|length %}
-      <button class="sport-filter-btn" data-sport="{{ league|lower }}" onclick="filterBySport('{{ league|lower }}')">
+      <button class="sport-filter-btn" data-sport="{{ league|lower }}" onclick="filterBySport('{{ league|lower }}')" aria-label="Filter by {{ league }}">
         {{ league }} <span class="filter-count">({{ count }})</span>
       </button>
       {% endfor %}
@@ -263,12 +196,7 @@
             {{ bet.get('n_books_ml') }}
           </span>
           {% endif %}
-          {% if bet.get('actual_profit') is not none %}
-          <span class="detail-chip {% if bet.get('actual_profit',0) > 0 %}pos{% elif bet.get('actual_profit',0) < 0 %}neg{% endif %}">
-            <span class="chip-label">P&amp;L</span>
-            {{ "${:+.0f}".format(bet.get('actual_profit', 0)) }}
-          </span>
-          {% endif %}
+
           {% if bet.get('is_clear_pick') %}
           <span class="detail-chip" style="color:var(--green);border-color:var(--green-dim);">&#9733; Clear Pick</span>
           {% endif %}
@@ -276,7 +204,7 @@
 
         {% if bet.get('reasoning_lines') or bet.get('feature_display') %}
         <div class="reasoning-section">
-          <div class="reasoning-header" onclick="this.parentElement.classList.toggle('expanded')">
+          <div class="reasoning-header" onclick="this.parentElement.classList.toggle('expanded')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.parentElement.classList.toggle('expanded')}" aria-label="Toggle analysis details">
             <span class="reasoning-icon">&#9432;</span>
             <span class="reasoning-title">Analysis</span>
             <span class="reasoning-toggle">&#9660;</span>
@@ -407,10 +335,10 @@
     </div>
     {% endif %}
 
-    {% if all_bets %}
+    {% if bets %}
     <div class="section-header">
       <h2 class="section-title">
-        All Bets
+        All Predictions
         <span class="badge-count">{{ n_all_bets }}</span>
       </h2>
     </div>
@@ -428,14 +356,12 @@
               <th>Edge</th>
               <th>Confidence</th>
               <th>Stake</th>
-              <th>Result</th>
-              <th>P&amp;L</th>
             </tr>
           </thead>
           <tbody>
-            {% for bet in all_bets %}
+            {% for bet in bets %}
             {% set league_slug = (bet.get('league', 'NBA')|lower) %}
-            <tr class="result-{{ (bet.get('actual_result') or 'pending').lower() }}">
+            <tr>
               <td class="cell-date">{{ bet.get("game_date", "")[:10] }}</td>
               <td><span class="league-badge league-{{ league_slug }}">{{ bet.get("league", "NBA") }}</span></td>
               <td class="cell-matchup">{{ bet.get("matchup", "") }}</td>
@@ -450,21 +376,6 @@
                 </span>
               </td>
               <td>${{ "{:.0f}".format(bet.get("stake_dollars", 0)) }}</td>
-              <td>
-                {% set result = bet.get("actual_result") %}
-                {% if result %}
-                  <span class="badge-result {{ result.lower() }}">{{ result }}</span>
-                {% else %}
-                  <span class="badge-result pending">Pending</span>
-                {% endif %}
-              </td>
-              <td class="{% if bet.get('actual_profit', 0) > 0 %}pos{% elif bet.get('actual_profit', 0) < 0 %}neg{% endif %}">
-                {% if bet.get("actual_profit") is not none %}
-                  {{ "${:+.0f}".format(bet.get("actual_profit", 0)) }}
-                {% else %}
-                  &#8212;
-                {% endif %}
-              </td>
             </tr>
             {% endfor %}
           </tbody>
@@ -472,6 +383,8 @@
       </div>
     </div>
     {% endif %}
+
+
 
   </main>
 

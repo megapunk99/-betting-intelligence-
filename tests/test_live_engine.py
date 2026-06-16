@@ -405,6 +405,7 @@ class TestLivePredictionEngine:
         cached = LivePredictionSnapshot(next_two_days=[live_game])
         with engine._lock:
             engine._snapshot = cached
+            engine._last_refresh = time.time()  # Fresh snapshot — under TTL
         snap = engine.get_snapshot(force_refresh=False)
         assert snap is cached  # Same object, no rebuild
 
@@ -471,8 +472,6 @@ class TestLivePredictionEngine:
         from betting_intel.live.engine import LivePredictionSnapshot
         snap = LivePredictionSnapshot(next_two_days=[live_game])
         with engine._model_lock:
-            engine._model = MagicMock()
-            engine._feature_cols = ["f1"]
             engine._robust_system = MagicMock()
             engine._robust_system_fitted = True
         with engine._lock:
@@ -485,7 +484,6 @@ class TestLivePredictionEngine:
 
         assert engine.has_cached_data is False
         with engine._model_lock:
-            assert engine._model is None
             assert engine._robust_system is None
             assert engine._robust_system_fitted is False
         with engine._lock:
@@ -578,11 +576,13 @@ class TestLivePredictionEngine:
 
     def test_parse_games_recent_game_included(self, engine, sample_game):
         recent = dict(sample_game)
-        recent["commence_time"] = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+        # Game tipped off 5 minutes ago — within the 15-minute buffer so it's included
+        recent["commence_time"] = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
         with patch(f"{_DAT}.ODDS_TO_SHORT_NAME",
                    {"Boston Celtics": "BOS", "Los Angeles Lakers": "LAL"}):
             result = engine._parse_games([recent])
-        assert result[0].home_team_short == "BOS"
+        # Short names now come from SportConfig.team_name_map (not ODDS_TO_SHORT_NAME)
+        assert result[0].home_team_short == "Celtics"
 
     # ── _build_snapshot ──────────────────────────────────────────
 
@@ -595,7 +595,7 @@ class TestLivePredictionEngine:
 
     def test_build_snapshot_with_games(self, engine, sample_game):
         game = dict(sample_game)
-        game["commence_time"] = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+        game["commence_time"] = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
         with patch.object(engine, "_fetch_realtime_odds", return_value=[game]), \
              patch.object(engine, "_auto_resolve_completed_games", return_value=0), \
              patch(f"{_DAT}.ODDS_TO_SHORT_NAME",
@@ -611,16 +611,14 @@ class TestLivePredictionEngine:
         assert engine._predict_games([]) == []
 
     def test_predict_games_applies_fallback_when_no_model(self, engine, live_game):
-        """Without robust_system or legacy model, fallback assigns neutral edge."""
+        """Without robust_system, fallback assigns neutral edge."""
         live_game.market_total = 218.5
-        # Ensure no models are fitted
+        live_game.sport_group = "Basketball"
         engine._robust_system = None
         engine._robust_system_fitted = False
-        engine._model = None
+        engine._totals_fitted = True  # Prevent _build_totals_model from running
 
-        with patch.object(engine, "_load_model") as mock_load, \
-             patch.object(engine, "_build_robust_system") as mock_build:
-            mock_load.return_value = None
+        with patch.object(engine, "_build_robust_system") as mock_build:
             mock_build.return_value = False
             result = engine._predict_games([live_game])
 

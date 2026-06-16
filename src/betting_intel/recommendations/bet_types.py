@@ -197,7 +197,10 @@ class BetSuggestion:
             "is_clear_pick": self.is_clear_pick,
             "reasoning": self.reasoning,
             "model_name": self.model_name,
+            "confidence_reason": self.confidence_reason,
             "tags": self.tags,
+            "metadata": {k: v if isinstance(v, (str, int, float, bool, list, dict)) or v is None else str(v) for k, v in self.metadata.items()},
+            "legs": [leg.as_dict() for leg in self.legs],
         }
 
 
@@ -303,12 +306,7 @@ def TotalBet(
     # Previously had max(0.50, ...) which hid the true probability from the model.
     win_prob = 1.0 / (1.0 + math.exp(-0.015 * diff)) if diff > 0 else 0.5
     win_prob = max(0.01, min(0.92, win_prob))
-    if side.upper() == "OVER":
-        diff = predicted_total - market_total
-        label = f"Pred: {predicted_total:.0f}"
-    else:
-        diff = market_total - predicted_total
-        label = f"Pred: {predicted_total:.0f}"
+    label = f"Pred: {predicted_total:.0f}"
 
     edge = win_prob - 0.5  # Market typically prices O/U at ~50/50
     ev = (win_prob * 0.91) - ((1 - win_prob) * 1.0)
@@ -346,12 +344,7 @@ def TeamTotalBet(
     # Team totals have higher variance — use slightly steeper k
     win_prob = 1.0 / (1.0 + math.exp(-0.025 * diff)) if diff > 0 else 0.5
     win_prob = max(0.01, min(0.92, win_prob))
-    if side.upper() == "OVER":
-        diff = predicted_team_total - market_team_total
-        label = f"Pred: {predicted_team_total:.0f}"
-    else:
-        diff = market_team_total - predicted_team_total
-        label = f"Pred: {predicted_team_total:.0f}"
+    label = f"Pred: {predicted_team_total:.0f}"
 
     edge = win_prob - 0.5
     ev = (win_prob * 0.91) - ((1 - win_prob) * 1.0)
@@ -389,10 +382,7 @@ def QuarterTotalBet(
     # Quarter totals are noisier — use k=0.04
     win_prob = 1.0 / (1.0 + math.exp(-0.04 * diff)) if diff > 0 else 0.5
     win_prob = max(0.01, min(0.92, win_prob))
-    if side.upper() == "OVER":
-        label = f"Pred: {predicted_quarter_total:.0f}"
-    else:
-        label = f"Pred: {predicted_quarter_total:.0f}"
+    label = f"Pred: {predicted_quarter_total:.0f}"
 
     edge = win_prob - 0.5
     ev = (win_prob * 0.91) - ((1 - win_prob) * 1.0)
@@ -466,12 +456,7 @@ def HalfTotalBet(
     diff = abs(predicted_half_total - market_half_total)
     win_prob = 1.0 / (1.0 + math.exp(-0.02 * diff)) if diff > 0 else 0.5
     win_prob = max(0.01, min(0.92, win_prob))
-    if side.upper() == "OVER":
-        diff = predicted_half_total - market_half_total
-        label = f"Pred: {predicted_half_total:.0f}"
-    else:
-        diff = market_half_total - predicted_half_total
-        label = f"Pred: {predicted_half_total:.0f}"
+    label = f"Pred: {predicted_half_total:.0f}"
 
     edge = win_prob - 0.5
     ev = (win_prob * 0.91) - ((1 - win_prob) * 1.0)
@@ -510,12 +495,7 @@ def PlayerPropBet(
     # Player props are noisy — use gentle k=0.04
     win_prob = 1.0 / (1.0 + math.exp(-0.04 * diff)) if diff > 0 else 0.5
     win_prob = max(0.01, min(0.90, win_prob))
-    if side.upper() == "OVER":
-        diff = predicted_value - market_line
-        label = f"Pred: {predicted_value:.1f}"
-    else:
-        diff = market_line - predicted_value
-        label = f"Pred: {predicted_value:.1f}"
+    label = f"Pred: {predicted_value:.1f}"
 
     edge = win_prob - 0.5
     ev = (win_prob * 0.91) - ((1 - win_prob) * 1.0)

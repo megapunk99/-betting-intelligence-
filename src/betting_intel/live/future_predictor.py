@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
@@ -32,7 +32,8 @@ from betting_intel.utils.safe_serialize import safe_joblib_load, ModelIntegrityE
 
 logger = logging.getLogger(__name__)
 
-# ── NBA Constants ─────────────────────────────────────────────────────────
+# ── League Constants ──────────────────────────────────────────────────────
+# NBA
 NBA_TEAMS = {"Hawks","Celtics","Nets","Hornets","Bulls","Cavaliers","Mavericks",
              "Nuggets","Pistons","Warriors","Rockets","Pacers","Clippers","Lakers",
              "Grizzlies","Heat","Bucks","Timberwolves","Pelicans","Knicks","Thunder",
@@ -43,20 +44,87 @@ NBA_HOME_ADVANTAGE   = 2.3    # pts added for home court
 NBA_TOTAL_MIN        = 200.0
 NBA_TOTAL_MAX        = 260.0
 
-ESPN_TO_SHORT = {
-    "Atlanta Hawks":"Hawks","Boston Celtics":"Celtics","Brooklyn Nets":"Nets",
-    "Charlotte Hornets":"Hornets","Chicago Bulls":"Bulls","Cleveland Cavaliers":"Cavaliers",
-    "Dallas Mavericks":"Mavericks","Denver Nuggets":"Nuggets","Detroit Pistons":"Pistons",
-    "Golden State Warriors":"Warriors","Houston Rockets":"Rockets","Indiana Pacers":"Pacers",
-    "LA Clippers":"Clippers","Los Angeles Clippers":"Clippers","Los Angeles Lakers":"Lakers",
-    "LA Lakers":"Lakers","Memphis Grizzlies":"Grizzlies","Miami Heat":"Heat",
-    "Milwaukee Bucks":"Bucks","Minnesota Timberwolves":"Timberwolves",
-    "New Orleans Pelicans":"Pelicans","New York Knicks":"Knicks",
-    "Oklahoma City Thunder":"Thunder","Orlando Magic":"Magic","Philadelphia 76ers":"76ers",
-    "Phoenix Suns":"Suns","Portland Trail Blazers":"Trail Blazers",
-    "Sacramento Kings":"Kings","San Antonio Spurs":"Spurs","Toronto Raptors":"Raptors",
-    "Utah Jazz":"Jazz","Washington Wizards":"Wizards",
+# NCAAB — NCAA Division I men's college basketball.
+# Lower scoring than NBA (~145 avg total). Higher home court advantage (~4 pts).
+# NCAAB plays two 20-minute halves, but quarter ratios are approximated
+# by splitting each half equally (for dashboard display consistency).
+NCAAB_QUARTER_RATIOS = {"q1": 0.230, "q2": 0.235, "q3": 0.260, "q4": 0.275, "h1": 0.465, "h2": 0.535}
+NCAAB_HOME_ADVANTAGE = 4.0    # pts added for home court (college crowds matter more)
+NCAAB_TOTAL_MIN      = 110.0
+NCAAB_TOTAL_MAX      = 190.0
+
+# Euroleague — Top European club competition.
+# Lower scoring than NBA (~160 avg total). Higher home court advantage (~4 pts)
+# due to hostile European arenas and travel fatigue. 10-minute quarters.
+EUROLEAGUE_QUARTER_RATIOS = {"q1": 0.240, "q2": 0.248, "q3": 0.252, "q4": 0.260, "h1": 0.488, "h2": 0.512}
+EUROLEAGUE_HOME_ADVANTAGE = 4.5  # pts added for home court (European arenas are loud)
+EUROLEAGUE_TOTAL_MIN      = 150.0
+EUROLEAGUE_TOTAL_MAX      = 180.0
+
+# NFL — National Football League.
+# Low scoring (~45 total points). 4 quarters, ~12 mins each.
+# Home field advantage is ~1.75 pts (smaller than basketball).
+# Quarter distribution: slightly more scoring in 2nd & 4th quarters.
+NFL_TEAMS = {"Bills","Dolphins","Patriots","Jets","Ravens","Bengals","Browns","Steelers",
+             "Texans","Colts","Jaguars","Titans","Broncos","Chiefs","Raiders","Chargers",
+             "Cowboys","Giants","Eagles","Commanders","Bears","Lions","Packers","Vikings",
+             "Falcons","Panthers","Saints","Buccaneers","Cardinals","Rams","49ers","Seahawks"}
+
+NFL_QUARTER_RATIOS   = {"q1": 0.23, "q2": 0.27, "q3": 0.23, "q4": 0.27, "h1": 0.50, "h2": 0.50}
+NFL_HOME_ADVANTAGE   = 1.75  # pts added for home field (modern NFL ~1-2 pts)
+NFL_TOTAL_MIN        = 30.0
+NFL_TOTAL_MAX        = 60.0
+
+# ── Per-league config lookup ───────────────────────────────────────────
+def _league_config(league: str) -> dict:
+    """Get league-specific constants."""
+    if league == "ncaab":
+        return {
+            "quarter_ratios": NCAAB_QUARTER_RATIOS,
+            "home_advantage": NCAAB_HOME_ADVANTAGE,
+            "total_min": NCAAB_TOTAL_MIN,
+            "total_max": NCAAB_TOTAL_MAX,
+            "default_stat_base": 145.0,
+        }
+    if league == "euroleague":
+        return {
+            "quarter_ratios": EUROLEAGUE_QUARTER_RATIOS,
+            "home_advantage": EUROLEAGUE_HOME_ADVANTAGE,
+            "total_min": EUROLEAGUE_TOTAL_MIN,
+            "total_max": EUROLEAGUE_TOTAL_MAX,
+            "default_stat_base": 160.0,
+        }
+    if league == "nfl":
+        return {
+            "quarter_ratios": NFL_QUARTER_RATIOS,
+            "home_advantage": NFL_HOME_ADVANTAGE,
+            "total_min": NFL_TOTAL_MIN,
+            "total_max": NFL_TOTAL_MAX,
+            "default_stat_base": 45.0,
+        }
+    # Default: NBA
+    return {
+        "quarter_ratios": NBA_QUARTER_RATIOS,
+        "home_advantage": NBA_HOME_ADVANTAGE,
+        "total_min": NBA_TOTAL_MIN,
+        "total_max": NBA_TOTAL_MAX,
+        "default_stat_base": 228.0,
+    }
+
+# ESPN API team name → short name map.
+# Uses sport_configs.py as the single source of truth for all sports.
+# ESPN-specific API name variants are added as overrides.
+from betting_intel.live.sport_configs import ALL_TEAM_NAME_MAP
+
+_ESPN_ALIASES: dict[str, str] = {
+    # ESPN returns multiple naming variants for some NBA teams
+    "LA Lakers": "Lakers",
+    "Los Angeles Clippers": "Clippers",
 }
+
+ESPN_TO_SHORT: dict[str, str] = {}
+ESPN_TO_SHORT.update(ALL_TEAM_NAME_MAP)
+ESPN_TO_SHORT.update(_ESPN_ALIASES)
 
 ESPN_TIMEOUT   = 6     # seconds per HTTP request
 MAX_DAYS_SCAN  = 14    # how many days ahead to scan ESPN
@@ -104,17 +172,19 @@ class PredictionCache:
 class FutureGamePredictor:
     """Autonomous predictor: stat-based, self-logging, never produces garbage.
 
+    Supports NBA and NCAAB predictions via ESPN API.
+
     Tiered prediction:
       1. ESPN API → real games → stat-based predictions
       2. Cache → previously saved predictions (survives outages)
       3. Empty → honest log message (never fake matchups)
 
-    The ML model is used ONLY when its output validates (100-350 range).
+    The ML model is used ONLY when its output validates in valid range.
     The stat baseline is ALWAYS the foundation, ensuring correct totals.
     """
 
     def __init__(self):
-        self._team_pts_avg: dict[str, float] = {}
+        self._team_pts_avg: dict[str, float] = {}  # Combined NBA + NCAAB team averages
         self._loaded = False
         self._model = None
         self._model_baseline: Optional[float] = None
@@ -127,7 +197,7 @@ class FutureGamePredictor:
     # ── Public API ─────────────────────────────────────────────────────
 
     def load(self) -> bool:
-        """Load team averages from the NBA database and try the ML model."""
+        """Load team averages from NBA database and NCAAB ESPN data."""
         self._cache.load()
         self._loaded = self._load_team_data()
         if self._loaded:
@@ -135,59 +205,86 @@ class FutureGamePredictor:
         return self._loaded
 
     def predict_upcoming_games(self, num_games: int = 20) -> list[dict[str, Any]]:
-        """Produce predictions. Never silently returns empty. Never fake matchups."""
+        """Produce predictions for all supported leagues.
+
+        Fetches upcoming games from ESPN for NBA and NCAAB simultaneously.
+        Falls back to cache if ESPN is unreachable.
+        """
+        today_str = datetime.now().strftime("%Y-%m-%d")
+
         if not self._loaded:
             logger.warning("Predictor not loaded — falling back to cache")
-            return self._cache.get_cached()[:num_games]
+            cached = self._cache.get_cached()
+            return [p for p in cached if p.get("game_date", "")[:10] >= today_str][:num_games]
 
-        # TIER 1: Real upcoming games from ESPN
-        predictions, fresh = self._fetch_and_predict(num_games)
+        # TIER 1: Real upcoming games from ESPN (NBA + NCAAB)
+        all_predictions = []
+        fresh = False
+
+        for league_key, league_label in [("nba", "NBA"), ("ncaab", "NCAAB"), ("euroleague", "Euroleague"), ("nfl", "NFL")]:
+            try:
+                preds, was_fresh = self._fetch_and_predict(num_games, league_key, league_label)
+                all_predictions.extend(preds)
+                if was_fresh:
+                    fresh = True
+            except Exception as e:
+                logger.debug(f"{league_label} prediction failed: {e}")
 
         # TIER 2: Cache fallback
-        if not predictions:
+        if not all_predictions:
             cached = self._cache.get_cached()
+            cached = [p for p in cached if p.get("game_date", "")[:10] >= today_str]
             if cached:
                 logger.info(f"Cache fallback: {len(cached)} preds from cache")
-                predictions = cached[:num_games]
+                all_predictions = cached[:num_games]
                 fresh = False
 
         # TIER 3: Honest empty
-        if not predictions:
+        if not all_predictions:
             logger.warning("No real games found and no cached data — returning empty")
 
-        # Save to cache if we got predictions
-        if predictions:
-            self._cache.save(predictions, fresh=fresh)
+        # Save to cache
+        if all_predictions:
+            future_only = [p for p in all_predictions if p.get("game_date", "")[:10] >= today_str]
+            if len(future_only) < len(all_predictions):
+                logger.debug(f"Filtered out {len(all_predictions) - len(future_only)} past predictions")
+            self._cache.save(future_only, fresh=fresh)
 
-        return predictions[:num_games]
+        results = [p for p in all_predictions if p.get("game_date", "")[:10] >= today_str][:num_games]
+        # Sort by date, then by league
+        results.sort(key=lambda p: (p.get("game_date", ""), p.get("league", "")))
+        return results
 
     # ── Tier 1: ESPN Fetch + Predict ─────────────────────────────────
 
-    def _fetch_and_predict(self, num_games: int) -> tuple[list[dict], bool]:
-        """Fetch real games from ESPN and predict them using stat baselines."""
-        matchups = self._fetch_real_games(num_games)
+    def _fetch_and_predict(self, num_games: int, league_key: str = "nba",
+                           league_label: str = "NBA") -> tuple[list[dict], bool]:
+        """Fetch real games for a league from ESPN and predict them."""
+        matchups = self._fetch_real_games(num_games, league_key, league_label)
         if not matchups:
             return [], False
 
-        logger.info(f"Predicting {len(matchups)} real games...")
+        logger.info(f"Predicting {len(matchups)} {league_label} games...")
         predictions = []
         for home, away, gdate in matchups:
-            pred = self._predict_game(home, away, gdate or "")
+            pred = self._predict_game(home, away, gdate or "", league_key, league_label)
             if pred is not None:
                 predictions.append(pred)
 
         if predictions:
-            logger.info(f"Generated {len(predictions)} predictions")
+            logger.info(f"Generated {len(predictions)} {league_label} predictions")
             return predictions, True
 
-        logger.warning(f"ESPN returned {len(matchups)} games but all predictions failed")
+        logger.warning(f"ESPN returned {len(matchups)} {league_label} games but all predictions failed")
         return [], False
 
     # ── ESPN Schedule Fetching ───────────────────────────────────────
 
-    def _fetch_real_games(self, num_games: int) -> list[tuple[str, str, Optional[str]]]:
-        """Scan ESPN scoreboard for the next 14 days. Returns real scheduled NBA games.
+    def _fetch_real_games(self, num_games: int, league_key: str = "nba",
+                          league_label: str = "NBA") -> list[tuple[str, str, Optional[str]]]:
+        """Scan ESPN scoreboard for the next 14 days.
 
+        Returns real scheduled games for the specified league.
         Each step is logged so you can see WHY it returns empty.
         """
         from betting_intel.data.espn_hoops import ESPN_SCOREBOARD_URL, LEAGUE_TO_ESPN_PATH
@@ -199,9 +296,9 @@ class FutureGamePredictor:
         seen: set = set()
         matchups: list[tuple[str, str, Optional[str]]] = []
 
-        path = LEAGUE_TO_ESPN_PATH.get("nba")
+        path = LEAGUE_TO_ESPN_PATH.get(league_key)
         if not path:
-            logger.debug("No ESPN path for nba")
+            logger.debug(f"No ESPN path for {league_key}")
             return matchups
 
         url = ESPN_SCOREBOARD_URL.format(sport=path)
@@ -217,7 +314,7 @@ class FutureGamePredictor:
                 if resp.status_code == 404:
                     continue
                 if resp.status_code != 200:
-                    logger.debug(f"ESPN {resp.status_code} for nba {check_date}")
+                    logger.debug(f"ESPN {resp.status_code} for {league_key} {check_date}")
                     continue
 
                 for ev in resp.json().get("events", []):
@@ -246,7 +343,7 @@ class FutureGamePredictor:
                     home_short = ESPN_TO_SHORT.get(home_name)
                     away_short = ESPN_TO_SHORT.get(away_name)
 
-                    # Fuzzy match for NBA (ESPN sometimes uses different formatting)
+                    # Fuzzy match
                     if not home_short:
                         for full, s in ESPN_TO_SHORT.items():
                             if full.lower() in home_name.lower() or home_name.lower() in full.lower():
@@ -264,63 +361,120 @@ class FutureGamePredictor:
                     if not away_short:
                         away_short = away_name.split()[-1]
 
-                    # Validate against known NBA teams
-                    if home_short not in NBA_TEAMS or away_short not in NBA_TEAMS:
-                        logger.debug(f"Non-NBA team: {away_name} @ {home_name}")
-                        continue
+                    # For NCAAB: accept any team (don't validate against NBA_TEAMS)
+                    # For NBA: validate against known NBA teams
+                    if league_key == "nba":
+                        if home_short not in NBA_TEAMS or away_short not in NBA_TEAMS:
+                            logger.debug(f"Non-NBA team: {away_name} @ {home_name}")
+                            continue
 
                     ed = ev.get("date", "")[:10]
-                    key = f"{home_short}|{away_short}|{ed}"
+                    key = f"{home_short}|{away_short}|{ed}|{league_key}"
                     if key not in seen:
                         seen.add(key)
                         matchups.append((home_short, away_short, ed))
 
             except requests.exceptions.Timeout:
-                logger.debug(f"ESPN timeout nba {check_date}")
+                logger.debug(f"ESPN timeout {league_key} {check_date}")
             except requests.exceptions.ConnectionError:
-                logger.debug(f"ESPN connection error nba {check_date}")
+                logger.debug(f"ESPN connection error {league_key} {check_date}")
             except Exception as e:
-                logger.debug(f"ESPN error nba {check_date}: {e}")
+                logger.debug(f"ESPN error {league_key} {check_date}: {e}")
 
         if matchups:
             matchups.sort(key=lambda m: m[2] or "9999-12-31")
-            logger.info(f"ESPN: {len(matchups)} NBA games found")
+            logger.info(f"ESPN: {len(matchups)} {league_label} games found")
         else:
-            logger.info("ESPN: no upcoming NBA games found in next 14 days")
+            logger.info(f"ESPN: no upcoming {league_label} games found in next 14 days")
         return matchups
 
     # ── Data Loading ────────────────────────────────────────────────
 
     def _load_team_data(self) -> bool:
-        """Load team scoring averages from the NBA database.
+        """Load team scoring averages from all available data sources.
 
+        Tries NBA SQLite database first, then NCAAB/Euroleague from ESPN API.
         This is the foundation of ALL predictions — always correct range.
         """
+        loaded_any = False
+
+        # 1. Load NBA data from SQLite
         try:
             from betting_intel.data.loader import NBADataLoader
             loader = NBADataLoader()
             raw_df = loader.load_game_logs()
-            if raw_df is None or raw_df.empty:
-                logger.error("NBA database empty")
-                return False
-
-            # Filter to known NBA teams
-            mask = raw_df["TEAM_NAME"].isin(NBA_TEAMS)
-            raw_nba = raw_df[mask].copy()
-            if raw_nba.empty:
-                logger.error("No NBA team data found in database")
-                return False
-
-            self._team_pts_avg = raw_nba.groupby("TEAM_NAME")["PTS"].mean().to_dict()
-            logger.info(f"NBA: {len(raw_nba)} rows, {len(self._team_pts_avg)} team averages")
-
-            # Try to build feature pipeline for ML model (non-critical)
-            self._try_load_model(raw_nba, loader)
-
-            return True
+            if raw_df is not None and not raw_df.empty:
+                mask = raw_df["TEAM_NAME"].isin(NBA_TEAMS)
+                raw_nba = raw_df[mask].copy()
+                if not raw_nba.empty:
+                    nba_avgs = raw_nba.groupby("TEAM_NAME")["PTS"].mean().to_dict()
+                    self._team_pts_avg.update(nba_avgs)
+                    logger.info(f"NBA: {len(raw_nba)} rows, {len(nba_avgs)} team averages")
+                    loaded_any = True
+                    # Try to load ML model with NBA data
+                    self._try_load_model(raw_nba, loader)
         except Exception as e:
-            logger.error(f"Data loading failed: {e}")
+            logger.debug(f"NBA data loading skipped: {e}")
+
+        # 2. Load NCAAB data from ESPN API
+        try:
+            from betting_intel.data.loader import NCAABDataLoader
+            ncaab_loader = NCAABDataLoader()
+            ncaab_df = ncaab_loader.load_game_logs()
+            if ncaab_df is not None and not ncaab_df.empty:
+                ncaab_avgs = ncaab_df.groupby("TEAM_NAME")["PTS"].mean().to_dict()
+                self._team_pts_avg.update(ncaab_avgs)
+                logger.info(f"NCAAB: {len(ncaab_df)} rows, {len(ncaab_avgs)} team averages")
+                loaded_any = True
+        except Exception as e:
+            logger.debug(f"NCAAB data loading skipped: {e}")
+
+        # 3. Load Euroleague data from ESPN API
+        try:
+            from betting_intel.data.espn_hoops import ESPNLeagueSource
+            source = ESPNLeagueSource()
+            euro_df = source.load_historical("euroleague", seasons=[2025, 2024])
+            if euro_df is not None and not euro_df.empty:
+                # Build per-team averages from home/away scores
+                home_avgs = euro_df.groupby("home_team")["home_score"].mean().to_dict()
+                away_avgs = euro_df.groupby("away_team")["away_score"].mean().to_dict()
+                for team in set(list(home_avgs.keys()) + list(away_avgs.keys())):
+                    ha = home_avgs.get(team) if pd.notna(home_avgs.get(team)) else 0
+                    aa = away_avgs.get(team) if pd.notna(away_avgs.get(team)) else 0
+                    vals = [v for v in [ha, aa] if v and v > 0]
+                    if vals:
+                        self._team_pts_avg[team] = float(sum(vals)) / len(vals)
+                logger.info(f"Euroleague: {len(euro_df)} rows, {len(euro_df['home_team'].unique())} teams")
+                loaded_any = True
+        except Exception as e:
+            logger.debug(f"Euroleague data loading skipped: {e}")
+
+        # 4. Load NFL data from ESPN API
+        try:
+            from betting_intel.data.espn_hoops import ESPNLeagueSource
+            source = ESPNLeagueSource()
+            nfl_df = source.load_historical("nfl", seasons=[2025, 2024])
+            if nfl_df is not None and not nfl_df.empty:
+                # Build per-team averages from home/away scores
+                home_avgs = nfl_df.groupby("home_team")["home_score"].mean().to_dict()
+                away_avgs = nfl_df.groupby("away_team")["away_score"].mean().to_dict()
+                for team in set(list(home_avgs.keys()) + list(away_avgs.keys())):
+                    ha = home_avgs.get(team) if pd.notna(home_avgs.get(team)) else 0
+                    aa = away_avgs.get(team) if pd.notna(away_avgs.get(team)) else 0
+                    vals = [v for v in [ha, aa] if v and v > 0]
+                    if vals:
+                        self._team_pts_avg[team] = float(sum(vals)) / len(vals)
+                logger.info(f"NFL: {len(nfl_df)} rows, {len(nfl_df['home_team'].unique())} teams")
+                loaded_any = True
+        except Exception as e:
+            logger.debug(f"NFL data loading skipped: {e}")
+
+        if not loaded_any:
+            logger.error("No data loaded from any source")
             return False
+
+        logger.info(f"Total: {len(self._team_pts_avg)} teams tracked")
+        return True
 
     def _try_load_model(self, raw_nba: pd.DataFrame, loader) -> None:
         """Try to load the ML model. Non-critical — prediction system works without it."""
@@ -395,49 +549,39 @@ class FutureGamePredictor:
 
     # ── Single Game Prediction ──────────────────────────────────────
 
-    def _predict_game(self, home_team: str, away_team: str, game_date_str: str) -> Optional[dict[str, Any]]:
+    def _predict_game(self, home_team: str, away_team: str, game_date_str: str,
+                       league_key: str = "nba", league_label: str = "NBA") -> Optional[dict[str, Any]]:
         """Predict one game using the stat baseline method.
 
         ALWAYS produces correct-range totals because stat_baseline is the foundation.
-        ML model is used ONLY when it validates (predicts 100-350).
+        ML model is used ONLY when it validates in the correct range.
+
+        Supports NBA and NCAAB with league-specific constants.
         """
-        # NBA only — all matchups are NBA
-        if home_team not in NBA_TEAMS or away_team not in NBA_TEAMS:
-            logger.debug(f"Non-NBA matchup: {home_team} vs {away_team}")
-            return None
-
-        league = "nba"
-        league_label = "NBA"
-
         try:
+            cfg = _league_config(league_key)
+            default_base = cfg["default_stat_base"]
+
             # ── Stat baseline (always correct range) ──────────────
             hp = self._team_pts_avg.get(home_team, 0)
             ap = self._team_pts_avg.get(away_team, 0)
             stat_base = hp + ap
             if stat_base <= 0:
-                stat_base = 228.0 if league == "nba" else 165.0
+                stat_base = default_base
 
             # ── Pace adjustment from team strength ───────────────
-            # Stronger home team = faster pace = more total points
-            # Weaker home team = slower pace = fewer total points
-            # Max realistic NBA team diff is ~15 pts → pace adjustment ±1.5
             pace_adj = (hp - ap) * 0.10 if hp > 0 and ap > 0 else 0.0
 
             # ── Home court effect on total ───────────────────────
-            # Home court adds ~2.3 pts to home score, slightly reduces away score
-            # Net effect on total is about +0.8 pts
-            home_adv = NBA_HOME_ADVANTAGE
+            home_adv = cfg["home_advantage"]
             home_adj = home_adv * 0.35
 
             # ── ML model signal (only if valid) ──────────────────
             model_delta = 0.0
-            if league == "nba" and self._model is not None and self._model_baseline:
+            if league_key == "nba" and self._model is not None and self._model_baseline:
                 raw_pred = self._predict_with_model(home_team, away_team)
                 if raw_pred is not None and 100 < raw_pred < 350:
-                    model_delta = (raw_pred - self._model_baseline) * 0.3  # diluted signal
-                    logger.debug(f"Model signal: {home_team} vs {away_team}: "
-                                 f"pred={raw_pred:.1f}, baseline={self._model_baseline:.1f}, "
-                                 f"delta={model_delta:.1f}")
+                    model_delta = (raw_pred - self._model_baseline) * 0.3
 
             # ── Final prediction ────────────────────────────────
             predicted_total = stat_base + home_adj + pace_adj + model_delta
@@ -445,8 +589,8 @@ class FutureGamePredictor:
             market_total = round(stat_base, 1)
 
             # Clamp to league range
-            lo = NBA_TOTAL_MIN
-            hi = NBA_TOTAL_MAX
+            lo = cfg["total_min"]
+            hi = cfg["total_max"]
             predicted_total = max(lo, min(hi, predicted_total))
 
             # ── Edge & Confidence ───────────────────────────────
@@ -456,7 +600,7 @@ class FutureGamePredictor:
             confidence = "high" if abs_e > 0.05 else ("medium" if abs_e >= 0.02 else "low")
 
             # ── Quarter projections ─────────────────────────────
-            quarters = self._project_quarters(predicted_total, market_total, hp, ap, league)
+            quarters = self._project_quarters(predicted_total, market_total, hp, ap, league_key)
             best_q = self._find_best_quarter(quarters, direction)
 
             return {
@@ -574,7 +718,8 @@ class FutureGamePredictor:
     @staticmethod
     def _project_quarters(predicted: float, market: float, hp: float, ap: float,
                           league: str) -> dict[str, float]:
-        ratios = NBA_QUARTER_RATIOS
+        cfg = _league_config(league)
+        ratios = cfg["quarter_ratios"]
         hpct = 0.51
 
         # Strength-adjusted home percentage

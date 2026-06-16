@@ -216,15 +216,15 @@ class DraftKingsScraper:
                     storage_state=None,
                 )
 
+                page = context.new_page()
+
                 # Apply stealth to hide automation
                 try:
                     from playwright_stealth import Stealth
-                    Stealth(context)
-                    logger.debug("Stealth applied to Playwright context")
+                    Stealth(page)
+                    logger.debug("Stealth applied to Playwright page")
                 except ImportError:
                     logger.debug("playwright-stealth not available")
-
-                page = context.new_page()
 
                 # Collect API responses we care about
                 api_responses: list[dict] = []

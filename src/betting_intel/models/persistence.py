@@ -34,6 +34,9 @@ class ModelRegistry:
         self.models_dir.mkdir(parents=True, exist_ok=True)
         self._registry_file = self.models_dir / "registry.json"
         self._registry = self._load_registry()
+        # Lazy hash-backfill: add SHA-256 hashes to any existing model
+        # files that lack them, without blocking startup.
+        self._backfill_hashes()
 
     def _load_registry(self) -> dict:
         if self._registry_file.exists():
@@ -194,16 +197,24 @@ class ModelRegistry:
         return True
 
 
-# Add hashes to any existing model files that lack them
-for model_dir_candidate in [settings.output_dir / "models"]:
-    try:
-        if model_dir_candidate.exists():
-            for joblib_file in model_dir_candidate.rglob("*.joblib"):
+    @staticmethod
+    def _backfill_hashes() -> None:
+        """Backfill SHA-256 hashes for existing .joblib files that lack them.
+
+        Runs once at init time so module-level imports don't trigger
+        filesystem scans. Silently skips inaccessible files.
+        """
+        # settings is already imported at module level — reuse it
+        model_dir = settings.output_dir / "models"
+        if not model_dir.exists():
+            return
+        try:
+            for joblib_file in model_dir.rglob("*.joblib"):
                 try:
                     add_hash_to_existing_file(joblib_file)
                 except Exception:
                     pass
-    except Exception:
-        pass
+        except Exception:
+            pass
 
 model_registry = ModelRegistry()

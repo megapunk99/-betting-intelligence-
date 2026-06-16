@@ -118,6 +118,11 @@ class PredictionResult:
     generated_at: str = ""
     feature_importance: dict[str, float] = field(default_factory=dict)
 
+    # Calibration status (v5.1 — transparency)
+    calibration_applied: bool = False
+    calibration_failed: bool = False
+    calibration_warning: Optional[str] = None
+
 
 @dataclass
 class WalkForwardFold:
@@ -614,13 +619,20 @@ class RobustPredictionSystem:
 
         # Apply ensemble-level calibration
         calibrated_prob = None
+        calibration_applied = False
+        calibration_failed = False
+        calibration_warning = None
         if self._calibration_model is not None:
             try:
                 X_cal = np.clip([[home_win_prob]], 0.001, 0.999)
                 cal_out = self._calibration_model.predict_proba(X_cal)
                 calibrated_prob = float(cal_out[0, 1])
-            except Exception:
+                calibration_applied = True
+            except Exception as e:
                 calibrated_prob = None
+                calibration_failed = True
+                calibration_warning = f"Ensemble calibration failed: {e}. Using raw ensemble."
+                logger.debug(calibration_warning)
 
         final_prob = calibrated_prob if calibrated_prob is not None else home_win_prob
         final_prob = float(np.clip(final_prob, 0.001, 0.999))
@@ -670,6 +682,9 @@ class RobustPredictionSystem:
             confidence_label=label,
             generated_at=datetime.now().isoformat(),
             feature_importance=importance,
+            calibration_applied=calibration_applied,
+            calibration_failed=calibration_failed,
+            calibration_warning=calibration_warning,
         )
 
     def compute_edge(
@@ -776,6 +791,11 @@ class RobustPredictionSystem:
         sorted_imp = sorted(avg_importance.items(), key=lambda x: x[1], reverse=True)[:top_n]
         return dict(sorted_imp)
 
+    @property
+    def feature_names(self) -> list[str]:
+        """Public accessor for the feature names used during training."""
+        return list(self._feature_names)
+
     def get_overfitting_report(self) -> Optional[OverfittingReport]:
         """Get the overfitting analysis report."""
         return self._overfitting
@@ -857,20 +877,20 @@ class RobustPredictionSystem:
         specs = []
 
         # ══════════════════════════════════════════════════════════════
-        #  v4.0 — OPTIMIZED HYPERPARAMETERS
-        #  
-        #  Changes from v3.1:
-        #  - More trees: 300→500 (XGB/LGB), 300→500 (RF)
-        #  - Lower learning rate: 0.05→0.03 (better generalization)
-        #  - Deeper trees: max_depth 5→6 (XGB), 8→10 (RF)
-        #  - Stronger regularization: reg_alpha/lambda increased
-        #  - Balanced class weights on tree models too
-        #  - min_child_samples 20→25 for LightGBM
+        #  v6.0 — DEEPER ENSEMBLE
+        #
+        #  Changes from v4.0:
+        #  - More trees: 500→800 for all models (better convergence)
+        #  - Lower learning rate: 0.03→0.02 (smoother gradient descent)
+        #  - XGBoost eval_metric: logloss + early_stopping_rounds=50
+        #  - LightGBM: more leaves 48→63, min_child_samples 25→30
+        #  - RF: max_depth 10→12, min_samples_leaf 5→4
+        #  - LogisticRegression: C 2.0→1.5 (slightly stronger regularization)
         # ══════════════════════════════════════════════════════════════
 
         # 1. Logistic Regression (always works, always interpretable)
         lr_params = {
-            "C": self._lr_params.get("C", 2.0),          # Less regularization
+            "C": self._lr_params.get("C", 1.5),
             "max_iter": self._lr_params.get("max_iter", 3000),
             "random_state": self.random_state,
             "class_weight": self._lr_params.get("class_weight", "balanced"),
@@ -879,17 +899,17 @@ class RobustPredictionSystem:
         }
         specs.append(("LogisticRegression", LogisticRegression, lr_params))
 
-        # 2. XGBoost — more trees, lower lr, early stopping via eval_metric
+        # 2. XGBoost — deeper, more trees, lower lr
         try:
             from xgboost import XGBClassifier
             xgb_params = {
-                "n_estimators": self._xgb_params.get("n_estimators", 500),
+                "n_estimators": self._xgb_params.get("n_estimators", 800),
                 "max_depth": self._xgb_params.get("max_depth", 6),
-                "learning_rate": self._xgb_params.get("learning_rate", 0.03),
+                "learning_rate": self._xgb_params.get("learning_rate", 0.02),
                 "subsample": self._xgb_params.get("subsample", 0.8),
                 "colsample_bytree": self._xgb_params.get("colsample_bytree", 0.7),
-                "reg_alpha": self._xgb_params.get("reg_alpha", 1.0),    # L1 regularization
-                "reg_lambda": self._xgb_params.get("reg_lambda", 2.0),   # L2 regularization
+                "reg_alpha": self._xgb_params.get("reg_alpha", 1.0),
+                "reg_lambda": self._xgb_params.get("reg_lambda", 2.0),
                 "random_state": self.random_state,
                 "eval_metric": self._xgb_params.get("eval_metric", "logloss"),
                 "use_label_encoder": False,
@@ -900,32 +920,32 @@ class RobustPredictionSystem:
         except ImportError:
             logger.debug("XGBoost not available — skipping")
 
-        # 3. LightGBM — more leaves, stronger regularization
+        # 3. LightGBM — more leaves, lower lr
         try:
             from lightgbm import LGBMClassifier
             lgb_params = {
-                "n_estimators": self._lgb_params.get("n_estimators", 500),
-                "max_depth": self._lgb_params.get("max_depth", -1),       # Unlimited
-                "num_leaves": self._lgb_params.get("num_leaves", 48),     # More leaves
-                "learning_rate": self._lgb_params.get("learning_rate", 0.03),
+                "n_estimators": self._lgb_params.get("n_estimators", 800),
+                "max_depth": self._lgb_params.get("max_depth", -1),
+                "num_leaves": self._lgb_params.get("num_leaves", 63),
+                "learning_rate": self._lgb_params.get("learning_rate", 0.02),
                 "subsample": self._lgb_params.get("subsample", 0.8),
                 "colsample_bytree": self._lgb_params.get("colsample_bytree", 0.7),
                 "reg_alpha": self._lgb_params.get("reg_alpha", 1.0),
                 "reg_lambda": self._lgb_params.get("reg_lambda", 2.0),
                 "random_state": self.random_state,
                 "verbose": self._lgb_params.get("verbose", -1),
-                "min_child_samples": self._lgb_params.get("min_child_samples", 25),
+                "min_child_samples": self._lgb_params.get("min_child_samples", 30),
                 "class_weight": self._lgb_params.get("class_weight", "balanced"),
             }
             specs.append(("LightGBM", LGBMClassifier, lgb_params))
         except ImportError:
             logger.debug("LightGBM not available — skipping")
 
-        # 4. Random Forest — more trees, deeper, balanced
+        # 4. Random Forest — more trees, deeper
         rf_params = {
-            "n_estimators": self._rf_params.get("n_estimators", 500),
-            "max_depth": self._rf_params.get("max_depth", 10),
-            "min_samples_leaf": self._rf_params.get("min_samples_leaf", 5),  # Lower = more granular
+            "n_estimators": self._rf_params.get("n_estimators", 800),
+            "max_depth": self._rf_params.get("max_depth", 12),
+            "min_samples_leaf": self._rf_params.get("min_samples_leaf", 4),
             "max_features": self._rf_params.get("max_features", "sqrt"),
             "random_state": self.random_state,
             "class_weight": self._rf_params.get("class_weight", "balanced_subsample"),
@@ -1015,9 +1035,9 @@ class RobustPredictionSystem:
         if not fold_metrics:
             return None
 
-        train_r2s = [f.train_r2 for f in fold_metrics if f.train_r2 != 0.0]
-        test_r2s = [f.test_r2 for f in fold_metrics if f.test_r2 != 0.0]
-        gaps = [f.gap_r2 for f in fold_metrics if f.gap_r2 != 0.0]
+        train_r2s = [f.train_r2 for f in fold_metrics]
+        test_r2s = [f.test_r2 for f in fold_metrics]
+        gaps = [f.gap_r2 for f in fold_metrics]
 
         if not train_r2s or not test_r2s:
             return None
@@ -1124,6 +1144,11 @@ class MarketInefficiencySystem:
         """Whether the market error regressor is trained."""
         return self._error_regressor is not None
 
+    @property
+    def feature_names(self) -> list[str]:
+        """Public accessor for the feature names used during training."""
+        return list(self._feature_names)
+
     def fit(
         self,
         X: np.ndarray,
@@ -1226,8 +1251,14 @@ class MarketInefficiencySystem:
             return
 
         # ── Walk-forward CV for OOS error predictions ───────────────
-        n_folds = min(self._n_folds, n // (min_train + min_test))
+        # v5.1 — FIXED: Proper chronological folds.
+        # The OLD code used (fold_idx * fold_size) % max(n - fold_size, 1)
+        # which created NON-chronological folds where the "test" set could
+        # be BEFORE the "train" set — data leakage that inflated metrics.
+        # Now: strictly increasing test starts (chronological).
+        n_folds = min(self._n_folds, max(2, n // (min_train + min_test)))
         fold_size = max(min_test, n // max(n_folds, 1))
+        min_train = max(50, n // 4)  # At least 25% of data for training
 
         reg_models = []  # (name, model_object, weight)
         fold_errors: list[float] = []
@@ -1245,20 +1276,19 @@ class MarketInefficiencySystem:
                 train_mae = mean_absolute_error(y_error, train_preds)
                 train_r2 = r2_score(y_error, train_preds)
 
-                # Walk-forward OOS evaluation
+                # Walk-forward OOS evaluation — CHRONOLOGICAL folds
                 oos_preds = np.full(n, np.nan)
                 for fold_idx in range(max(n_folds, 1)):
-                    test_start = (fold_idx * fold_size) % max(n - fold_size, 1)
+                    # CHRONOLOGICAL: test_start increases monotonically
+                    test_start = fold_idx * fold_size
                     test_end = min(test_start + fold_size, n)
-                    if test_start < min_train or test_end - test_start < min_test:
+                    # Ensure we have enough training data BEFORE the test set
+                    if test_start < min_train or (test_end - test_start) < min_test:
                         continue
 
-                    X_train_fold = np.concatenate([
-                        X[:test_start], X[test_end:]
-                    ], axis=0) if len(X) > test_end else X[:test_start]
-                    y_train_fold = np.concatenate([
-                        y_error[:test_start], y_error[test_end:]
-                    ], axis=0) if len(y_error) > test_end else y_error[:test_start]
+                    # Train only on data BEFORE the test set (no future leakage)
+                    X_train_fold = X[:test_start]
+                    y_train_fold = y_error[:test_start]
 
                     if len(X_train_fold) < min_train:
                         continue
@@ -1462,13 +1492,19 @@ class MarketInefficiencySystem:
             error_adjusted = market_probs + predicted_errors
             error_adjusted = np.clip(error_adjusted, 0.01, 0.99)
 
-            # Blend: 40% classifier + 60% error-adjusted
-            # Why 60/40? The error-adjusted signal is our edge. The classifier
-            # signal is the baseline. When we have a strong error prediction,
-            # we want it to dominate. When error is near zero, classifier takes over.
+            # v6.0 — ADAPTIVE BLEND with sharp S-curve transition
+            #
+            # When predicted_error >> error_std → error signal dominates (up to 80%)
+            # When predicted_error << error_std → classifier dominates (as low as 5%)
+            #
+            # Uses power > 1.0 for sharp S-curve: near-zero for small ratios,
+            # near-max for large ratios. This prevents small error predictions
+            # from polluting the classifier's signal while letting confident
+            # error predictions drive the blend.
+            error_ratio = np.abs(predicted_errors) / max(self._error_std, 0.01)
             blend_ratio = np.clip(
-                np.abs(predicted_errors) / max(self._error_std, 0.01),
-                0.1, 0.7,
+                np.minimum(error_ratio ** 1.5, 1.0),
+                0.05, 0.80,
             )
             blended = (1.0 - blend_ratio) * classifier_home + blend_ratio * error_adjusted
 
@@ -1523,10 +1559,11 @@ class MarketInefficiencySystem:
             # Error-adjusted
             error_adjusted = float(np.clip(market_prob + predicted_error, 0.01, 0.99))
 
-            # Blend ratio
+            # v6.0 — ADAPTIVE BLEND (same logic as predict_proba)
+            error_ratio = abs(predicted_error) / max(self._error_std, 0.01)
             blend_ratio = float(np.clip(
-                abs(predicted_error) / max(self._error_std, 0.01),
-                0.1, 0.7,
+                min(error_ratio ** 1.5, 1.0),
+                0.05, 0.80,
             ))
             blended = (1.0 - blend_ratio) * classifier_home + blend_ratio * error_adjusted
 

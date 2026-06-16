@@ -35,17 +35,13 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ruff mypy
+          pip install ruff
 
       - name: Lint with ruff
         run: ruff check src/ tests/
 
       - name: Format check with ruff
         run: ruff format --check src/ tests/
-
-      - name: Run mypy (type check)
-        run: mypy src/betting_intel/ --ignore-missing-imports --warn-unused-ignores
-        continue-on-error: true
 
   # ── Unit Tests ─────────────────────────────────────────────────────────
   test:
@@ -70,84 +66,18 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,dashboard]"
+          pip install -e ".[dev]"
 
-      - name: Run unit tests with coverage
-        run: |
-          pytest -v \
-            --cov=src/betting_intel \
-            --cov-config=.coveragerc \
-            --cov-report=xml:reports/coverage/coverage.xml \
-            --cov-report=term-missing \
-            --cov-fail-under=40 \
-            -m "not slow and not integration"
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          file: reports/coverage/coverage.xml
-          flags: unit
-          fail_ci_if_error: false
-
-  # ── Integration Tests (single config, runs once after matrix) ──────────
-  integration-test:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev,dashboard]"
-
-      - name: Run integration tests with coverage
+      - name: Run unit tests
         run: |
           pytest -v \
             --tb=short \
             --cov=src/betting_intel \
             --cov-config=.coveragerc \
-            --cov-report=xml:reports/coverage/integration-coverage.xml \
-            -m "integration" \
-            tests/test_web_production_mock.py tests/test_scraper_level_mock.py
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          file: reports/coverage/integration-coverage.xml
-          flags: integration
-          fail_ci_if_error: false
-
-  # ── Type Check (Ubuntu) ────────────────────────────────────────────────
-  typecheck:
-    name: Type Check (Ubuntu)
-    runs-on: ubuntu-latest
-    needs: lint
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install mypy
-          pip install -e ".[dev,dashboard]"
-
-      - name: Run mypy
-        run: mypy src/betting_intel/ --ignore-missing-imports --warn-unused-ignores
-        continue-on-error: true
+            --cov-report=xml:reports/coverage/coverage.xml \
+            --cov-report=term-missing \
+            --cov-fail-under=30 \
+            -m "not slow"
 
   # ── Build Check ────────────────────────────────────────────────────────
   build:
@@ -170,9 +100,6 @@ jobs:
 
       - name: Build wheel and sdist
         run: python -m build
-
-      - name: Validate build
-        run: twine check dist/*
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

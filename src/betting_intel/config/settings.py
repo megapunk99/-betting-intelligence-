@@ -1,4 +1,4 @@
-"""Minimal configuration — pydantic-settings with only what matters."""
+"""Application settings — pydantic-settings with environment variable support."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Application settings — stripped to essentials during cleanup."""
+    """Application settings — loaded from .env / environment variables."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -26,11 +26,23 @@ class Settings(BaseSettings):
 
     # ── Database ────────────────────────────────────────────────────
     nba_db_path: Path = Path("./data/nba_data.db")
+    database_url: str = ""  # PostgreSQL/other URL; empty = SQLite fallback
 
     # ── API Server ──────────────────────────────────────────────────
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     api_key: str = "change-me-to-a-random-secret"
+    api_workers: int = 1
+    api_log_level: str = "info"
+    cors_origins: str = "*"
+
+    # ── Live Odds ───────────────────────────────────────────────────
+    enable_live_odds: bool = False
+    odds_poll_interval: int = 60
+    odds_snapshots_db: str = "./data/odds_snapshots.db"
+
+    # ── Logging ─────────────────────────────────────────────────────
+    log_level: str = "INFO"
 
     # ── TheOddsAPI ──────────────────────────────────────────────────
     odds_api_key: str = "your-api-key-here"

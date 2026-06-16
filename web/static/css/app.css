@@ -193,9 +193,29 @@ body, nav, .stat-card, .game-card, .pick-card, .chart-container,
   background: var(--green);
   box-shadow: 0 0 6px rgba(0, 230, 118, 0.5);
   animation: ws-pulse 2s ease-in-out infinite;
-  margin-left: 4px;
+  margin-left: 6px;
   vertical-align: middle;
   flex-shrink: 0;
+  position: relative;
+}
+
+/* Tooltip explaining the dot */
+#ws-dot:hover::after {
+  content: 'Live updates active';
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 0.6rem;
+  font-weight: 500;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  z-index: 200;
+  pointer-events: none;
 }
 
 @keyframes ws-pulse {
@@ -222,8 +242,20 @@ main {
   background: var(--bg-surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 1rem 1.25rem;
   display: flex; flex-direction: column;
-  transition: border-color 0.2s;
+  position: relative;
+  overflow: hidden;
 }
+
+/* Subtle gradient accent on hover */
+.stat-card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--green-mid), transparent);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.stat-card:hover::before { opacity: 1; }
 .stat-card:hover { border-color: var(--border-light); }
 
 .stat-label {
@@ -235,11 +267,22 @@ main {
 .stat-value {
   font-size: 1.6rem; font-weight: 800; line-height: 1.1;
   font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+  position: relative;
 }
 .stat-value.green { color: var(--green); }
 .stat-value.red { color: var(--red); }
 .stat-value.blue { color: var(--blue); }
 .stat-value.dim { color: var(--text-muted); }
+
+/* Value shimmer for changes */
+.stat-value.shimmering {
+  animation: value-shimmer 0.6s ease;
+}
+@keyframes value-shimmer {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
 
 .stat-sub {
   font-size: 0.7rem; color: var(--text-secondary);
@@ -371,12 +414,21 @@ main {
 .sport-filter-btn:hover {
   border-color: var(--border-hover); color: var(--text);
 }
+.sport-filter-btn:focus-visible {
+  outline: 2px solid var(--green); outline-offset: 2px;
+}
 .sport-filter-btn.active {
   background: var(--bg-elevated); border-color: var(--green-dim);
   color: var(--green);
 }
 .sport-filter-btn .filter-count {
   font-size: 0.6rem; opacity: 0.6;
+}
+
+/* Staggered entrance animation for game cards */
+@keyframes card-entrance {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .games-grid {
@@ -389,15 +441,30 @@ main {
   background: var(--bg-surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 1.25rem;
   transition: all 0.2s;
+  animation: card-entrance 0.35s ease-out both;
 }
+.game-card:nth-child(1) { animation-delay: 0ms; }
+.game-card:nth-child(2) { animation-delay: 40ms; }
+.game-card:nth-child(3) { animation-delay: 80ms; }
+.game-card:nth-child(4) { animation-delay: 120ms; }
+.game-card:nth-child(5) { animation-delay: 160ms; }
+.game-card:nth-child(6) { animation-delay: 200ms; }
+.game-card:nth-child(7) { animation-delay: 240ms; }
+.game-card:nth-child(8) { animation-delay: 280ms; }
+.game-card:nth-child(n+9) { animation-delay: 320ms; }
+
 .game-card:hover {
   border-color: var(--border-hover); background: var(--bg-card);
-  transform: translateY(-1px); box-shadow: var(--shadow);
+  transform: translateY(-2px); box-shadow: var(--shadow-lg);
 }
 
 .game-card.clear-pick {
   border-color: rgba(0, 230, 118, 0.15);
   background: linear-gradient(135deg, var(--bg-surface), rgba(0, 230, 118, 0.03));
+}
+.game-card.clear-pick:hover {
+  border-color: rgba(0, 230, 118, 0.30);
+  box-shadow: 0 4px 20px rgba(0, 230, 118, 0.08);
 }
 
 .game-card.hidden-by-filter {
@@ -417,6 +484,8 @@ main {
 }
 .league-nba { background: rgba(0, 120, 215, 0.15); color: #4da6ff; }
 .league-ncaab { background: rgba(255, 150, 0, 0.12); color: #ffa940; }
+.league-euroleague { background: rgba(0, 200, 200, 0.12); color: #00c8c8; }
+.league-nfl { background: rgba(180, 60, 255, 0.12); color: #b43cff; }
 .league-mlb { background: rgba(0, 200, 100, 0.12); color: #00c864; }
 .league-atp { background: rgba(180, 255, 0, 0.10); color: #b4ff00; }
 .league-wta { background: rgba(255, 100, 180, 0.10); color: #ff64b4; }
@@ -434,7 +503,14 @@ main {
 }
 .result-badge.win { background: var(--green-dim); color: var(--green); }
 .result-badge.loss { background: var(--red-dim); color: var(--red); }
-.result-badge.pending { background: rgba(255, 255, 255, 0.03); color: var(--text-muted); }
+.result-badge.pending { background: var(--bg-elevated); color: var(--text-muted); }
+
+/* Result badge with border-left accent on table rows */
+tr.result-win td:first-child { border-left: 3px solid var(--green); }
+tr.result-loss td:first-child { border-left: 3px solid var(--red); }
+
+td.pos { color: var(--green); font-weight: 700; }
+td.neg { color: var(--red); font-weight: 700; }
 
 .game-matchup {
   display: flex; align-items: center; gap: 0.75rem;
@@ -493,14 +569,34 @@ main {
 .edge-bar-track {
   width: 100%; height: 3px;
   background: var(--bg-elevated); border-radius: 2px; overflow: hidden;
+  position: relative;
 }
 
 .edge-bar-fill {
   height: 100%; border-radius: 2px;
-  transition: width 0.6s ease;
+  transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
 }
 .edge-bar-fill.pos { background: linear-gradient(90deg, var(--green-mid), var(--green)); }
 .edge-bar-fill.neg { background: linear-gradient(90deg, var(--red-dim), var(--red)); }
+
+/* Animated pulse at the end of the bar for attention */
+.edge-bar-fill::after {
+  content: '';
+  position: absolute; right: -3px; top: -2px;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: inherit;
+  opacity: 0;
+}
+.game-card:hover .edge-bar-fill::after {
+  opacity: 1;
+  animation: edge-pulse 1.5s ease-in-out infinite;
+}
+@keyframes edge-pulse {
+  0%, 100% { box-shadow: 0 0 3px currentColor; }
+  50% { box-shadow: 0 0 8px currentColor; }
+}
 
 /* Totals edge (secondary bar under moneyline edge) */
 .totals-edge {
@@ -632,8 +728,8 @@ main {
   align-items: center;
   gap: 0.5rem;
   box-shadow: var(--shadow-lg);
-  animation: toast-slide-in 0.25s ease-out;
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  animation: toast-slide-in 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .toast-float.success {
@@ -668,6 +764,27 @@ main {
     opacity: 1;
     transform: translateX(0);
   }
+}
+
+/* ─── Progress indicator ──────────────────────────────────────── */
+.progress-bar {
+  width: 100%; height: 2px;
+  background: var(--bg-elevated);
+  border-radius: 1px; overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--green), var(--blue));
+  border-radius: 1px;
+  animation: progress-loading 2s ease-in-out infinite;
+}
+
+@keyframes progress-loading {
+  0% { width: 0%; margin-left: 0; }
+  50% { width: 50%; margin-left: 25%; }
+  100% { width: 0%; margin-left: 100%; }
 }
 
 /* ─── Table ─── */
@@ -706,7 +823,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .pos { color: var(--green); }
 .neg { color: var(--red); }
 
-/* ─── Past Results ─── */
+/* ─── Table styling ─── */
 
 .results-table-container {
   background: var(--bg-surface); border: 1px solid var(--border);
@@ -787,9 +904,13 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   user-select: none;
   padding: 0.2rem 0;
   transition: color 0.15s;
+  border-radius: 4px;
 }
 .reasoning-header:hover {
   color: var(--text);
+}
+.reasoning-header:focus-visible {
+  outline: 2px solid var(--green); outline-offset: 1px;
 }
 
 .reasoning-icon {
@@ -820,13 +941,15 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .reasoning-body {
   max-height: 0;
   overflow: hidden;
-  transition: max-height 0.3s ease, opacity 0.2s ease;
+  transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease, margin 0.25s ease;
   opacity: 0;
+  margin-top: 0;
 }
 
 .reasoning-section.expanded .reasoning-body {
-  max-height: 300px;
+  max-height: 400px;
   opacity: 1;
+  margin-top: 0.5rem;
 }
 
 .reasoning-list {
@@ -878,12 +1001,13 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   margin-bottom: 0.2rem;
   font-size: 0.65rem;
   color: var(--text-secondary);
+  transition: color 0.15s;
 }
 
 .feature-driver-bar-track {
   flex-shrink: 0;
-  width: 40px;
-  height: 3px;
+  width: 44px;
+  height: 4px;
   background: var(--bg-elevated);
   border-radius: 2px;
   overflow: hidden;
@@ -894,7 +1018,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   border-radius: 2px;
   background: var(--blue);
   opacity: 0.6;
-  transition: width 0.4s ease;
+  transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s;
 }
 
 .feature-driver-name {
@@ -918,6 +1042,8 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 }
 .feature-driver-item:hover .feature-driver-bar-fill {
   opacity: 1;
+  width: 100% !important; /* Expand on hover for visual feedback */
+  transition: width 0.3s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.15s;
 }
 
 .type-badge {
@@ -929,40 +1055,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .type-badge.total { background: var(--blue-dim); color: var(--blue); }
 .type-badge.spread { background: var(--purple-dim); color: var(--purple); }
 
-/* ─── Clear picks ─── */
 
-.picks-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 0.75rem; margin-bottom: 1.5rem;
-}
-
-.pick-card {
-  background: linear-gradient(135deg, var(--bg-surface), rgba(0, 230, 118, 0.04));
-  border: 1px solid rgba(0, 230, 118, 0.12);
-  border-radius: var(--radius); padding: 1rem 1.25rem;
-  transition: all 0.2s;
-}
-.pick-card:hover {
-  border-color: rgba(0, 230, 118, 0.25);
-  transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0, 230, 118, 0.08);
-}
-
-.pick-header {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 0.5rem;
-}
-.pick-matchup { font-weight: 700; font-size: 0.9rem; }
-.pick-edge { font-weight: 800; font-size: 1rem; color: var(--green); }
-
-.pick-body {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 0.5rem;
-}
-.pick-bet { font-size: 0.8rem; color: var(--text-secondary); }
-.pick-stake { font-size: 0.8rem; font-weight: 700; color: var(--text); }
-
-.pick-footer { display: flex; gap: 0.5rem; }
 
 /* ─── Skeleton Loading ─── */
 
@@ -994,6 +1087,19 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   background-size: 200px 100%;
   animation: skeleton-shimmer 1.5s ease-in-out infinite;
   border-radius: 4px;
+}
+
+/* Light theme skeleton colors */
+[data-theme="light"] .skel {
+  background: var(--bg-elevated);
+}
+[data-theme="light"] .skel-shimmer {
+  background: linear-gradient(90deg,
+    var(--bg-elevated) 25%,
+    rgba(0,0,0,0.04) 37%,
+    var(--bg-elevated) 63%
+  );
+  background-size: 200px 100%;
 }
 
 /* Skeleton stat cards row */
@@ -1245,6 +1351,48 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 
 .hint { color: var(--text-dim) !important; font-size: 0.75rem !important; }
 
+/* ─── Clear picks card ─── */
+
+.picks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.75rem; margin-bottom: 1.5rem;
+}
+
+.pick-card {
+  background: linear-gradient(135deg, var(--bg-surface), rgba(0, 230, 118, 0.04));
+  border: 1px solid rgba(0, 230, 118, 0.12);
+  border-radius: var(--radius); padding: 1rem 1.25rem;
+  transition: all 0.2s;
+  animation: card-entrance 0.35s ease-out both;
+}
+.pick-card:nth-child(1) { animation-delay: 0ms; }
+.pick-card:nth-child(2) { animation-delay: 50ms; }
+.pick-card:nth-child(3) { animation-delay: 100ms; }
+.pick-card:nth-child(4) { animation-delay: 150ms; }
+.pick-card:nth-child(n+5) { animation-delay: 200ms; }
+
+.pick-card:hover {
+  border-color: rgba(0, 230, 118, 0.25);
+  transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0, 230, 118, 0.08);
+}
+
+.pick-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 0.5rem;
+}
+.pick-matchup { font-weight: 700; font-size: 0.9rem; }
+.pick-edge { font-weight: 800; font-size: 1rem; color: var(--green); }
+
+.pick-body {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 0.5rem;
+}
+.pick-bet { font-size: 0.8rem; color: var(--text-secondary); }
+.pick-stake { font-size: 0.8rem; font-weight: 700; color: var(--text); }
+
+.pick-footer { display: flex; gap: 0.5rem; }
+
 /* ─── Footer ─── */
 
 footer {
@@ -1257,6 +1405,7 @@ footer {
 
 @media (max-width: 1024px) {
   .games-grid { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+  .game-card:nth-child(n) { animation-delay: 0ms; } /* Disable stagger on smaller screens */
 }
 
 @media (max-width: 768px) {
@@ -1266,6 +1415,8 @@ footer {
   .picks-grid { grid-template-columns: 1fr; }
   .nav-inner { padding: 0 1rem; }
   .nav-link { padding: 0.35rem 0.5rem; font-size: 0.75rem; }
+  .live-indicator { display: none; }
+  #toast-root { right: 0.75rem; top: 56px; max-width: calc(100% - 1.5rem); }
 }
 
 @media (max-width: 480px) {
@@ -1273,4 +1424,9 @@ footer {
   .stat-card { padding: 0.75rem; }
   .stat-value { font-size: 1.2rem; }
   .game-card { padding: 1rem; }
+  .action-bar { flex-direction: column; align-items: stretch; }
+  .freshness { margin-left: 0; text-align: center; }
+  .game-matchup { flex-direction: column; gap: 0.35rem; }
+  .team-side.home,
+  .team-side.away { text-align: center; }
 }

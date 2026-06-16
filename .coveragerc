@@ -42,7 +42,6 @@ omit =
     */venv/*
     */alembic/*
     src/betting_intel/cli/main.py
-    src/betting_intel/main.py
 
 exclude_lines =
     pragma: no cover

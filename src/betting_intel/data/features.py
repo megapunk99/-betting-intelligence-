@@ -86,6 +86,34 @@ NBA_TEAM_CENTERS: Dict[str, Tuple[float, float]] = {
     "Loyola Chicago": (41.998, -87.658), "Saint Louis": (38.636, -90.220),
     "Drake": (41.599, -93.652), "Indiana State": (39.471, -87.408),
     # Default for un-mapped NCAAB teams (central US)
+    # Euroleague teams — arenas across Europe
+    "Real Madrid": (40.453, -3.688), "Barcelona": (41.383, 2.117),
+    "Olympiacos": (37.935, 23.683), "Panathinaikos": (38.055, 23.783),
+    "Fenerbahçe": (41.017, 28.997), "Anadolu Efes": (40.983, 28.850),
+    "Crvena Zvezda": (44.817, 20.467), "Žalgiris": (54.900, 23.917),
+    "Maccabi Tel Aviv": (32.083, 34.800), "Paris": (48.867, 2.333),
+    "Monaco": (43.700, 7.417), "Bayern Munich": (48.117, 11.500),
+    "Milan": (45.417, 9.050), "ASVEL": (45.717, 4.967),
+    "Baskonia": (42.850, -2.683), "Valencia": (39.467, -0.367),
+    "Partizan": (44.817, 20.467), "Virtus Bologna": (44.500, 11.317),
+    "Hapoel Tel Aviv": (32.083, 34.800), "Dubai": (25.217, 55.283),
+    # NFL teams — stadiums across the US
+    "Bills": (42.767, -78.733), "Dolphins": (25.958, -80.239),
+    "Patriots": (42.087, -71.267), "Jets": (40.813, -74.074),
+    "Ravens": (39.278, -76.622), "Bengals": (39.083, -84.517),
+    "Browns": (41.517, -81.683), "Steelers": (40.450, -80.017),
+    "Texans": (29.683, -95.417), "Colts": (39.750, -86.167),
+    "Jaguars": (30.317, -81.633), "Titans": (36.167, -86.783),
+    "Broncos": (39.733, -105.017), "Chiefs": (39.050, -94.483),
+    "Raiders": (36.083, -115.183), "Chargers": (33.950, -118.333),
+    "Cowboys": (32.750, -97.083), "Giants": (40.813, -74.074),
+    "Eagles": (39.900, -75.167), "Commanders": (38.900, -76.867),
+    "Bears": (41.867, -87.617), "Lions": (42.317, -83.050),
+    "Packers": (44.500, -88.017), "Vikings": (44.967, -93.267),
+    "Falcons": (33.750, -84.400), "Panthers": (35.217, -80.850),
+    "Saints": (29.950, -90.083), "Buccaneers": (27.967, -82.517),
+    "Cardinals": (33.533, -112.267), "Rams": (33.950, -118.333),
+    "49ers": (37.400, -121.967), "Seahawks": (47.600, -122.333),
 }
 
 # NBA team time zones (EST = -5, CST = -6, MST = -7, PST = -8)
@@ -112,6 +140,25 @@ NBA_TEAM_TZ: Dict[str, int] = {
     "Arizona": -7, "Arizona State": -7, "Colorado": -7, "Utah": -7,
     "BYU": -7, "UConn": -5, "Gonzaga": -8, "San Diego State": -8,
     "Saint Mary's": -8, "Memphis": -6, "VCU": -5, "Dayton": -5,
+    # Euroleague — CET (+1) and EET (+2)
+    "Real Madrid": 1, "Barcelona": 1, "Paris": 1,  "Monaco": 1,
+    "Bayern Munich": 1, "Milan": 1, "ASVEL": 1,
+    "Baskonia": 1, "Valencia": 1, "Virtus Bologna": 1,
+    "Olympiacos": 2, "Panathinaikos": 2, "Fenerbahçe": 2,
+    "Anadolu Efes": 2, "Crvena Zvezda": 2, "Partizan": 2,
+    "Žalgiris": 2, "Maccabi Tel Aviv": 2, "Hapoel Tel Aviv": 2,
+    "Dubai": 4,
+    # NFL — EST (-5), CST (-6), MST (-7), PST (-8)
+    "Bills": -5, "Dolphins": -5, "Patriots": -5, "Jets": -5,
+    "Ravens": -5, "Bengals": -5, "Browns": -5, "Steelers": -5,
+    "Colts": -5, "Jaguars": -5, "Giants": -5, "Eagles": -5,
+    "Commanders": -5, "Falcons": -5, "Panthers": -5,
+    "Buccaneers": -5, "Lions": -5,
+    "Texans": -6, "Titans": -6, "Chiefs": -6, "Bears": -6,
+    "Packers": -6, "Vikings": -6, "Saints": -6,
+    "Cowboys": -6, "Broncos": -7, "Cardinals": -7,
+    "Raiders": -8, "Chargers": -8, "Rams": -8,
+    "49ers": -8, "Seahawks": -8,
 }
 
 

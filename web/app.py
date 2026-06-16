@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock
 from typing import Any, Optional
@@ -704,102 +704,71 @@ def _games_context(force_refresh: bool = False) -> dict:
     If force_refresh=True, fetches fresh data from TheOddsAPI.
     NOTE: Page loads NEVER auto-refresh — only user-initiated refresh.
     """
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    today = date.today().isoformat()
+
+    def _empty_ctx() -> dict:
+        return {
+            "bets": [], "clear_picks": [], "resolved_bets": [], "all_bets": [],
+            "n_resolved": 0, "n_all_bets": 0, "resolved_wins": 0, "resolved_losses": 0,
+            "last_auto_resolve": "",
+            "summary": {},
+            "generated_at": now_str,
+            "n_bets": 0, "n_games": 0, "n_clear": 0,
+            "today": today,
+        }
+
     try:
         engine = get_live_engine()
         # NEVER auto-refresh on page load — only user-initiated refresh.
         # This prevents the dashboard from hanging when odds sources timeout.
-        games = engine.get_next_two_days(force_refresh=force_refresh)
-        logger.debug(f"_games_context: {len(games)} games from engine (force_refresh={force_refresh})")
+        games = engine.get_next_two_days(force_refresh=force_refresh) or []
+        n_before = len(games)
+        logger.debug(f"_games_context: {n_before} games from engine (force_refresh={force_refresh})")
+
+        # Safety filter: exclude games that have already started (older than 15 min).
+        # This prevents stale cached snapshots from showing finished games.
+        now_utc = datetime.now(timezone.utc)
+        games = [
+            g for g in games
+            if g.commence_datetime is None or g.commence_datetime >= now_utc - timedelta(minutes=15)
+        ]
+        if len(games) < n_before:
+            logger.debug(f"Safety filter removed {n_before - len(games)} old games — {len(games)} remaining")
 
         bets = [_livegame_to_bet(g) for g in games]
-        clear = [_livegame_to_bet(g) for g in games
-                 if abs((g.edge_pct or 0)) > 0.03]
-
-        # Load resolved bets from history
-        resolved_bets = load_resolved_bets(max_age_days=30)
-        n_resolved = len(resolved_bets)
-
-        # Compute stats from resolved bets
-        resolved_wins = sum(1 for b in resolved_bets if b.get("actual_result") == "WIN")
-        resolved_losses = sum(1 for b in resolved_bets if b.get("actual_result") == "LOSS")
-        resolved_profits = [b.get("actual_profit", 0) for b in resolved_bets if b.get("actual_profit") is not None]
-        total_pnl = sum(resolved_profits) if resolved_profits else 0.0
-
-        # Build per-league breakdown from resolved bets
-        league_stats: dict[str, dict] = {}
-        for b in resolved_bets:
-            league = b.get("league", "NBA") or "NBA"
-            if league not in league_stats:
-                league_stats[league] = {"wins": 0, "losses": 0, "profit": 0.0, "n": 0}
-            st = league_stats[league]
-            st["n"] += 1
-            result = b.get("actual_result")
-            if result == "WIN":
-                st["wins"] += 1
-            elif result == "LOSS":
-                st["losses"] += 1
-            profit = b.get("actual_profit", 0)
-            if profit is not None:
-                st["profit"] += profit
-        # Sort leagues by profit descending
-        sport_pnl = [
-            {
-                "league": league,
-                "wins": st["wins"],
-                "losses": st["losses"],
-                "n": st["n"],
-                "profit": round(st["profit"], 2),
-            }
-            for league, st in sorted(league_stats.items(), key=lambda x: x[1]["profit"], reverse=True)
+        clear = [
+            _livegame_to_bet(g) for g in games
+            if g is not None and abs((getattr(g, "edge_pct", None) or 0)) > 0.03
         ]
 
-        # Auto-resolve timestamp from engine
         last_auto_resolve = getattr(engine, 'last_auto_resolve', None)
 
-        # Merge bets + resolved_bets into one unified list sorted by date descending
-        all_bets = list(bets) + list(resolved_bets)
-        all_bets.sort(key=lambda b: b.get("game_date", ""), reverse=True)
-
-        # Build chart data from resolved profits (oldest first for cumulative chart)
-        # resolved_bets are sorted by date descending; reverse for plotting
-        chart_profits = list(reversed(resolved_profits)) if len(resolved_profits) > 1 else []
-
+        # LIVE predictions only — no finished games mixed in.
         return {
             "bets": bets,
             "clear_picks": clear[:10],
-            "resolved_bets": resolved_bets,
-            "all_bets": all_bets,
-            "n_all_bets": len(all_bets),
-            "n_resolved": n_resolved,
-            "resolved_wins": resolved_wins,
-            "resolved_losses": resolved_losses,
-            "resolved_pnl": round(total_pnl, 2),
-            "sport_pnl": sport_pnl, "n_sport_count": len(sport_pnl),
-            "chart_profits": json.dumps(chart_profits),
+            "all_bets": bets,
+            "n_all_bets": len(bets),
+            "resolved_bets": [],
+            "n_resolved": 0,
+            "resolved_wins": 0,
+            "resolved_losses": 0,
             "last_auto_resolve": last_auto_resolve or "",
             "summary": {
                 "n_games": len(games),
                 "n_bets": len(bets),
                 "n_clear": len(clear),
             },
-            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "generated_at": now_str,
             "n_bets": len(bets),
             "n_games": len(games),
             "n_clear": len(clear),
-            "today": date.today().isoformat(),
+            "today": today,
         }
     except Exception as e:
         logger.warning(f"_games_context failed: {e}")
-        return {
-            "bets": [], "clear_picks": [], "resolved_bets": [], "all_bets": [],
-            "n_resolved": 0, "n_all_bets": 0, "resolved_wins": 0, "resolved_losses": 0, "resolved_pnl": 0.0,
-            "sport_pnl": [], "n_sport_count": 0,
-            "last_auto_resolve": "",
-            "summary": {},
-            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "n_bets": 0, "n_games": 0, "n_clear": 0,
-            "today": date.today().isoformat(),
-        }
+        return _empty_ctx()
 
 
 @app.get("/", response_class=HTMLResponse)

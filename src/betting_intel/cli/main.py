@@ -142,63 +142,7 @@ def backtest_compare(periods: int, test_size: int, min_edge: float, save: bool):
     click.echo(f"\n  Running backtest comparison with {periods} periods, {test_size} games each...")
     click.echo(f"  Min edge threshold: {min_edge:.1%}")
 
-    from betting_intel.pipeline.backtest_comparison import BacktestComparison
-
-    comparison = BacktestComparison(
-        min_edge_threshold=min_edge,
-        initial_bankroll=10_000.0,
-        kelly_fraction=0.25,
-    )
-
-    try:
-        report = comparison.run(
-            n_test_periods=periods,
-            test_size_games=test_size,
-            verbose=True,
-        )
-
-        if save:
-            from datetime import datetime
-            output_dir = settings.output_dir / "reports"
-            output_dir.mkdir(parents=True, exist_ok=True)
-            path = output_dir / f"backtest_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-            with open(path, "w") as f:
-                import json
-                json.dump({
-                    "generated_at": report.generated_at,
-                    "n_periods": report.n_periods,
-                    "total_n_train": report.total_n_train,
-                    "total_n_test": report.total_n_test,
-                    "delta_accuracy": report.delta_accuracy,
-                    "delta_brier": report.delta_brier,
-                    "delta_flat_roi": report.delta_flat_roi,
-                    "delta_kelly_roi": report.delta_kelly_roi,
-                    "delta_flat_sharpe": report.delta_flat_sharpe,
-                    "delta_edge_capture": report.delta_edge_capture,
-                    "is_significant": report.is_significant,
-                    "p_value": report.p_value,
-                    "agreement_rate": report.agreement_rate,
-                    "market_win_rate_on_disagree": report.market_won_rate,
-                    "classifier_win_rate_on_disagree": report.classifier_won_rate,
-                    "periods": [
-                        {
-                            "period_label": p.period_label,
-                            "n_games": p.n_games,
-                            "classifier_accuracy": p.classifier.accuracy,
-                            "market_accuracy": p.market_inefficiency.accuracy,
-                            "delta_accuracy": p.delta_accuracy,
-                            "delta_brier": p.delta_brier,
-                            "delta_flat_roi": p.delta_flat_roi,
-                        }
-                        for p in report.periods
-                    ],
-                }, f, indent=2, default=str)
-            click.echo(f"  Report saved to: {path}")
-
-    except Exception as e:
-        click.echo(f"  ❌  Backtest comparison failed: {e}", err=True)
-        import traceback
-        traceback.print_exc()
+    click.echo("  Backtest comparison system removed during cleanup. Use the live engine dashboard instead.")
 
 
 @backtest.command("report")
