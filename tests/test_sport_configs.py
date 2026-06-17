@@ -464,6 +464,56 @@ class TestSeasonDetection:
         assert EUROLEAGUE.is_in_season is False
 
     @patch("betting_intel.live.sport_configs.datetime")
+    def test_nfl_in_season_january(self, mock_dt):
+        """NFL should be in season during January (month 1 — within Sep→Feb span)."""
+        from betting_intel.live.sport_configs import NFL
+
+        mock_dt.now.return_value = datetime(2026, 1, 15)
+        mock_dt.side_effect = lambda *args, **kw: datetime(*args, **kw)
+
+        assert NFL.is_in_season is True
+
+    @patch("betting_intel.live.sport_configs.datetime")
+    def test_nfl_in_season_september(self, mock_dt):
+        """NFL should be in season during September (month 9 — start month)."""
+        from betting_intel.live.sport_configs import NFL
+
+        mock_dt.now.return_value = datetime(2026, 9, 1)
+        mock_dt.side_effect = lambda *args, **kw: datetime(*args, **kw)
+
+        assert NFL.is_in_season is True
+
+    @patch("betting_intel.live.sport_configs.datetime")
+    def test_nfl_in_season_february(self, mock_dt):
+        """NFL should be in season during February (month 2 — end month, year-span)."""
+        from betting_intel.live.sport_configs import NFL
+
+        mock_dt.now.return_value = datetime(2026, 2, 15)
+        mock_dt.side_effect = lambda *args, **kw: datetime(*args, **kw)
+
+        assert NFL.is_in_season is True
+
+    @patch("betting_intel.live.sport_configs.datetime")
+    def test_nfl_out_of_season_march(self, mock_dt):
+        """NFL should be out of season during March (month 3 — after end)."""
+        from betting_intel.live.sport_configs import NFL
+
+        mock_dt.now.return_value = datetime(2026, 3, 15)
+        mock_dt.side_effect = lambda *args, **kw: datetime(*args, **kw)
+
+        assert NFL.is_in_season is False
+
+    @patch("betting_intel.live.sport_configs.datetime")
+    def test_nfl_out_of_season_july(self, mock_dt):
+        """NFL should be out of season during July (month 7)."""
+        from betting_intel.live.sport_configs import NFL
+
+        mock_dt.now.return_value = datetime(2026, 7, 15)
+        mock_dt.side_effect = lambda *args, **kw: datetime(*args, **kw)
+
+        assert NFL.is_in_season is False
+
+    @patch("betting_intel.live.sport_configs.datetime")
     def test_nba_in_season_january(self, mock_dt):
         """NBA should be in season during January."""
         from betting_intel.live.sport_configs import NBA
@@ -827,6 +877,89 @@ class TestBackfillConstants:
         assert result["avg_pts"].iloc[0] == 100.0
         assert result["avg_pts"].iloc[1] == 105.0
         assert result["avg_pts"].iloc[2] == 110.0
+
+    # ── NFL edge_pct_movement and NFL-specific columns ────────────────
+
+    def test_nfl_edge_pct_movement_falls_to_default(self):
+        """edge_pct_movement has no pattern match → defaults to 0.0."""
+        from betting_intel.data.features import FeatureEngineer
+
+        import pandas as pd
+        fe = FeatureEngineer()
+        df = pd.DataFrame({"edge_pct_movement": [None]})
+        result = fe.backfill_features(df, league="NFL")
+        assert result["edge_pct_movement"].iloc[0] == 0.0
+
+    def test_nfl_backfill_avg_pace(self):
+        """NFL avg_pace backfills to 65.0."""
+        from betting_intel.data.features import FeatureEngineer
+
+        import pandas as pd
+        fe = FeatureEngineer()
+        df = pd.DataFrame({"avg_pace": [None]})
+        result = fe.backfill_features(df, league="NFL")
+        assert result["avg_pace"].iloc[0] == 65.0
+
+    def test_nfl_backfill_margin_volatility(self):
+        """NFL margin_volatility backfills to 16.0 (higher variance than NBA)."""
+        from betting_intel.data.features import FeatureEngineer
+
+        import pandas as pd
+        fe = FeatureEngineer()
+        df = pd.DataFrame({"margin_volatility": [None]})
+        result = fe.backfill_features(df, league="NFL")
+        assert result["margin_volatility"].iloc[0] == 16.0
+
+    def test_nfl_backfill_opp_avg_pts(self):
+        """NFL opp_avg_pts_scored and opp_avg_pts_allowed backfill to 22.0."""
+        from betting_intel.data.features import FeatureEngineer
+
+        import pandas as pd
+        fe = FeatureEngineer()
+        df = pd.DataFrame({"opp_avg_pts_scored": [None], "opp_avg_pts_allowed": [None]})
+        result = fe.backfill_features(df, league="NFL")
+        assert result["opp_avg_pts_scored"].iloc[0] == 22.0
+        assert result["opp_avg_pts_allowed"].iloc[0] == 22.0
+
+    def test_nfl_backfill_multiple_mixed_columns(self):
+        """Multiple NFL columns backfill correctly in one call."""
+        from betting_intel.data.features import FeatureEngineer
+
+        import pandas as pd
+        fe = FeatureEngineer()
+        df = pd.DataFrame({
+            "avg_pts": [None, 30.0, None],
+            "avg_pace": [None, 70.0, None],
+            "margin_volatility": [None, 20.0, None],
+            "edge_pct_movement": [None, None, 0.05],  # Known value preserved
+        })
+        result = fe.backfill_features(df, league="NFL")
+        # Backfilled values
+        assert result["avg_pts"].iloc[0] == 22.0
+        assert result["avg_pts"].iloc[2] == 22.0
+        assert result["avg_pace"].iloc[0] == 65.0
+        assert result["avg_pace"].iloc[2] == 65.0
+        assert result["margin_volatility"].iloc[0] == 16.0
+        assert result["margin_volatility"].iloc[2] == 16.0
+        # Preserved values
+        assert result["avg_pts"].iloc[1] == 30.0
+        assert result["avg_pace"].iloc[1] == 70.0
+        assert result["margin_volatility"].iloc[1] == 20.0
+        # Unmatched column falls to default 0.0
+        assert result["edge_pct_movement"].iloc[0] == 0.0
+        assert result["edge_pct_movement"].iloc[1] == 0.0
+        assert result["edge_pct_movement"].iloc[2] == 0.05  # preserved
+
+    def test_nfl_backfill_ema_pts(self):
+        """NFL ema_pts backfills to 22.0 (matches avg_pts)."""
+        from betting_intel.data.features import FeatureEngineer
+
+        import pandas as pd
+        fe = FeatureEngineer()
+        df = pd.DataFrame({"ema_pts": [None]})
+        result = fe.backfill_features(df, league="NFL")
+        # Matches pattern "ema_pts" → _NFL_NA_FILL ema_pts = 22.0
+        assert result["ema_pts"].iloc[0] == 22.0
 
 
 # ═══════════════════════════════════════════════════════════════════════════

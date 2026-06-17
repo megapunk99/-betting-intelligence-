@@ -1,0 +1,1322 @@
+[
+  {
+    "id": "Celtics_Heat_2026-06-17",
+    "sport_key": "basketball_nba",
+    "sport_title": "NBA",
+    "commence_time": "2026-06-17T20:00:00Z",
+    "home_team": "Celtics",
+    "away_team": "Heat",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.864629",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Celtics",
+                "price": -350
+              },
+              {
+                "name": "Heat",
+                "price": 280
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Celtics",
+                "price": -110,
+                "point": -7.5
+              },
+              {
+                "name": "Heat",
+                "price": -110,
+                "point": 7.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 225.3
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 225.3
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Lakers_Spurs_2026-06-18",
+    "sport_key": "basketball_nba",
+    "sport_title": "NBA",
+    "commence_time": "2026-06-18T20:00:00Z",
+    "home_team": "Lakers",
+    "away_team": "Spurs",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.864629",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Lakers",
+                "price": -180
+              },
+              {
+                "name": "Spurs",
+                "price": 160
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Lakers",
+                "price": -110,
+                "point": -3.5
+              },
+              {
+                "name": "Spurs",
+                "price": -110,
+                "point": 3.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 225.3
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 225.3
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Warriors_Mavericks_2026-06-19",
+    "sport_key": "basketball_nba",
+    "sport_title": "NBA",
+    "commence_time": "2026-06-19T20:00:00Z",
+    "home_team": "Warriors",
+    "away_team": "Mavericks",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.864629",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Warriors",
+                "price": -120
+              },
+              {
+                "name": "Mavericks",
+                "price": 100
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Warriors",
+                "price": -110,
+                "point": -1.5
+              },
+              {
+                "name": "Mavericks",
+                "price": -110,
+                "point": 1.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 229.9
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 229.9
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Knicks_76ers_2026-06-17",
+    "sport_key": "basketball_nba",
+    "sport_title": "NBA",
+    "commence_time": "2026-06-17T20:00:00Z",
+    "home_team": "Knicks",
+    "away_team": "76ers",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.864629",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Knicks",
+                "price": -110
+              },
+              {
+                "name": "76ers",
+                "price": -105
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Knicks",
+                "price": -110,
+                "point": -1.0
+              },
+              {
+                "name": "76ers",
+                "price": -110,
+                "point": 1.0
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 232.0
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 232.0
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Nuggets_Suns_2026-06-18",
+    "sport_key": "basketball_nba",
+    "sport_title": "NBA",
+    "commence_time": "2026-06-18T20:00:00Z",
+    "home_team": "Nuggets",
+    "away_team": "Suns",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.864629",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Nuggets",
+                "price": 150
+              },
+              {
+                "name": "Suns",
+                "price": -175
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Nuggets",
+                "price": -110,
+                "point": 3.5
+              },
+              {
+                "name": "Suns",
+                "price": -110,
+                "point": -3.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 223.5
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 223.5
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Bucks_Thunder_2026-06-19",
+    "sport_key": "basketball_nba",
+    "sport_title": "NBA",
+    "commence_time": "2026-06-19T20:00:00Z",
+    "home_team": "Bucks",
+    "away_team": "Thunder",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.864629",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Bucks",
+                "price": 120
+              },
+              {
+                "name": "Thunder",
+                "price": -140
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Bucks",
+                "price": -110,
+                "point": 2.5
+              },
+              {
+                "name": "Thunder",
+                "price": -110,
+                "point": -2.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 232.8
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 232.8
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Duke_Arizona_2026-06-17",
+    "sport_key": "basketball_ncaab",
+    "sport_title": "NCAAB",
+    "commence_time": "2026-06-17T20:00:00Z",
+    "home_team": "Duke",
+    "away_team": "Arizona",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.865631",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Duke",
+                "price": -250
+              },
+              {
+                "name": "Arizona",
+                "price": 200
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Duke",
+                "price": -110,
+                "point": -6.5
+              },
+              {
+                "name": "Arizona",
+                "price": -110,
+                "point": 6.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 150.7
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 150.7
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Kentucky_Michigan State_2026-06-18",
+    "sport_key": "basketball_ncaab",
+    "sport_title": "NCAAB",
+    "commence_time": "2026-06-18T20:00:00Z",
+    "home_team": "Kentucky",
+    "away_team": "Michigan State",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.865631",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Kentucky",
+                "price": -150
+              },
+              {
+                "name": "Michigan State",
+                "price": 130
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Kentucky",
+                "price": -110,
+                "point": -4.5
+              },
+              {
+                "name": "Michigan State",
+                "price": -110,
+                "point": 4.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 146.4
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 146.4
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "UNC_Tennessee_2026-06-19",
+    "sport_key": "basketball_ncaab",
+    "sport_title": "NCAAB",
+    "commence_time": "2026-06-19T20:00:00Z",
+    "home_team": "UNC",
+    "away_team": "Tennessee",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.865631",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "UNC",
+                "price": -110
+              },
+              {
+                "name": "Tennessee",
+                "price": -105
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "UNC",
+                "price": -110,
+                "point": -1.5
+              },
+              {
+                "name": "Tennessee",
+                "price": -110,
+                "point": 1.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 149.6
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 149.6
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Kansas_Baylor_2026-06-17",
+    "sport_key": "basketball_ncaab",
+    "sport_title": "NCAAB",
+    "commence_time": "2026-06-17T20:00:00Z",
+    "home_team": "Kansas",
+    "away_team": "Baylor",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.865631",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Kansas",
+                "price": 110
+              },
+              {
+                "name": "Baylor",
+                "price": -130
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Kansas",
+                "price": -110,
+                "point": 2.5
+              },
+              {
+                "name": "Baylor",
+                "price": -110,
+                "point": -2.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 144.9
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 144.9
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "UConn_Purdue_2026-06-18",
+    "sport_key": "basketball_ncaab",
+    "sport_title": "NCAAB",
+    "commence_time": "2026-06-18T20:00:00Z",
+    "home_team": "UConn",
+    "away_team": "Purdue",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.865631",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "UConn",
+                "price": -130
+              },
+              {
+                "name": "Purdue",
+                "price": 115
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "UConn",
+                "price": -110,
+                "point": -2.5
+              },
+              {
+                "name": "Purdue",
+                "price": -110,
+                "point": 2.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 149.6
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 149.6
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Gonzaga_Marquette_2026-06-19",
+    "sport_key": "basketball_ncaab",
+    "sport_title": "NCAAB",
+    "commence_time": "2026-06-19T20:00:00Z",
+    "home_team": "Gonzaga",
+    "away_team": "Marquette",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.865631",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Gonzaga",
+                "price": -200
+              },
+              {
+                "name": "Marquette",
+                "price": 170
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Gonzaga",
+                "price": -110,
+                "point": -5.5
+              },
+              {
+                "name": "Marquette",
+                "price": -110,
+                "point": 5.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 147.6
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 147.6
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Real Madrid_Panathinaikos_2026-06-17",
+    "sport_key": "basketball_euroleague",
+    "sport_title": "Euroleague",
+    "commence_time": "2026-06-17T20:00:00Z",
+    "home_team": "Real Madrid",
+    "away_team": "Panathinaikos",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.865631",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Real Madrid",
+                "price": -220
+              },
+              {
+                "name": "Panathinaikos",
+                "price": 185
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Real Madrid",
+                "price": -110,
+                "point": -5.5
+              },
+              {
+                "name": "Panathinaikos",
+                "price": -110,
+                "point": 5.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 160.5
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 160.5
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Barcelona_Maccabi Tel Aviv_2026-06-18",
+    "sport_key": "basketball_euroleague",
+    "sport_title": "Euroleague",
+    "commence_time": "2026-06-18T20:00:00Z",
+    "home_team": "Barcelona",
+    "away_team": "Maccabi Tel Aviv",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.865631",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Barcelona",
+                "price": -150
+              },
+              {
+                "name": "Maccabi Tel Aviv",
+                "price": 130
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Barcelona",
+                "price": -110,
+                "point": -4.0
+              },
+              {
+                "name": "Maccabi Tel Aviv",
+                "price": -110,
+                "point": 4.0
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 160.5
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 160.5
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Olympiacos_Monaco_2026-06-19",
+    "sport_key": "basketball_euroleague",
+    "sport_title": "Euroleague",
+    "commence_time": "2026-06-19T20:00:00Z",
+    "home_team": "Olympiacos",
+    "away_team": "Monaco",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.865631",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Olympiacos",
+                "price": -120
+              },
+              {
+                "name": "Monaco",
+                "price": 100
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Olympiacos",
+                "price": -110,
+                "point": -2.0
+              },
+              {
+                "name": "Monaco",
+                "price": -110,
+                "point": 2.0
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 159.3
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 159.3
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Fenerbah\u00e7e_\u017dalgiris_2026-06-17",
+    "sport_key": "basketball_euroleague",
+    "sport_title": "Euroleague",
+    "commence_time": "2026-06-17T20:00:00Z",
+    "home_team": "Fenerbah\u00e7e",
+    "away_team": "\u017dalgiris",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.865631",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Fenerbah\u00e7e",
+                "price": 105
+              },
+              {
+                "name": "\u017dalgiris",
+                "price": -125
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Fenerbah\u00e7e",
+                "price": -110,
+                "point": 1.5
+              },
+              {
+                "name": "\u017dalgiris",
+                "price": -110,
+                "point": -1.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 165.3
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 165.3
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Chiefs_Bills_2026-06-17",
+    "sport_key": "americanfootball_nfl",
+    "sport_title": "NFL",
+    "commence_time": "2026-06-17T20:00:00Z",
+    "home_team": "Chiefs",
+    "away_team": "Bills",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.865631",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Chiefs",
+                "price": -280
+              },
+              {
+                "name": "Bills",
+                "price": 230
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Chiefs",
+                "price": -110,
+                "point": -5.5
+              },
+              {
+                "name": "Bills",
+                "price": -110,
+                "point": 5.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 50.6
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 50.6
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "49ers_Packers_2026-06-18",
+    "sport_key": "americanfootball_nfl",
+    "sport_title": "NFL",
+    "commence_time": "2026-06-18T20:00:00Z",
+    "home_team": "49ers",
+    "away_team": "Packers",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.865631",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "49ers",
+                "price": -140
+              },
+              {
+                "name": "Packers",
+                "price": 120
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "49ers",
+                "price": -110,
+                "point": -2.5
+              },
+              {
+                "name": "Packers",
+                "price": -110,
+                "point": 2.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 41.1
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 41.1
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Ravens_Bengals_2026-06-19",
+    "sport_key": "americanfootball_nfl",
+    "sport_title": "NFL",
+    "commence_time": "2026-06-19T20:00:00Z",
+    "home_team": "Ravens",
+    "away_team": "Bengals",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.865631",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Ravens",
+                "price": -110
+              },
+              {
+                "name": "Bengals",
+                "price": -105
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Ravens",
+                "price": -110,
+                "point": -1.5
+              },
+              {
+                "name": "Bengals",
+                "price": -110,
+                "point": 1.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 45.6
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 45.6
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Lions_Vikings_2026-06-17",
+    "sport_key": "americanfootball_nfl",
+    "sport_title": "NFL",
+    "commence_time": "2026-06-17T20:00:00Z",
+    "home_team": "Lions",
+    "away_team": "Vikings",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.865631",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Lions",
+                "price": -120
+              },
+              {
+                "name": "Vikings",
+                "price": 100
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Lions",
+                "price": -110,
+                "point": -2.0
+              },
+              {
+                "name": "Vikings",
+                "price": -110,
+                "point": 2.0
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 45.0
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 45.0
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Eagles_Rams_2026-06-18",
+    "sport_key": "americanfootball_nfl",
+    "sport_title": "NFL",
+    "commence_time": "2026-06-18T20:00:00Z",
+    "home_team": "Eagles",
+    "away_team": "Rams",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.865631",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Eagles",
+                "price": -150
+              },
+              {
+                "name": "Rams",
+                "price": 130
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Eagles",
+                "price": -110,
+                "point": -3.5
+              },
+              {
+                "name": "Rams",
+                "price": -110,
+                "point": 3.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 45.8
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 45.8
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "Cowboys_Giants_2026-06-19",
+    "sport_key": "americanfootball_nfl",
+    "sport_title": "NFL",
+    "commence_time": "2026-06-19T20:00:00Z",
+    "home_team": "Cowboys",
+    "away_team": "Giants",
+    "bookmakers": [
+      {
+        "key": "mock",
+        "title": "Mock Sportsbook",
+        "last_update": "2026-06-17T05:43:07.865631",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Cowboys",
+                "price": -130
+              },
+              {
+                "name": "Giants",
+                "price": 115
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Cowboys",
+                "price": -110,
+                "point": -3.0
+              },
+              {
+                "name": "Giants",
+                "price": -110,
+                "point": 3.0
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 42.9
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 42.9
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]
