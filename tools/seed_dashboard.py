@@ -553,10 +553,13 @@ def main():
     # 2. Patch the engine
     patch_live_engine(project_root)
 
-    # 3. Start uvicorn
+    # 3. Start uvicorn with the already-imported app object
+    #    (uvicorn.run with a string re-imports the module in a subprocess,
+    #     losing the monkey-patch applied above)
     logger.info("Starting dashboard with seeded data on port %d...", args.port)
+    from web.app import app as _seeded_app
     import uvicorn
-    uvicorn.run("web.app:app", host="0.0.0.0", port=args.port, log_level="info")
+    uvicorn.run(_seeded_app, host="0.0.0.0", port=args.port, log_level="info")
 
 
 if __name__ == "__main__":

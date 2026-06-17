@@ -145,7 +145,8 @@
               {{ "{:+.1%}".format(bet.get('edge_pct', 0)) }}
             </span>
           </div>
-          {% set edge_abs = (bet.get('edge_pct', 0) * 100)|abs %}
+          {% set edge_val = bet.get('edge_pct', 0) * 100 %}
+          {% set edge_abs = edge_val if edge_val >= 0 else -edge_val %}
           {% set raw_w = edge_abs * 2 %}
           {% set bar_w = raw_w if raw_w < 100 else 100 %}
           <div class="edge-bar-track">
@@ -156,7 +157,7 @@
         {% set total_dir = bet.get('total_direction', 'neutral') %}
         {% set total_pred = bet.get('total_prediction') %}
         {% set total_mkt = bet.get('market_total', 0) %}
-        {% if total_pred and total_pred > 0 and total_mkt and total_mkt > 10 and abs(total_ep) > 0.005 %}
+        {% if total_pred and total_pred > 0 and total_mkt and total_mkt > 10 and (total_ep > 0.005 or total_ep < -0.005) %}
         <div class="edge-section totals-edge">
           <div class="edge-row">
             <span class="edge-label">
@@ -166,7 +167,8 @@
               {{ "{:+.1%}".format(total_ep) }}
             </span>
           </div>
-          {% set total_bar_w = abs(total_ep) * 200 %}
+          {% set total_ep_abs = total_ep if total_ep >= 0 else -total_ep %}
+          {% set total_bar_w = total_ep_abs * 200 %}
           {% if total_bar_w > 100 %}{% set total_bar_w = 100 %}{% endif %}
           <div class="edge-bar-track">
             <div class="edge-bar-fill total {% if total_ep > 0 %}pos{% else %}neg{% endif %}" style="width: {{ total_bar_w }}%"></div>

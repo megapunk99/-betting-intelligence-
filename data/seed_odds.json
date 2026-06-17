@@ -10,7 +10,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.864629",
+        "last_update": "2026-06-17T05:54:39.070826",
         "markets": [
           {
             "key": "h2h",
@@ -46,12 +46,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 225.3
+                "point": 225.8
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 225.3
+                "point": 225.8
               }
             ]
           }
@@ -70,7 +70,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.864629",
+        "last_update": "2026-06-17T05:54:39.071835",
         "markets": [
           {
             "key": "h2h",
@@ -106,12 +106,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 225.3
+                "point": 227.6
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 225.3
+                "point": 227.6
               }
             ]
           }
@@ -130,7 +130,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.864629",
+        "last_update": "2026-06-17T05:54:39.071835",
         "markets": [
           {
             "key": "h2h",
@@ -166,12 +166,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 229.9
+                "point": 229.0
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 229.9
+                "point": 229.0
               }
             ]
           }
@@ -190,7 +190,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.864629",
+        "last_update": "2026-06-17T05:54:39.071835",
         "markets": [
           {
             "key": "h2h",
@@ -226,12 +226,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 232.0
+                "point": 227.4
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 232.0
+                "point": 227.4
               }
             ]
           }
@@ -250,7 +250,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.864629",
+        "last_update": "2026-06-17T05:54:39.071835",
         "markets": [
           {
             "key": "h2h",
@@ -286,12 +286,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 223.5
+                "point": 232.0
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 223.5
+                "point": 232.0
               }
             ]
           }
@@ -310,7 +310,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.864629",
+        "last_update": "2026-06-17T05:54:39.071835",
         "markets": [
           {
             "key": "h2h",
@@ -346,12 +346,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 232.8
+                "point": 223.6
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 232.8
+                "point": 223.6
               }
             ]
           }
@@ -370,7 +370,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.865631",
+        "last_update": "2026-06-17T05:54:39.072835",
         "markets": [
           {
             "key": "h2h",
@@ -406,12 +406,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 150.7
+                "point": 143.6
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 150.7
+                "point": 143.6
               }
             ]
           }
@@ -430,7 +430,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.865631",
+        "last_update": "2026-06-17T05:54:39.072835",
         "markets": [
           {
             "key": "h2h",
@@ -466,12 +466,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 146.4
+                "point": 145.5
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 146.4
+                "point": 145.5
               }
             ]
           }
@@ -490,7 +490,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.865631",
+        "last_update": "2026-06-17T05:54:39.072835",
         "markets": [
           {
             "key": "h2h",
@@ -526,12 +526,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 149.6
+                "point": 146.1
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 149.6
+                "point": 146.1
               }
             ]
           }
@@ -550,7 +550,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.865631",
+        "last_update": "2026-06-17T05:54:39.072835",
         "markets": [
           {
             "key": "h2h",
@@ -586,12 +586,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 144.9
+                "point": 151.1
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 144.9
+                "point": 151.1
               }
             ]
           }
@@ -610,7 +610,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.865631",
+        "last_update": "2026-06-17T05:54:39.072835",
         "markets": [
           {
             "key": "h2h",
@@ -646,12 +646,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 149.6
+                "point": 147.0
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 149.6
+                "point": 147.0
               }
             ]
           }
@@ -670,7 +670,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.865631",
+        "last_update": "2026-06-17T05:54:39.072835",
         "markets": [
           {
             "key": "h2h",
@@ -706,12 +706,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 147.6
+                "point": 152.5
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 147.6
+                "point": 152.5
               }
             ]
           }
@@ -730,7 +730,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.865631",
+        "last_update": "2026-06-17T05:54:39.072835",
         "markets": [
           {
             "key": "h2h",
@@ -766,12 +766,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 160.5
+                "point": 166.0
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 160.5
+                "point": 166.0
               }
             ]
           }
@@ -790,7 +790,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.865631",
+        "last_update": "2026-06-17T05:54:39.072835",
         "markets": [
           {
             "key": "h2h",
@@ -826,12 +826,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 160.5
+                "point": 164.6
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 160.5
+                "point": 164.6
               }
             ]
           }
@@ -850,7 +850,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.865631",
+        "last_update": "2026-06-17T05:54:39.072835",
         "markets": [
           {
             "key": "h2h",
@@ -886,12 +886,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 159.3
+                "point": 163.6
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 159.3
+                "point": 163.6
               }
             ]
           }
@@ -910,7 +910,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.865631",
+        "last_update": "2026-06-17T05:54:39.072835",
         "markets": [
           {
             "key": "h2h",
@@ -946,12 +946,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 165.3
+                "point": 157.0
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 165.3
+                "point": 157.0
               }
             ]
           }
@@ -970,7 +970,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.865631",
+        "last_update": "2026-06-17T05:54:39.072835",
         "markets": [
           {
             "key": "h2h",
@@ -1006,12 +1006,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 50.6
+                "point": 44.8
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 50.6
+                "point": 44.8
               }
             ]
           }
@@ -1030,7 +1030,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.865631",
+        "last_update": "2026-06-17T05:54:39.073832",
         "markets": [
           {
             "key": "h2h",
@@ -1066,12 +1066,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 41.1
+                "point": 41.3
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 41.1
+                "point": 41.3
               }
             ]
           }
@@ -1090,7 +1090,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.865631",
+        "last_update": "2026-06-17T05:54:39.073832",
         "markets": [
           {
             "key": "h2h",
@@ -1126,12 +1126,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 45.6
+                "point": 45.3
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 45.6
+                "point": 45.3
               }
             ]
           }
@@ -1150,7 +1150,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.865631",
+        "last_update": "2026-06-17T05:54:39.073832",
         "markets": [
           {
             "key": "h2h",
@@ -1186,12 +1186,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 45.0
+                "point": 43.5
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 45.0
+                "point": 43.5
               }
             ]
           }
@@ -1210,7 +1210,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.865631",
+        "last_update": "2026-06-17T05:54:39.073832",
         "markets": [
           {
             "key": "h2h",
@@ -1246,12 +1246,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 45.8
+                "point": 45.9
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 45.8
+                "point": 45.9
               }
             ]
           }
@@ -1270,7 +1270,7 @@
       {
         "key": "mock",
         "title": "Mock Sportsbook",
-        "last_update": "2026-06-17T05:43:07.865631",
+        "last_update": "2026-06-17T05:54:39.073832",
         "markets": [
           {
             "key": "h2h",
@@ -1306,12 +1306,12 @@
               {
                 "name": "Over",
                 "price": -110,
-                "point": 42.9
+                "point": 41.6
               },
               {
                 "name": "Under",
                 "price": -110,
-                "point": 42.9
+                "point": 41.6
               }
             ]
           }
