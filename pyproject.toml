@@ -30,6 +30,8 @@ dependencies = [
     "SQLAlchemy>=2.0",
     "click>=8.1",
     "httpx>=0.26",
+    "playwright>=1.54",
+    "playwright-stealth>=2.0",
 ]
 
 [project.optional-dependencies]

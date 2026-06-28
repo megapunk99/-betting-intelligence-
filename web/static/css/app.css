@@ -652,6 +652,47 @@ td.neg { color: var(--red); font-weight: 700; }
 .detail-chip.confidence-medium { color: var(--yellow); }
 .detail-chip.confidence-low { color: var(--text-muted); }
 
+/* ─── TheOddsAPI Status Banner ─── */
+
+.api-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.85rem;
+  margin-bottom: 1.25rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  animation: card-entrance 0.3s ease-out both;
+}
+
+.api-banner-icon {
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.api-banner-text {
+  flex: 1;
+}
+
+.api-banner-text strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.api-ready {
+  color: var(--green);
+  font-weight: 600;
+}
+
+.api-quota {
+  color: var(--blue);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ─── Actions ─── */
 
 .action-bar {
@@ -766,27 +807,6 @@ td.neg { color: var(--red); font-weight: 700; }
   }
 }
 
-/* ─── Progress indicator ──────────────────────────────────────── */
-.progress-bar {
-  width: 100%; height: 2px;
-  background: var(--bg-elevated);
-  border-radius: 1px; overflow: hidden;
-  margin-bottom: 1rem;
-}
-
-.progress-bar-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--green), var(--blue));
-  border-radius: 1px;
-  animation: progress-loading 2s ease-in-out infinite;
-}
-
-@keyframes progress-loading {
-  0% { width: 0%; margin-left: 0; }
-  50% { width: 50%; margin-left: 25%; }
-  100% { width: 0%; margin-left: 100%; }
-}
-
 /* ─── Table ─── */
 
 .table-container {
@@ -819,59 +839,6 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .cell-matchup { font-weight: 600; }
 .cell-date { color: var(--text-muted); font-size: 0.75rem; }
 .cell-bet { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
-
-.pos { color: var(--green); }
-.neg { color: var(--red); }
-
-/* ─── Table styling ─── */
-
-.results-table-container {
-  background: var(--bg-surface); border: 1px solid var(--border);
-  border-radius: var(--radius); overflow: hidden;
-  margin-bottom: 1.5rem;
-}
-
-.results-table {
-  width: 100%; border-collapse: collapse; font-size: 0.8rem;
-}
-
-.results-table thead {
-  position: sticky; top: 0; z-index: 2;
-}
-
-.results-table th {
-  text-align: left; padding: 0.6rem 0.75rem;
-  font-size: 0.65rem; font-weight: 600; color: var(--text-muted);
-  text-transform: uppercase; letter-spacing: 0.06em;
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap; background: var(--bg-surface);
-}
-
-.results-table td {
-  padding: 0.55rem 0.75rem;
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap; font-variant-numeric: tabular-nums;
-}
-
-.results-table tr:last-child td { border-bottom: none; }
-.results-table tr:hover td { background: rgba(255,255,255,0.02); }
-
-/* Result row color coding */
-.results-table tr.result-win td:first-child {
-  border-left: 3px solid var(--green);
-}
-.results-table tr.result-loss td:first-child {
-  border-left: 3px solid var(--red);
-}
-
-.results-table .badge-result.win {
-  background: var(--green-dim); color: var(--green);
-  font-weight: 700;
-}
-.results-table .badge-result.loss {
-  background: var(--red-dim); color: var(--red);
-  font-weight: 700;
-}
 
 .badge-result {
   display: inline-block; padding: 0.1rem 0.45rem;
@@ -970,7 +937,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 }
 
 .reasoning-list li::before {
-  content: "▸";
+  content: "";
   position: absolute;
   left: 0;
   color: var(--text-dim);
@@ -1056,6 +1023,224 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .type-badge.spread { background: var(--purple-dim); color: var(--purple); }
 
 
+/* ─── Arbitrage Cards ─── */
+
+.arb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.arb-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  transition: all 0.2s;
+  animation: card-entrance 0.35s ease-out both;
+  position: relative;
+  overflow: hidden;
+}
+.arb-card:nth-child(1) { animation-delay: 0ms; }
+.arb-card:nth-child(2) { animation-delay: 50ms; }
+.arb-card:nth-child(3) { animation-delay: 100ms; }
+.arb-card:nth-child(4) { animation-delay: 150ms; }
+.arb-card:nth-child(n+5) { animation-delay: 200ms; }
+
+.arb-card:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-card);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Grade accent bar at top */
+.arb-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  transition: opacity 0.3s;
+}
+.arb-card.grade-A::before { background: linear-gradient(90deg, var(--green), #00ff88); opacity: 0.8; }
+.arb-card.grade-B::before { background: linear-gradient(90deg, var(--green-dim), var(--green-mid)); opacity: 0.6; }
+.arb-card.grade-C::before { background: linear-gradient(90deg, var(--yellow), #ffd740); opacity: 0.5; }
+.arb-card.grade-D::before { background: linear-gradient(90deg, var(--blue-dim), var(--blue)); opacity: 0.4; }
+.arb-card.grade-F::before { background: var(--border); opacity: 0.3; }
+
+.arb-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.arb-type-badge {
+  font-size: 0.55rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  background: var(--purple-dim);
+  color: var(--purple);
+}
+
+.arb-grade {
+  margin-left: auto;
+  font-size: 1.1rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  opacity: 0.6;
+}
+.arb-card.grade-A .arb-grade { color: var(--green); opacity: 1; }
+.arb-card.grade-B .arb-grade { color: var(--green); opacity: 0.9; }
+.arb-card.grade-C .arb-grade { color: var(--yellow); opacity: 0.8; }
+.arb-card.grade-D .arb-grade { color: var(--blue); opacity: 0.7; }
+.arb-card.grade-F .arb-grade { color: var(--text-dim); }
+
+.arb-matchup {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.arb-matchup-text {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.arb-books-n {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  background: var(--bg-elevated);
+}
+
+.arb-profit-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.arb-profit-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.arb-profit-value {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--green);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.arb-profit-perk {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.arb-bar-track {
+  width: 100%;
+  height: 4px;
+  background: var(--bg-elevated);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 0.75rem;
+}
+
+.arb-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--green-dim), var(--green));
+  transition: width 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.arb-legs {
+  border-top: 1px solid var(--border);
+  padding-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.arb-legs-title {
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  margin-bottom: 0.35rem;
+}
+
+.arb-leg {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  margin-bottom: 0.15rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  background: var(--bg-elevated);
+  transition: background 0.15s;
+}
+.arb-leg:hover { background: var(--bg-card-hover); }
+
+.arb-leg-book {
+  font-weight: 700;
+  color: var(--blue);
+  min-width: 4rem;
+}
+
+.arb-leg-team {
+  flex: 1;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arb-leg-odds {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--text-secondary);
+  min-width: 3.5rem;
+  text-align: right;
+}
+
+.arb-leg-stake {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--green);
+  min-width: 3rem;
+  text-align: right;
+}
+
+.arb-leg-pct {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  min-width: 2.5rem;
+  text-align: right;
+}
+
+.arb-implied-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--border);
+}
 
 /* ─── Skeleton Loading ─── */
 

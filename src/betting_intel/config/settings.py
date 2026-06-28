@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     # ── TheOddsAPI ──────────────────────────────────────────────────
     odds_api_key: str = "your-api-key-here"
 
+    # ── API Schedule (daily morning fetch to minimize usage) ──────────
+    # Controls when TheOddsAPI is automatically called.
+    # Default: once per day at 6:00 AM local time.
+    daily_fetch_enabled: bool = True          # Enable daily morning fetch
+    daily_fetch_hour: int = 6                  # Hour (0-23) for the daily fetch
+    daily_fetch_timezone: str = "local"       # "local" or "utc"
+
     # ── Kelly Staking ───────────────────────────────────────────────
     initial_bankroll: float = 10_000.0
     min_edge_threshold: float = 0.02

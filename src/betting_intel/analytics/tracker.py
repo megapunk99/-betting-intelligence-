@@ -489,7 +489,7 @@ class ResultsTracker:
 
         if alerts_triggered:
             logger.warning(
-                f"⚠  {len(alerts_triggered)} strategy(ies) below -5% ROI threshold: "
+                f"  {len(alerts_triggered)} strategy(ies) below -5% ROI threshold: "
                 + ", ".join(s.strategy_name for s in alerts_triggered)
             )
         else:
@@ -1111,7 +1111,7 @@ class ResultsTracker:
             logger.warning(f"Failed to log alert: {e}")
 
         logger.warning(
-            f"\n⚠  STRATEGY ALERT: {strategy.strategy_name}\n"
+            f"\n  STRATEGY ALERT: {strategy.strategy_name}\n"
             f"   ROI: {strategy.roi:.1%} (threshold: {ALERT_ROI_THRESHOLD:.0%})\n"
             f"   Bets: {strategy.n_bets} | Profit: ${strategy.total_profit:.0f}\n"
             f"   Trailing 30d Profit: ${sum(strategy.trailing_profits):.0f}\n"

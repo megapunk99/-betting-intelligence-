@@ -15,7 +15,7 @@
     })();
   </script>
   <link rel="stylesheet" href="/static/css/app.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='10' y='40' width='20' height='50' rx='4' fill='%234f8cff'/><rect x='40' y='20' width='20' height='70' rx='4' fill='%234f8cff'/><rect x='70' y='50' width='20' height='40' rx='4' fill='%234f8cff'/></svg>">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -52,10 +52,8 @@
 
       <div class="stat-card">
         <span class="stat-label">Avg Edge</span>
-        {% set avg_e = bets|map(attribute='edge_pct')|select('defined')|list %}
-        {% set avg_edge_val = (avg_e|sum / avg_e|length) if avg_e|length > 0 else 0 %}
-        <span class="stat-value {% if avg_edge_val > 0 %}green{% else %}dim{% endif %}">
-          {{ "{:+.1%}".format(avg_edge_val) }}
+        <span class="stat-value {% if avg_edge_pct > 0 %}green{% else %}dim{% endif %}">
+          {{ "{:+.1%}".format(avg_edge_pct) }}
         </span>
         <span class="stat-sub">per live bet</span>
       </div>
@@ -83,9 +81,29 @@
       </span>
     </div>
 
-
-
-
+    {#─ TheOddsAPI status banner with daily schedule display ─#}
+    {% set theo = theoddsapi_status|default({enabled: false, last_call: None, next_call: None, quota: None, schedule: {enabled: false, hour: 6}}) %}
+    {% if theo.enabled %}
+    <div class="api-banner" id="api-banner">
+      <span class="api-banner-icon">&#9889;</span>
+      <span class="api-banner-text">
+        <strong>TheOddsAPI</strong>
+        {% if theo.schedule and theo.schedule.enabled %}
+        <span class="api-schedule-badge" title="Daily morning fetch">&#128198; Daily {{ theo.schedule.hour }}:00</span>
+        {% endif %}
+        {% if theo.last_call %}
+        &mdash; last called <span id="api-last-call">{{ theo.last_call }}</span>
+        {% else %}
+        &mdash; <span id="api-last-call">not yet called</span>
+        {% endif %}
+        &middot; next auto-fetch <span id="api-next-call">{{ theo.next_call }}</span>
+        {% if theo.quota %}
+        &middot; <span class="api-quota" title="Requests remaining this month">{{ theo.quota }} remaining</span>
+        {% endif %}
+        <span class="api-manual-hint">(<a href="#" onclick="refreshLiveData();return false;" title="Click to force a manual refresh">manual refresh</a> bypasses schedule)</span>
+      </span>
+    </div>
+    {% endif %}
 
     {% if bets %}
     <div class="section-header">
@@ -96,7 +114,6 @@
     </div>
 
     <!-- Sport filter tabs -->
-    {% set sport_groups = bets|map(attribute='league')|unique|list|sort %}
     <div class="sport-filters" id="sport-filters">
       <button class="sport-filter-btn active" data-sport="all" onclick="filterBySport('all')" aria-label="Show all sports">
         All <span class="filter-count">({{ bets|length }})</span>

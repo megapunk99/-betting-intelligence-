@@ -590,6 +590,7 @@ class TestLivePredictionEngine:
         with patch.object(engine, "_fetch_realtime_odds", return_value=[]), \
              patch.object(engine, "_auto_resolve_completed_games", return_value=0):
             snap = engine._build_snapshot()
+        # When no real odds are available, show honest empty state
         assert snap.n_total == 0
         assert snap.fresh_odds is False
 

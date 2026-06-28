@@ -54,15 +54,20 @@ class SnapshotBuilder:
 
         # Step 1: Log to market odds store
         try:
-            self._market_odds_store.log_batch(all_games, source="engine_refresh")
+            if hasattr(self._market_odds_store, 'log_batch'):
+                self._market_odds_store.log_batch(all_games, source="engine_refresh")
         except Exception:
             logger.debug("Failed to log odds snapshots (non-critical)", exc_info=True)
 
         # Step 2: Classify games
-        now_utc = datetime.now(timezone.utc)
-        today_str = now_utc.strftime("%Y-%m-%d")
-        tomorrow_str = (now_utc + timedelta(days=1)).strftime("%Y-%m-%d")
-        day_after_str = (now_utc + timedelta(days=2)).strftime("%Y-%m-%d")
+        try:
+            now_utc = datetime.now(timezone.utc)
+            today_str = now_utc.strftime("%Y-%m-%d")
+            tomorrow_str = (now_utc + timedelta(days=1)).strftime("%Y-%m-%d")
+            day_after_str = (now_utc + timedelta(days=2)).strftime("%Y-%m-%d")
+        except Exception:
+            logger.error("Failed to compute date strings for classification")
+            return LivePredictionSnapshot(fresh_odds=fresh_odds)
 
         live_games: list[LiveGame] = []
         today_games: list[LiveGame] = []
@@ -70,20 +75,29 @@ class SnapshotBuilder:
         day_after_games: list[LiveGame] = []
 
         for game in all_games:
-            game.is_today = game.game_date == today_str
-            game.is_tomorrow = game.game_date == tomorrow_str
-            commence_dt = game.commence_datetime
-            if commence_dt and commence_dt < now_utc:
-                age_minutes = (now_utc - commence_dt).total_seconds() / 60
-                game.is_live = age_minutes < LIVE_GAME_LEEWAY_MINUTES
-            if game.is_live:
-                live_games.append(game)
-            if game.is_today:
-                today_games.append(game)
-            if game.is_tomorrow:
-                tomorrow_games.append(game)
-            if game.game_date == day_after_str:
-                day_after_games.append(game)
+            try:
+                if game is None:
+                    continue
+                game.is_today = bool(game.game_date == today_str)
+                game.is_tomorrow = bool(game.game_date == tomorrow_str)
+                try:
+                    commence_dt = game.commence_datetime
+                except Exception:
+                    commence_dt = None
+                if commence_dt and commence_dt < now_utc:
+                    age_minutes = (now_utc - commence_dt).total_seconds() / 60
+                    game.is_live = age_minutes < LIVE_GAME_LEEWAY_MINUTES
+                if game.is_live:
+                    live_games.append(game)
+                if game.is_today:
+                    today_games.append(game)
+                if game.is_tomorrow:
+                    tomorrow_games.append(game)
+                if game.game_date == day_after_str:
+                    day_after_games.append(game)
+            except Exception as e:
+                logger.debug(f"Skipping malformed game in snapshot: {e}")
+                continue
 
         # Step 3: Assemble next_two_days in deduped order
         seen_ids: set[str] = set()

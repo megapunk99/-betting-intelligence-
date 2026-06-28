@@ -20,3 +20,9 @@ python-dotenv>=1.0
 pydantic>=2.5
 pydantic-settings>=2.1
 httpx>=0.26
+playwright>=1.54
+playwright-stealth>=2.0
+
+# v6.5 - Enhanced models
+catboost>=1.2
+optuna>=3.6

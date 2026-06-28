@@ -2,32 +2,13 @@
    FUTURE PREDICTIONS — Clean glassmorphic design
    ═══════════════════════════════════════════════════════════════════════ */
 
-/* ── Background ──────────────────────────────────────────────────── */
-
-.bg-grid {
-  position: fixed; inset: 0; z-index: -2; pointer-events: none;
-  background-image:
-    linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
-  background-size: 50px 50px;
-  mask-image: radial-gradient(ellipse 70% 50% at 50% 0%, black 30%, transparent 70%);
-  -webkit-mask-image: radial-gradient(ellipse 70% 50% at 50% 0%, black 30%, transparent 70%);
-}
-
-.bg-orbital {
-  position: fixed; inset: 0; z-index: -1; pointer-events: none;
-  background:
-    radial-gradient(circle 600px at 20% 30%, rgba(0, 230, 118, 0.035) 0%, transparent 60%),
-    radial-gradient(circle 500px at 80% 20%, rgba(68, 138, 255, 0.025) 0%, transparent 50%);
-}
-
 /* ── Hero ────────────────────────────────────────────────────────── */
 
 .hero-section {
-  position: relative; padding: 3rem 2rem 2rem; margin-bottom: 2rem;
-  text-align: center; overflow: hidden;
+  padding: 2rem 2rem 1.5rem; margin-bottom: 2rem;
+  text-align: center;
   border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, rgba(0, 230, 118, 0.025), rgba(68, 138, 255, 0.025));
+  background: var(--bg-surface);
   border: 1px solid var(--border);
 }
 
@@ -96,40 +77,19 @@
 /* ── Prediction Card ────────────────────────────────────────────── */
 
 .pred-card {
-  position: relative;
-  background: rgba(16, 16, 30, 0.85);
-  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg); padding: 1.25rem;
-  transition: all 0.25s;
+  transition: all 0.2s;
 }
 
 .pred-card:hover {
   border-color: var(--border-hover);
-  transform: translateY(-3px);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.03);
+  box-shadow: var(--shadow-lg);
 }
 
 .pred-card.best-card {
-  border-color: rgba(0, 230, 118, 0.15);
-}
-
-.pred-card.best-card::before {
-  content: 'BEST BET'; position: absolute; top: 14px; right: -28px;
-  padding: 0.15rem 2.4rem;
-  background: linear-gradient(135deg, var(--green), #00b84a);
-  color: #000; font-size: 0.5rem; font-weight: 800;
-  letter-spacing: 0.1em; transform: rotate(45deg); z-index: 10;
-  box-shadow: 0 2px 8px rgba(0, 230, 118, 0.25);
-}
-
-@media (max-width: 480px) {
-  .pred-card.best-card { overflow: hidden; }
-  .pred-card.best-card::before {
-    top: 10px; right: -32px;
-    padding: 0.1rem 2.4rem;
-    font-size: 0.45rem;
-  }
+  border-left: 3px solid var(--green);
 }
 
 /* ── Card Header ────────────────────────────────────────────────── */
@@ -419,8 +379,7 @@
 }
 
 .skel-pred-card {
-  background: rgba(16, 16, 30, 0.85);
-  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg); padding: 1.25rem;
 }
@@ -615,13 +574,10 @@
 
 /* ── Footer ──────────────────────────────────────────────────────── */
 
-.footer-glass {
+footer {
   text-align: center; padding: 1.5rem;
   color: var(--text-dim); font-size: 0.65rem;
   border-top: 1px solid var(--border);
-  background: rgba(7, 7, 13, 0.5);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
 }
 
 /* ── League filter (reuses dashboard .sport-filters styles) ──── */

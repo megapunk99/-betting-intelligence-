@@ -308,6 +308,24 @@ _NBA_NA_FILL: list[tuple[str, float]] = [
     ("system_change_flag", 0),
     ("system_changes_10g", 0.0),
     ("system_changes_diff", 0.0),
+    # v6.5 features: interaction features
+    ("interact_", 0.0),
+    # v6.5 features: rolling volatility
+    ("volatility_pts_", 12.0),
+    ("volatility_pm_", 12.0),
+    ("volatility_allowed_", 12.0),
+    ("volatility_pace_", 10.0),
+    # v6.5 features: momentum/streak
+    ("win_streak", 0.0),
+    ("streak_margin", 0.0),
+    ("streak_quality", 0.0),
+    ("prev_loss", 0.0),
+    ("form_acceleration", 0.0),
+    # v6.5 features: pace-adjusted
+    ("pace_adj_off", 110.0),
+    ("pace_adj_def", 110.0),
+    ("pace_adj_net", 0.0),
+    ("pace_100", 100.0),
 ]
 
 
@@ -1124,6 +1142,22 @@ class FeatureEngineer:
 
         # ── D: Home/Away Performance Splits ─────────────────────────────
         df = self._add_home_away_splits(df)
+
+        # ══════════════════════════════════════════════════════════════════
+        #  v6.5 — NEXT-GEN FEATURES
+        # ══════════════════════════════════════════════════════════════════
+
+        # ── E: Interaction Features (v6.5) ──────────────────────────────
+        df = self._add_interaction_features(df)
+
+        # ── F: Rolling Volatility (v6.5) ────────────────────────────────
+        df = self._add_rolling_volatility_features(df)
+
+        # ── G: Momentum/Streak Features (v6.5) ──────────────────────────
+        df = self._add_momentum_features(df)
+
+        # ── H: Pace-Adjusted Features (v6.5) ────────────────────────────
+        df = self._add_pace_adjusted_features(df)
 
         # ── Clean Up ──────────────────────────────────────────────────
         df = df.drop(columns=["rest_home_key", "rest_away_key"], errors="ignore")
@@ -2092,6 +2126,305 @@ class FeatureEngineer:
 
         return df
 
+    # ── E: Interaction Features (v6.5) ──────────────────────────────────
+
+    def _add_interaction_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Create meaningful interaction features between key predictive signals.
+
+        Interactions capture non-linear relationships that individual features miss.
+        E.g., a team with high ELO rating AND high fatigue might perform worse
+        than either signal alone predicts (fatigued good teams underperform more
+        than fatigued bad teams).
+
+        Features:
+          - fatigue_x_home_adv: fatigue_index_diff × home_advantage_edge
+          - elo_x_rest: elo_home × rest_advantage (normalized)
+          - power_x_fatigue: composite_power × fatigue_index
+          - consistency_x_home: consistency × home_advantage
+          - momentum_x_opponent: form_score × opponent_quality
+          - travel_x_rest: travel_distance × rest_advantage
+          - perf_x_fatigue: perf_vs_expected × fatigue_index
+          - elo_x_pace: elo_diff × pace_diff
+          - three_pt_x_reb: 3pt_rate_diff × reb_rate_diff
+          - defense_x_foul: def_rating_diff × foul_rate_diff
+        """
+        df = df.copy()
+
+        # Fatigue × Home Advantage
+        if all(c in df.columns for c in ["fatigue_index_diff", "home_advantage_edge"]):
+            df["interact_fatigue_x_home"] = (
+                df["fatigue_index_diff"].fillna(0) * df["home_advantage_edge"].fillna(0)
+            )
+
+        # ELO × Rest Advantage (both normalized)
+        if all(c in df.columns for c in ["elo_diff", "rest_advantage"]):
+            elo_norm = df["elo_diff"].fillna(0) / 200.0  # Normalize ELO diff
+            rest_norm = df["rest_advantage"].fillna(0) / 7.0  # Normalize rest
+            df["interact_elo_x_rest"] = elo_norm * rest_norm
+
+        # Composite Power × Fatigue
+        if all(c in df.columns for c in ["power_diff", "fatigue_index_diff"]):
+            df["interact_power_x_fatigue"] = (
+                df["power_diff"].fillna(0) * df["fatigue_index_diff"].fillna(0)
+            )
+
+        # Consistency × Home Advantage
+        if all(c in df.columns for c in ["consistency_diff", "home_advantage_edge"]):
+            df["interact_consistency_x_home"] = (
+                df["consistency_diff"].fillna(0) * df["home_advantage_edge"].fillna(0)
+            )
+
+        # Travel × Rest (cumulative travel penalty × rest disadvantage)
+        if all(c in df.columns for c in ["cum_travel_diff", "rest_advantage"]):
+            travel_norm = df["cum_travel_diff"].fillna(0) / 3000.0
+            rest_norm = df["rest_advantage"].fillna(0) / 7.0
+            df["interact_travel_x_rest"] = travel_norm * rest_norm
+
+        # Performance vs Expectation × Fatigue
+        if all(c in df.columns for c in ["perf_vs_expected_diff", "fatigue_index_diff"]):
+            df["interact_perf_x_fatigue"] = (
+                df["perf_vs_expected_diff"].fillna(0) * df["fatigue_index_diff"].fillna(0)
+            )
+
+        # ELO × Pace Differential
+        if all(c in df.columns for c in ["elo_diff", "pace_diff_5g"]):
+            elo_norm = df["elo_diff"].fillna(0) / 200.0
+            pace_norm = df["pace_diff_5g"].fillna(0) / 20.0
+            df["interact_elo_x_pace"] = elo_norm * pace_norm
+
+        # 3PT Rate × Rebound Rate Differential
+        if all(c in df.columns for c in ["fg3a_diff_5g", "reb_diff_5g"]):
+            df["interact_3pt_x_reb"] = (
+                df["fg3a_diff_5g"].fillna(0) * df["reb_diff_5g"].fillna(0)
+            )
+
+        # Form × Opponent Quality
+        if all(c in df.columns for c in ["form_diff", "opp_avg_pm_home"]):
+            opp_quality = df["opp_avg_pm_home"].fillna(0) / 20.0
+            df["interact_form_x_opp"] = df["form_diff"].fillna(0) * opp_quality
+
+        # Margin Volatility × Rest (unstable teams on short rest = bad)
+        if all(c in df.columns for c in ["margin_volatility_home", "rest_home_days"]):
+            vol_norm = df["margin_volatility_home"].fillna(12) / 24.0
+            rest_penalty = 1.0 - np.clip(df["rest_home_days"].fillna(3) / 7.0, 0, 1)
+            df["interact_volatility_x_rest_home"] = vol_norm * rest_penalty
+
+        if all(c in df.columns for c in ["margin_volatility_away", "rest_away_days"]):
+            vol_norm = df["margin_volatility_away"].fillna(12) / 24.0
+            rest_penalty = 1.0 - np.clip(df["rest_away_days"].fillna(3) / 7.0, 0, 1)
+            df["interact_volatility_x_rest_away"] = vol_norm * rest_penalty
+
+        return df
+
+    # ── F: Rolling Volatility Features (v6.5) ─────────────────────────
+
+    def _add_rolling_volatility_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add rolling standard deviation (volatility) features.
+
+        Volatility captures consistency/stability which is highly predictive:
+        - Low volatility teams are more reliable (perform to expectation)
+        - High volatility teams are more likely to deviate from expectation
+        - Sudden changes in volatility often signal regime changes
+
+        Features:
+          - volatility_pts: std of points over 5/10 games
+          - volatility_pm: std of plus/minus over 5/10 games
+          - volatility_efg: std of eFG% over 5 games
+          - volatility_pace: std of pace over 5 games
+          - volatility_allowed: std of points allowed over 5/10 games
+        """
+        df = df.copy()
+
+        for suffix, team_prefix in [("home", "home"), ("away", "away")]:
+            team_id_col = f"TEAM_ID_{suffix}"
+            pts_col = f"team_pts_{team_prefix}"
+            pm_col = f"team_plus_minus_{team_prefix}"
+
+            if pts_col in df.columns:
+                for w in [5, 10]:
+                    df[f"volatility_pts_{w}g_{suffix}"] = (
+                        df.groupby(team_id_col)[pts_col]
+                        .transform(lambda x, win=w: x.rolling(win, min_periods=2).std().shift(1))
+                    )
+
+            if pm_col in df.columns:
+                for w in [5, 10]:
+                    df[f"volatility_pm_{w}g_{suffix}"] = (
+                        df.groupby(team_id_col)[pm_col]
+                        .transform(lambda x, win=w: x.rolling(win, min_periods=2).std().shift(1))
+                    )
+
+            # Volatility of opponent points allowed
+            opp_pts_col = f"team_pts_{'away' if team_prefix == 'home' else 'home'}"
+            if opp_pts_col in df.columns:
+                for w in [5, 10]:
+                    df[f"volatility_allowed_{w}g_{suffix}"] = (
+                        df.groupby(team_id_col)[opp_pts_col]
+                        .transform(lambda x, win=w: x.rolling(win, min_periods=2).std().shift(1))
+                    )
+
+            # Pace volatility
+            pace_col = f"pace_{suffix}"
+            if pace_col in df.columns:
+                df[f"volatility_pace_5g_{suffix}"] = (
+                    df.groupby(team_id_col)[pace_col]
+                    .transform(lambda x: x.rolling(5, min_periods=2).std().shift(1))
+                )
+
+        return df
+
+    # ── G: Momentum/Streak Features (v6.5) ────────────────────────────
+
+    def _add_momentum_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add enhanced momentum and streak-based features.
+
+        Streaks carry psychological momentum in sports:
+        - Winning streaks: teams play with more confidence
+        - Losing streaks: teams press and make more mistakes
+        - Cover streaks: beating the spread consistently
+        - Streak breaks: how a team performs after a streak ends
+
+        Features:
+          - streak_length: current win/loss streak length (signed)
+          - streak_strength: avg margin during streak (how dominant?)
+          - streak_quality: streak_length × avg_margin_in_streak
+          - recent_success: win% in last 3, 5, 10 games (weighted)
+          - bounce_back: how team performs after a loss (1 if prev was loss)
+          - consecutive_cover: consecutive games beating market expectation
+        """
+        df = df.copy()
+
+        for suffix, team_prefix in [("home", "home"), ("away", "away")]:
+            team_id_col = f"TEAM_ID_{suffix}"
+            wl_num_col = f"WL_num_{team_prefix}"
+            pm_col = f"team_plus_minus_{team_prefix}"
+
+            # Win streak (already exists, but add streak strength)
+            # Average margin during the current streak
+            if pm_col in df.columns:
+                df[f"streak_margin_{suffix}"] = (
+                    df.groupby(team_id_col)[pm_col]
+                    .transform(lambda x: self._compute_streak_margin(x))
+                )
+
+            # Streak quality = streak_length × avg_margin_in_streak
+            streak_col = f"win_streak_{suffix}"
+            streak_margin_col = f"streak_margin_{suffix}"
+            if streak_col in df.columns and streak_margin_col in df.columns:
+                df[f"streak_quality_{suffix}"] = (
+                    np.abs(df[streak_col].fillna(0)) * df[streak_margin_col].fillna(0)
+                )
+
+            # Bounce back: how team performs the game after a loss
+            # 1 if previous game was a loss, 0 if previous was a win
+            if wl_num_col in df.columns:
+                df[f"prev_loss_{suffix}"] = (
+                    df.groupby(team_id_col)[wl_num_col]
+                    .transform(lambda x: (1.0 - x).shift(1))
+                ).fillna(0)
+
+            # Recent form acceleration: is the team getting better or worse?
+            # Compares last 3 games' margin to the 10-game rolling average
+            if all(c in df.columns for c in [pm_col]):
+                rolling_10 = (
+                    df.groupby(team_id_col)[pm_col]
+                    .transform(lambda x: x.rolling(10, min_periods=3).mean().shift(1))
+                )
+                rolling_3 = (
+                    df.groupby(team_id_col)[pm_col]
+                    .transform(lambda x: x.rolling(3, min_periods=2).mean().shift(1))
+                )
+                df[f"form_acceleration_{suffix}"] = (
+                    rolling_3.fillna(0) - rolling_10.fillna(0)
+                )
+
+        return df
+
+    def _compute_streak_margin(self, pm_series: pd.Series) -> pd.Series:
+        """Compute average margin during current win/loss streak."""
+        n = len(pm_series)
+        result = np.zeros(n)
+        current_streak_type = 0  # 1 for positive streak, -1 for negative
+        streak_values = []
+
+        for i in range(n):
+            val = pm_series.iloc[i] if hasattr(pm_series, 'iloc') else pm_series[i]
+
+            # Determine streak direction from this game's margin
+            if val > 0:
+                if current_streak_type == 1:
+                    streak_values.append(val)
+                else:
+                    current_streak_type = 1
+                    streak_values = [val]
+            else:
+                if current_streak_type == -1:
+                    streak_values.append(val)
+                else:
+                    current_streak_type = -1
+                    streak_values = [val]
+
+            result[i] = np.mean(streak_values) if streak_values else 0.0
+
+        return pd.Series(result, index=pm_series.index).shift(1).fillna(0.0)
+
+    # ── H: Pace-Adjusted Features (v6.5) ──────────────────────────────
+
+    def _add_pace_adjusted_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add pace-adjusted statistics for more accurate comparison.
+
+        Teams that play at different paces can't be compared by raw stats alone.
+        A team scoring 120 ppg at 105 pace is less impressive than one scoring
+        115 ppg at 95 pace (pace-adjusted: 114.3 vs 121.1 per 100 possessions).
+
+        Features:
+          - pace_adj_off: points per 100 possessions
+          - pace_adj_def: opponent points per 100 possessions
+          - pace_adj_net: offensive - defensive rating
+          - pace_diff: home pace - away pace (how tempo mismatch)
+          - pace_adj_total: expected total points at neutral pace
+        """
+        df = df.copy()
+
+        for suffix, team_prefix in [("home", "home"), ("away", "away")]:
+            team_id_col = f"TEAM_ID_{suffix}"
+            pts_col = f"avg_pts_10g_{suffix}"
+            pace_col = f"avg_pace_10g_{suffix}"
+
+            if pts_col in df.columns and pace_col in df.columns:
+                # Offensive rating: points per 100 possessions
+                df[f"pace_adj_off_{suffix}"] = (
+                    df[pts_col].fillna(110) / df[pace_col].fillna(100).clip(lower=50) * 100.0
+                )
+
+            # Defensive rating
+            pts_allowed_col = f"avg_pts_allowed_{suffix}"
+            if pts_allowed_col in df.columns and pace_col in df.columns:
+                df[f"pace_adj_def_{suffix}"] = (
+                    df[pts_allowed_col].fillna(110) / df[pace_col].fillna(100).clip(lower=50) * 100.0
+                )
+
+            # Net rating
+            off_col = f"pace_adj_off_{suffix}"
+            def_col = f"pace_adj_def_{suffix}"
+            if off_col in df.columns and def_col in df.columns:
+                df[f"pace_adj_net_{suffix}"] = df[off_col] - df[def_col]
+
+            # Effective pace (possessions per game)
+            fga_col = f"avg_fga_10g_{suffix}"
+            tov_col = f"avg_tov_10g_{suffix}"
+            oreb_col = f"avg_oreb_10g_{suffix}"
+            if all(c in df.columns for c in [fga_col, tov_col, oreb_col]):
+                df[f"pace_100_{suffix}"] = (
+                    df[fga_col].fillna(85) - df[oreb_col].fillna(10) + df[tov_col].fillna(13)
+                )
+
+        return df
+
     def backfill_features(self, df: pd.DataFrame, league: str = "NBA") -> pd.DataFrame:
         """
         Backfill NaN feature values with league-average constants ONLY.
@@ -2211,6 +2544,14 @@ class FeatureEngineer:
             # v5.1: coach change intermediate columns
             "perf_shift_z_home", "perf_shift_z_away",
             "system_change_flag_home", "system_change_flag_away",
+            # v6.5: interaction intermediate columns
+            "three_pt_rate_home", "three_pt_rate_away",
+            "ft_rate_home", "ft_rate_away",
+            # v6.5: momentum intermediate columns
+            "streak_margin_home", "streak_margin_away",
+            "streak_quality_home", "streak_quality_away",
+            "prev_loss_home", "prev_loss_away",
+            "form_acceleration_home", "form_acceleration_away",
         }
-        return [c for c in df.columns if c not in exclude and np.issubdtype(df[c].dtype, np.number)]
+        return [c for c in df.columns if c not in exclude and pd.api.types.is_numeric_dtype(df[c].dtype)]
 

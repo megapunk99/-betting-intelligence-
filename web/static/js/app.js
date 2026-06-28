@@ -295,7 +295,7 @@
       '<span class="card-league-badge ' + (pred.league || 'NBA').toLowerCase() + '">' + (pred.league || 'NBA') + '</span>' +
       '<span class="card-date">' + (pred.game_date || '') + '</span>' +
       '<span class="card-edge-badge ' + direction + '">' +
-        '<span class="edge-arrow">' + (direction === 'over' ? '▲' : '▼') + '</span>' +
+        '<span class="edge-arrow">' + (direction === 'over' ? '' : '') + '</span>' +
         '<span class="edge-value">' + (edgePct >= 0 ? '+' : '') + (edgePct * 100).toFixed(1) + '%</span>' +
       '</span>';
     card.appendChild(cardHeader);

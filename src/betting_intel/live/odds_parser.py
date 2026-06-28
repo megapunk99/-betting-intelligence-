@@ -35,9 +35,12 @@ class OddsParser:
     @staticmethod
     def std_or_none(values: list) -> Optional[float]:
         """Std dev of values, or None if fewer than 2 values."""
-        if len(values) < 2:
+        if not values or len(values) < 2:
             return None
-        return statistics.stdev(values)
+        try:
+            return statistics.stdev(values)
+        except (statistics.StatisticsError, ValueError, TypeError):
+            return None
 
     @staticmethod
     def _resolve_short_name(full_name: str, sport_key: str) -> str:
@@ -76,6 +79,9 @@ class OddsParser:
 
     def parse_games(self, raw_odds: list[dict]) -> list[LiveGame]:
         """Parse raw TheOddsAPI events into LiveGame objects."""
+        if not raw_odds:
+            return []
+
         from betting_intel.live.sport_configs import (
             league_from_sport_key, sport_key_to_group,
         )
@@ -85,12 +91,17 @@ class OddsParser:
 
         for event in raw_odds:
             try:
-                home_full = event.get("home_team", "")
-                away_full = event.get("away_team", "")
+                # Guard: event must be a dict
+                if not isinstance(event, dict):
+                    logger.debug("Skipping non-dict event in raw_odds")
+                    continue
+
+                home_full = event.get("home_team", "") or ""
+                away_full = event.get("away_team", "") or ""
                 if not home_full or not away_full:
                     continue
 
-                sport_key = event.get("_sport_config_key", event.get("sport_key", "basketball_nba"))
+                sport_key = event.get("_sport_config_key", event.get("sport_key", "basketball_nba")) or "basketball_nba"
                 league_name = league_from_sport_key(sport_key)
                 sport_group = sport_key_to_group(sport_key)
 
@@ -98,7 +109,7 @@ class OddsParser:
                 home_short = self._resolve_short_name(home_full, sport_key)
                 away_short = self._resolve_short_name(away_full, sport_key)
 
-                commence_time = event.get("commence_time", "")
+                commence_time = event.get("commence_time", "") or ""
                 game_date = commence_time[:10] if commence_time else ""
 
                 # Filter out games that have already started.
@@ -107,61 +118,97 @@ class OddsParser:
                     commence_dt = datetime.fromisoformat(commence_time.replace("Z", "+00:00"))
                     if commence_dt < now_utc - timedelta(minutes=15):
                         continue
-                except Exception:
+                except (ValueError, TypeError):
                     pass
 
                 # Extract market lines from all sportsbooks
                 home_ml_values: list[float] = []
                 away_ml_values: list[float] = []
+                draw_ml_values: list[float] = []  # Soccer 3-way market
                 total_values: list[float] = []
                 over_odds_values: list[float] = []
                 under_odds_values: list[float] = []
                 spread_values: list[float] = []
 
                 bookmakers = event.get("bookmakers", [])
+                if not isinstance(bookmakers, list):
+                    bookmakers = []
+
                 for book in bookmakers:
+                    if not isinstance(book, dict):
+                        continue
                     markets = book.get("markets", [])
+                    if not isinstance(markets, list):
+                        continue
                     for market in markets:
+                        if not isinstance(market, dict):
+                            continue
                         key = market.get("key", "")
                         outcomes = market.get("outcomes", [])
+                        if not isinstance(outcomes, list):
+                            continue
                         if key == "h2h":
                             for o in outcomes:
+                                if not isinstance(o, dict):
+                                    continue
                                 name = o.get("name", "")
                                 price = o.get("price")
                                 if price is not None:
+                                    try:
+                                        price_f = float(price)
+                                    except (ValueError, TypeError):
+                                        continue
                                     if name == home_full:
-                                        home_ml_values.append(float(price))
+                                        home_ml_values.append(price_f)
                                     elif name == away_full:
-                                        away_ml_values.append(float(price))
+                                        away_ml_values.append(price_f)
+                                    elif name and name.lower() == "draw":
+                                        draw_ml_values.append(price_f)
                         elif key == "spreads":
                             for o in outcomes:
+                                if not isinstance(o, dict):
+                                    continue
                                 point = o.get("point")
                                 if point is not None and o.get("name", "") == home_full:
-                                    spread_values.append(float(point))
+                                    try:
+                                        spread_values.append(float(point))
+                                    except (ValueError, TypeError):
+                                        continue
                         elif key == "totals":
                             for o in outcomes:
+                                if not isinstance(o, dict):
+                                    continue
                                 point = o.get("point")
                                 price = o.get("price")
                                 if point is not None:
-                                    total_values.append(float(point))
+                                    try:
+                                        total_values.append(float(point))
+                                    except (ValueError, TypeError):
+                                        continue
                                     if price is not None:
-                                        if o.get("name", "") == "Over":
-                                            over_odds_values.append(float(price))
-                                        elif o.get("name", "") == "Under":
-                                            under_odds_values.append(float(price))
+                                        name = o.get("name", "")
+                                        try:
+                                            price_f = float(price)
+                                        except (ValueError, TypeError):
+                                            continue
+                                        if name == "Over":
+                                            over_odds_values.append(price_f)
+                                        elif name == "Under":
+                                            under_odds_values.append(price_f)
 
                 consensus_home_ml = self.median_or_none(home_ml_values)
                 consensus_away_ml = self.median_or_none(away_ml_values)
+                consensus_draw_ml = self.median_or_none(draw_ml_values)
                 consensus_total = self.median_or_none(total_values)
                 consensus_spread = self.median_or_none(spread_values)
                 consensus_over_odds = self.median_or_none(over_odds_values)
                 consensus_under_odds = self.median_or_none(under_odds_values)
 
                 game = LiveGame(
-                    game_id=event.get(
+                    game_id=str(event.get(
                         "id",
                         f"{sport_key}_{home_short}_{away_short}_{game_date}",
-                    ),
+                    )),
                     sport_key=sport_key,
                     league=league_name,
                     sport_group=sport_group,
@@ -173,6 +220,7 @@ class OddsParser:
                     game_date=game_date,
                     home_ml=consensus_home_ml,
                     away_ml=consensus_away_ml,
+                    draw_ml=consensus_draw_ml,
                     spread=consensus_spread,
                     market_total=consensus_total,
                     over_odds=consensus_over_odds,

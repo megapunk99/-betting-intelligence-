@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
+from datetime import datetime
 from threading import Lock
 from typing import Any, Optional
 
@@ -30,7 +32,12 @@ logger = logging.getLogger(__name__)
 _INVALID_KEYS = frozenset({"your-api-key-here", "", "REPLACE_ME_WITH_YOUR_ODDS_API_KEY"})
 
 
-# ── Fetcher ───────────────────────────────────────────────────────────────
+# ── Quota warning thresholds ────────────────────────────────────────────
+# TheOddsAPI free tier gives 500 credits/month. Each API call costs
+# markets × regions credits per sport. With regions=us and 3 markets,
+# each sport call costs 3 credits. Track remaining and warn at thresholds.
+_QUOTA_WARN_LEVELS = [100, 50, 25, 10, 5, 1]
+
 
 class OddsFetcher:
     """Fetches and merges real-time odds from TheOddsAPI and free scrapers."""
@@ -44,6 +51,11 @@ class OddsFetcher:
         self._odds_api_key = odds_api_key
         self._odds_api_key_fallback = odds_api_key_fallback
         self._scraper_timeout = scraper_timeout
+        self._last_theoddsapi_fetch: float = 0.0  # When TheOddsAPI was last called
+        self._last_quota_remaining: Optional[str] = None  # x-requests-remaining from last call
+        self._last_quota_used: Optional[str] = None       # x-requests-used from last call
+        self._last_quota_credits_cost: Optional[int] = None  # Estimated credits spent on last call
+        self._quota_has_warned: set[int] = set()  # Track which threshold levels we've warned at
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -58,17 +70,212 @@ class OddsFetcher:
         )
         return primary_valid or fallback_valid
 
+    def _check_quota_warnings(self, remaining: int):
+        """Log warnings when quota drops below thresholds."""
+        if not isinstance(remaining, (int, float)) or remaining < 0:
+            return
+        for level in _QUOTA_WARN_LEVELS:
+            if remaining <= level and level not in self._quota_has_warned:
+                self._quota_has_warned.add(level)
+                if level <= 10:
+                    logger.warning(
+                        f"TheOddsAPI quota critically low: {remaining} credits remaining! "
+                        f"Consider reducing refresh frequency or upgrading plan."
+                    )
+                elif level <= 50:
+                    logger.warning(
+                        f"TheOddsAPI quota running low: {remaining} credits remaining. "
+                        f"Check usage at https://the-odds-api.com/manage"
+                    )
+                else:
+                    logger.info(
+                        f"TheOddsAPI quota: {remaining} credits remaining "
+                        f"({(remaining / 500.0) * 100:.0f}% of monthly free tier)"
+                    )
+
+    @property
+    def quota_summary(self) -> dict:
+        """Return a summary of TheOddsAPI quota status for the dashboard."""
+        remaining = self._last_quota_remaining
+        remaining_int = None
+        try:
+            if remaining and remaining != "?":
+                remaining_int = int(remaining)
+        except (ValueError, TypeError):
+            remaining_int = None
+
+        used = self._last_quota_used
+        used_int = None
+        try:
+            if used and used != "?":
+                used_int = int(used)
+        except (ValueError, TypeError):
+            used_int = None
+
+        return {
+            "remaining": remaining_int,
+            "used": used_int,
+            "credits_cost": self._last_quota_credits_cost,
+            "has_valid_key": self.has_valid_api_key(),
+            "last_fetch": self._last_theoddsapi_fetch,
+        }
+
+    # ── Daily Schedule ────────────────────────────────────────────────
+
+    @staticmethod
+    def _get_daily_fetch_today() -> float:
+        """
+        Get the scheduled fetch time for today (in epoch seconds).
+
+        Uses DAILY_FETCH_HOUR from config. The daily fetch triggers at or
+        after this hour. For example, if hour=6, the scheduler considers
+        any time after 6:00 AM as "today's fetch window".
+        """
+        from betting_intel.config import DAILY_FETCH_HOUR
+        now = datetime.now()
+        # Scheduled time: today at DAILY_FETCH_HOUR:00
+        scheduled = now.replace(hour=DAILY_FETCH_HOUR, minute=0, second=0, microsecond=0)
+        return scheduled.timestamp()
+
+    @staticmethod
+    def _is_time_for_daily_fetch(last_fetch: float) -> bool:
+        """
+        Check if it's time for the daily morning fetch.
+
+        Rules:
+          1. Last fetch was before today's scheduled hour (e.g. 6:00 AM)
+             → yes, we need today's fetch.
+          2. Last fetch was AFTER today's scheduled hour
+             → already fetched today, skip.
+          3. No previous fetch (last_fetch == 0)
+             → yes, we need the first fetch.
+          4. Last fetch was yesterday or earlier AND it's past today's hour
+             → yes, time for today's fetch.
+        """
+        from betting_intel.config import DAILY_FETCH_ENABLED
+
+        if not DAILY_FETCH_ENABLED:
+            # Schedule disabled: only manual/force_refresh will trigger API calls
+            return False
+
+        now = time.time()
+        if last_fetch == 0.0:
+            # Never fetched before — first fetch is allowed anytime
+            return True
+
+        # Get today's scheduled morning time
+        scheduled_today = self._get_daily_fetch_today()
+
+        # If we last fetched before today's scheduled time, and it's now
+        # past that time, we should fetch.
+        return last_fetch < scheduled_today and now >= scheduled_today
+
+    @staticmethod
+    def _schedule_summary(last_fetch: float) -> dict:
+        """
+        Return a human-readable summary of the fetch schedule.
+
+        Returns dict with:
+          - next_fetch_at: epoch seconds when next daily fetch will trigger
+          - next_fetch_in_seconds: seconds until next fetch
+          - next_fetch_display: human-readable "today at 6:00 AM" etc.
+          - last_fetch_display: human-readable "today at 6:02 AM" etc.
+          - daily_fetch_hour: the configured hour
+          - daily_fetch_enabled: whether the schedule is active
+        """
+        from betting_intel.config import DAILY_FETCH_HOUR, DAILY_FETCH_ENABLED
+
+        today_scheduled = datetime.fromtimestamp(
+            OddsFetcher._get_daily_fetch_today()
+        )
+        now = datetime.now()
+
+        # If already past today's schedule, next is tomorrow
+        if now >= today_scheduled:
+            from datetime import timedelta
+            tomorrow = now + timedelta(days=1)
+            next_fetch = tomorrow.replace(hour=DAILY_FETCH_HOUR, minute=0, second=0, microsecond=0)
+        else:
+            next_fetch = today_scheduled
+
+        # Build last fetch display
+        if last_fetch == 0.0:
+            last_display = "never"
+        else:
+            last_dt = datetime.fromtimestamp(last_fetch)
+            hours_ago = (now - last_dt).total_seconds() / 3600
+            if hours_ago < 1:
+                mins = int((now - last_dt).total_seconds() / 60)
+                last_display = f"{mins}m ago" if mins > 0 else "just now"
+            elif hours_ago < 24:
+                last_display = f"{int(hours_ago)}h ago at {last_dt.strftime('%H:%M')}"
+            else:
+                days = int(hours_ago / 24)
+                last_display = f"{days}d ago on {last_dt.strftime('%m/%d')}"
+
+        next_display = next_fetch.strftime("today at %H:%M") if next_fetch.date() == now.date() else next_fetch.strftime("tomorrow at %H:%M")
+        seconds_until = (next_fetch - now).total_seconds()
+
+        return {
+            "daily_fetch_enabled": DAILY_FETCH_ENABLED,
+            "daily_fetch_hour": DAILY_FETCH_HOUR,
+            "last_fetch": last_fetch,
+            "last_fetch_display": last_display,
+            "next_fetch_at": next_fetch.timestamp(),
+            "next_fetch_in_seconds": max(0.0, seconds_until),
+            "next_fetch_display": next_display,
+        }
+
+    # ── Quota Warnings ─────────────────────────────────────────────────
+
+    @staticmethod
+    def _get_schedule_status_dict(last_fetch: float) -> dict:
+        """Get schedule status as a dict for the dashboard."""
+        s = OddsFetcher._schedule_summary(last_fetch)
+        now_time = datetime.now()
+
+        # Determine if we SHOULD fetch right now
+        should_fetch = s["daily_fetch_enabled"] and (
+            last_fetch == 0.0
+            or last_fetch < datetime.now().replace(
+                hour=s["daily_fetch_hour"], minute=0, second=0, microsecond=0
+            ).timestamp()
+        ) and now_time.hour >= s["daily_fetch_hour"]
+
+        return {
+            "enabled": s["daily_fetch_enabled"],
+            "hour": s["daily_fetch_hour"],
+            "last_fetch": s["last_fetch_display"],
+            "next_fetch": s["next_fetch_display"],
+            "next_fetch_in_seconds": s["next_fetch_in_seconds"],
+            "should_fetch_now": should_fetch,
+        }
+
     def fetch(
         self,
         cached_odds_raw: Optional[list[dict]],
         last_odds_fetch: float,
         cache_lock: Lock,
         now: float,
+        force_theoddsapi: bool = False,
     ) -> list[dict]:
         """
-        Fetch fresh odds, respecting the cache TTL.
+        Fetch fresh odds, respecting the cache TTL and daily API schedule.
 
         Thread-safe: reads/writes the cache under *cache_lock*.
+
+        API key usage is controlled by the daily morning schedule:
+          - By default, TheOddsAPI is called ONCE per day (at 6:00 AM)
+          - Use force_theoddsapi=True to bypass the schedule (manual refresh)
+          - The 5-minute odds cache prevents repeated calls on page loads
+          - Free scrapers (ESPN, DraftKings) ALWAYS run as fallback
+
+        Args:
+            cached_odds_raw: Previously cached odds (None if no cache)
+            last_odds_fetch: Timestamp of last odds fetch
+            cache_lock: Lock for thread-safe cache access
+            now: Current timestamp
+            force_theoddsapi: If True, bypass the daily schedule and call API
 
         Returns:
             List of raw odds dicts (may be empty).
@@ -78,12 +285,40 @@ class OddsFetcher:
             if cached_odds_raw is not None and (now - last_odds_fetch) < ODDS_CACHE_TTL_SECONDS:
                 return cached_odds_raw
 
-        if self.has_valid_api_key():
-            logger.info("Valid ODDS_API_KEY found — trying TheOddsAPI first")
+        # Call TheOddsAPI if:
+        #   a) force_theoddsapi is True (manual refresh / force_refresh), OR
+        #   b) it's time for the daily morning fetch
+        should_call_api = self.has_valid_api_key() and (
+            force_theoddsapi or self._is_time_for_daily_fetch(self._last_theoddsapi_fetch)
+        )
+
+        if should_call_api:
+            schedule_info = self._schedule_summary(self._last_theoddsapi_fetch)
+            since_last = schedule_info["last_fetch_display"]
+            logger.info(
+                f"Daily scheduled fetch: calling TheOddsAPI "
+                f"(last call: {since_last}, hour: {schedule_info['daily_fetch_hour']}:00)"
+            )
             theodds_data = self._fetch_via_theoddsapi()
+            # Always mark as called — even an empty 200 response consumed quota
+            self._last_theoddsapi_fetch = now
             if theodds_data:
                 return theodds_data
             logger.info("TheOddsAPI returned no data — trying free scrapers")
+        elif self.has_valid_api_key():
+            # Schedule says don't fetch yet — log the reason
+            schedule_info = self._schedule_summary(self._last_theoddsapi_fetch)
+            if schedule_info["daily_fetch_enabled"]:
+                logger.info(
+                    f"Skipping TheOddsAPI — next daily fetch at {schedule_info['next_fetch_display']} "
+                    f"(last: {schedule_info['last_fetch_display']}). "
+                    f"Use force_refresh or wait for the scheduled hour."
+                )
+            else:
+                logger.info(
+                    "Skipping TheOddsAPI — daily fetch is disabled. "
+                    "Use force_refresh to call manually."
+                )
         else:
             logger.info("No valid ODDS_API_KEY — using free scrapers")
 
@@ -100,14 +335,14 @@ class OddsFetcher:
         if not self.has_valid_api_key():
             return []
 
-        from betting_intel.live.sport_configs import get_active_sports, SPORT_KEY_TO_CONFIG, SportConfig
+        from betting_intel.live.sport_configs import get_active_sports, ALL_SPORTS, SportConfig
 
         active_sports: list[SportConfig] = get_active_sports()
+        # When no sports are in-season, try ALL supported sports anyway
+        # (TheOddsAPI may still return data for offseason leagues)
         if not active_sports:
-            nba_config = SPORT_KEY_TO_CONFIG.get("basketball_nba")
-            if nba_config is None:
-                return []
-            active_sports = [nba_config]
+            logger.info("No in-season sports — trying all supported sports on TheOddsAPI")
+            active_sports = list(ALL_SPORTS)
 
         # Primary key
         result = self._fetch_via_theoddsapi_with_key(self._odds_api_key, active_sports)
@@ -128,6 +363,7 @@ class OddsFetcher:
 
         all_games: list[dict] = []
         total_quota = "?"
+        total_used = "?"
         key_label = api_key[:8] + "..." if len(api_key) > 8 else api_key
 
         for sport in active_sports:
@@ -136,7 +372,7 @@ class OddsFetcher:
                 url = (
                     f"https://api.the-odds-api.com/v4/sports/{sport.sport_key}/odds"
                     f"?apiKey={api_key}"
-                    f"&regions=us,us2,eu,uk,au"
+                    f"&regions=us"
                     f"&markets={markets_str}"
                     f"&oddsFormat=american"
                     f"&dateFormat=iso"
@@ -146,16 +382,29 @@ class OddsFetcher:
                     raw = resp.read().decode("utf-8")
                     data = json.loads(raw)
 
+                remaining = resp.headers.get("x-requests-remaining", "?")
+                used = resp.headers.get("x-requests-used", "?")
+
                 if isinstance(data, list) and len(data) > 0:
                     for game in data:
                         game["_sport_config_key"] = sport.sport_key
                     all_games.extend(data)
-                    remaining = resp.headers.get("x-requests-remaining", "?")
                     if remaining != "?":
                         total_quota = remaining
                     logger.info(f"{sport.display_name}: {len(data)} games (quota: {remaining}, key: {key_label})")
                 else:
                     logger.info(f"{sport.display_name}: no games available")
+
+                # Track quota after each sport call
+                if used is not None and used != "?":
+                    total_used = used
+                self._last_quota_remaining = total_quota if total_quota and total_quota != "?" else self._last_quota_remaining
+                if remaining is not None and remaining != "?":
+                    try:
+                        remaining_int = int(remaining)
+                        self._check_quota_warnings(remaining_int)
+                    except (ValueError, TypeError):
+                        pass
 
             except urllib.error.HTTPError as e:
                 if e.code == 401:
@@ -173,7 +422,20 @@ class OddsFetcher:
                 logger.debug(f"{sport.display_name}: error ({e})")
                 continue
 
-        logger.info(f"TheOddsAPI ({key_label}) total: {len(all_games)} games across {len(active_sports)} sports")
+        # Store quota info for dashboard display
+        self._last_quota_remaining = total_quota if total_quota != "?" else None
+        self._last_quota_used = total_used if total_used != "?" else None
+
+        # Estimate credits consumed: regions × markets per sport
+        # regions=1 (us), markets=3 (h2h,spreads,totals) = 3 credits/sport
+        n_sports_called = len(active_sports)
+        # Get markets_str from last sport or default to 3
+        first_sport_markets = ",".join(active_sports[0].markets_to_fetch) if active_sports else "h2h,spreads,totals"
+        credits_per_sport = 1 * len(first_sport_markets.split(",")) if first_sport_markets else 3
+        self._last_quota_credits_cost = n_sports_called * credits_per_sport
+
+        logger.info(f"TheOddsAPI ({key_label}) total: {len(all_games)} games across {len(active_sports)} sports "
+                    f"(~{self._last_quota_credits_cost} credits consumed, ~{total_quota} remaining)")
         return all_games
 
     # ── Free Scrapers ─────────────────────────────────────────────────────
@@ -326,3 +588,21 @@ class OddsFetcher:
             f"({len(espn_data)} from ESPN, {len(dk_data)} from DraftKings)"
         )
         return merged
+
+
+# ── Pre-import scrapers on the main thread to avoid import deadlocks ──
+# The scrapers are imported lazily inside thread worker functions. If a
+# worker thread imports a module that itself imports from odds_fetcher
+# (creating a circular import), Python's module lock can deadlock.
+#
+# Pre-importing here (at module load time, after all symbols are defined)
+# ensures the modules are cached in sys.modules before any thread runs.
+# The lazy imports in the methods above then just hit the cache.
+try:
+    from betting_intel.data.stealth_scraper import StealthBrowser  # noqa: F401
+except ImportError:
+    pass
+try:
+    from betting_intel.data.draftkings_scraper import DraftKingsScraper  # noqa: F401
+except ImportError:
+    pass

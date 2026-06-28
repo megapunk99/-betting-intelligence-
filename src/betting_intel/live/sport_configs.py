@@ -32,7 +32,6 @@ class SportConfig:
     # Display names
     display_name: str          # e.g. "NBA" (short badge text)
     full_name: str             # e.g. "National Basketball Association"
-    emoji: str = ""            # e.g. "🏀"
 
     # Market types this sport supports
     has_h2h: bool = True       # Moneyline (head-to-head)
@@ -88,7 +87,6 @@ NBA = SportConfig(
     sport_key="basketball_nba",
     display_name="NBA",
     full_name="National Basketball Association",
-    emoji="🏀",
     has_h2h=True,
     has_spreads=True,
     has_totals=True,
@@ -125,7 +123,6 @@ NCAAB = SportConfig(
     sport_key="basketball_ncaab",
     display_name="NCAAB",
     full_name="NCAA Men's Division I Basketball",
-    emoji="🏀",
     has_h2h=True,
     has_spreads=True,
     has_totals=True,
@@ -299,7 +296,6 @@ EUROLEAGUE = SportConfig(
     sport_key="basketball_euroleague",
     display_name="Euroleague",
     full_name="EuroLeague Basketball",
-    emoji="🏀",
     has_h2h=True,
     has_spreads=True,
     has_totals=True,
@@ -334,6 +330,63 @@ EUROLEAGUE = SportConfig(
 )
 
 
+# ── EPL Definition ──────────────────────────────────────────────────────────
+
+# EPL — English Premier League.
+# 20 teams, Aug-May (380 games/season).
+# Low scoring (~2.5 total goals). Home field advantage is ~0.38 expected goals.
+# Prediction model: ELO-based with Poisson goals distribution.
+# Market structure: 3-way h2h (home/draw/away) + over/under goals.
+EPL = SportConfig(
+    sport_key="soccer_epl",
+    display_name="EPL",
+    full_name="English Premier League",
+    has_h2h=True,
+    has_spreads=False,      # Asian handicaps exist but are separate
+    has_totals=True,         # Over/under goals
+    team_name_map={
+        "Arsenal": "Arsenal",
+        "Aston Villa": "Aston Villa",
+        "Bournemouth": "Bournemouth",
+        "Brentford": "Brentford",
+        "Brighton & Hove Albion": "Brighton",
+        "Chelsea": "Chelsea",
+        "Crystal Palace": "Crystal Palace",
+        "Everton": "Everton",
+        "Fulham": "Fulham",
+        "Ipswich Town": "Ipswich",
+        "Leicester City": "Leicester",
+        "Liverpool": "Liverpool",
+        "Manchester City": "Man City",
+        "Manchester United": "Man United",
+        "Newcastle United": "Newcastle",
+        "Nottingham Forest": "Nott'm Forest",
+        "Southampton": "Southampton",
+        "Tottenham Hotspur": "Tottenham",
+        "West Ham United": "West Ham",
+        "Wolverhampton Wanderers": "Wolves",
+        # Alternate name formats TheOddsAPI might use
+        "Manchester City FC": "Man City",
+        "Manchester United FC": "Man United",
+        "Liverpool FC": "Liverpool",
+        "Chelsea FC": "Chelsea",
+        "Arsenal FC": "Arsenal",
+        "Tottenham Hotspur FC": "Tottenham",
+        "Newcastle United FC": "Newcastle",
+        "West Ham United FC": "West Ham",
+        "Aston Villa FC": "Aston Villa",
+        "Everton FC": "Everton",
+        "Wolverhampton Wanderers FC": "Wolves",
+    },
+    prediction_strategy="moneyline",  # Soccer: predict win/draw/loss
+    total_min=0.5,
+    total_max=5.5,
+    season_start_month=8,
+    season_end_month=5,
+    markets_to_fetch=["h2h", "totals"],  # No spreads for EPL
+)
+
+
 # ── NFL Definition ─────────────────────────────────────────────────────────
 
 # NFL — National Football League.
@@ -344,7 +397,6 @@ NFL = SportConfig(
     sport_key="americanfootball_nfl",
     display_name="NFL",
     full_name="National Football League",
-    emoji="🏈",
     has_h2h=True,
     has_spreads=True,
     has_totals=True,
@@ -385,8 +437,8 @@ NFL = SportConfig(
 
 # ── Master Lists ──────────────────────────────────────────────────────────
 
-# All supported sports — NBA + NCAAB + Euroleague + NFL
-ALL_SPORTS: list[SportConfig] = [NBA, NCAAB, EUROLEAGUE, NFL]
+# All supported sports — NBA + NCAAB + Euroleague + EPL + NFL
+ALL_SPORTS: list[SportConfig] = [NBA, NCAAB, EUROLEAGUE, EPL, NFL]
 
 # Sports that are currently in season
 def get_active_sports() -> list[SportConfig]:

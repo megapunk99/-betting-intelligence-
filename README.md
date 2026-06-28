@@ -14,7 +14,7 @@
 
 ---
 
-## ✨ Features
+##  Features
 
 - **Live Prediction Engine** — 60-second refresh cycle with 3-tier odds fallback (TheOddsAPI → ESPN → DraftKings)
 - **Market Inefficiency Detection** — ML models trained to predict *how much the market is wrong*, not just who wins
@@ -26,7 +26,7 @@
 - **Strategy Alerts** — automatic detection of underperforming strategies within 30-day trailing window
 - **342+ Automated Tests** — full test coverage with in-memory databases, no external dependencies required
 
-## 🚀 Quick Start
+##  Quick Start
 
 ### Prerequisites
 
@@ -68,7 +68,7 @@ curl http://localhost:8000/api/health
 pytest tests/ -v
 ```
 
-## 📊 Web Dashboard
+##  Web Dashboard
 
 The dashboard auto-loads when you start the server. No configuration needed.
 
@@ -107,24 +107,24 @@ The dashboard auto-loads when you start the server. No configuration needed.
 | `/api/future-predictions` | GET | AI-projected future games |
 | `/api/health/ready` | GET | Readiness check (lightweight) |
 
-## 🧠 Architecture
+##  Architecture
 
 ```
 ┌──────────────┐     ┌──────────────────┐     ┌──────────────────┐
-│  TheOddsAPI  │────▶│ LivePrediction   │────▶│  FastAPI Web     │
+│  TheOddsAPI  │────│ LivePrediction   │────│  FastAPI Web     │
 │  (live odds) │     │ Engine           │     │  Dashboard       │
 └──────────────┘     │ (60s refresh)    │     │  (Jinja2 + JS)   │
                      │                  │     └──────────────────┘
 ┌──────────────┐     │  ┌────────────┐  │
-│  ESPN/DK     │────▶│  │ Market     │  │     ┌──────────────────┐
-│  Scrapers    │     │  │ Inefficiency│  │────▶│  Analytics       │
+│  ESPN/DK     │────│  │ Market     │  │     ┌──────────────────┐
+│  Scrapers    │     │  │ Inefficiency│  │────│  Analytics       │
 └──────────────┘     │  │ System     │  │     │  Tracker         │
                      │  └────────────┘  │     │  (CLV, ROI, P&L) │
 ┌──────────────┐     │  ┌────────────┐  │     └──────────────────┘
-│  Historical   │────▶│  │ Totals    │  │
+│  Historical   │────│  │ Totals    │  │
 │  NBA Data    │     │  │ Regressor │  │     ┌──────────────────┐
 └──────────────┘     │  └────────────┘  │     │  MarketOddsStore │
-                     │                  │────▶│  (SQLite history)│
+                     │                  │────│  (SQLite history)│
                      │  ┌────────────┐  │     └──────────────────┘
                      │  │ Kelly     │  │
                      │  │ Staker    │  │
@@ -144,7 +144,7 @@ The dashboard auto-loads when you start the server. No configuration needed.
 | **Kelly Staker** | `src/betting_intel/recommendations/staking.py` | Optimal bet sizing based on bankroll management |
 | **Web Dashboard** | `web/app.py` | FastAPI + Jinja2 templates + Chart.js |
 
-## 📈 CLV: Closing Line Value
+##  CLV: Closing Line Value
 
 CLV is the single most important metric in sports betting. It measures whether your predicted line was better than the closing market line.
 
@@ -161,7 +161,7 @@ The system computes CLV automatically for every resolved bet using:
 2. **Your prediction** → `opening_prob + edge_pct`
 3. **Closing line** → last odds snapshot before game start
 
-## 🧪 Running Tests
+##  Running Tests
 
 ```bash
 # Full test suite (365+ tests)
@@ -180,7 +180,7 @@ All tests use:
 - Mocked external APIs (no network required)
 - Fast execution (full suite in ~2 minutes)
 
-## 🐳 Docker Deployment
+##  Docker Deployment
 
 ```bash
 # Build and run
@@ -200,7 +200,7 @@ cd /app
 docker compose up -d --build
 ```
 
-## 🛠️ CLI Tools
+##  CLI Tools
 
 ```bash
 # View available commands
@@ -213,7 +213,7 @@ python -m betting_intel.cli.main live refresh
 python -m betting_intel.cli.main backtest run
 ```
 
-## 📁 Project Layout
+##  Project Layout
 
 ```
 betting-intelligence/
@@ -242,11 +242,11 @@ betting-intelligence/
 └── docker-compose.yml          # Container orchestration
 ```
 
-## 📝 License
+##  License
 
 MIT — see [LICENSE](LICENSE).
 
-## 🙋 FAQ
+##  FAQ
 
 **Q: Do I need an API key?**  
 A: No. The dashboard works with cached data. For live odds, get a free key from [TheOddsAPI](https://the-odds-api.com/).

@@ -15,12 +15,8 @@
   </script>
   <link rel="stylesheet" href="/static/css/app.css">
   <link rel="stylesheet" href="/static/css/future-predictions.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔮</text></svg>">
-</head>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><polygon points='50,15 85,50 50,85 15,50' fill='%234f8cff'/></svg>"></head>
 <body>
-
-  <div class="bg-grid"></div>
-  <div class="bg-orbital"></div>
 
   <nav>
     <div class="nav-inner">
@@ -71,6 +67,30 @@
         </div>
       </div>
     </section>
+
+    {#─ TheOddsAPI status banner (same as dashboard) ─#}
+    {% set theo = theoddsapi_status|default({enabled: false, last_call: None, next_call: None, quota: None}) %}
+    {% if theo.enabled %}
+    <div class="api-banner" id="api-banner">
+      <span class="api-banner-icon">&#9889;</span>
+      <span class="api-banner-text">
+        <strong>TheOddsAPI</strong>
+        {% if theo.last_call %}
+        &mdash; last called <span id="api-last-call">{{ theo.last_call }}</span>
+        {% else %}
+        &mdash; <span id="api-last-call">not yet called</span>
+        {% endif %}
+        {% if theo.next_call == "now" %}
+        &middot; <span class="api-ready">ready for refresh</span>
+        {% else %}
+        &middot; next refresh <span id="api-next-call">{{ theo.next_call }}</span>
+        {% endif %}
+        {% if theo.quota %}
+        &middot; <span class="api-quota" title="Requests remaining this month">{{ theo.quota }} remaining</span>
+        {% endif %}
+      </span>
+    </div>
+    {% endif %}
 
     <!-- League Filter Tabs -->
     <div class="sport-filters" id="future-sport-filters" style="display:none">
@@ -232,40 +252,16 @@
       <h2 class="section-title">How Predictions Are Generated</h2>
       <div class="method-grid">
         <div class="method-card">
-          <div class="method-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 4-6"/>
-            </svg>
-          </div>
-          <h4>Statistical Baseline</h4>
-          <p>Each prediction starts with team scoring averages anchored in real historical performance.</p>
+          <h4>Team Scoring Averages</h4>
+          <p>Projections start with real team scoring averages and home/away adjustments from historical NBA data.</p>
         </div>
         <div class="method-card">
-          <div class="method-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4"/>
-            </svg>
-          </div>
-          <h4>Team Strength</h4>
-          <p>Home court advantage and strength differentials produce realistic edges against the market.</p>
+          <h4>Market-Odds Baseline</h4>
+          <p>Live market totals from sportsbooks provide the baseline; our model predicts deviations from market efficiency.</p>
         </div>
         <div class="method-card">
-          <div class="method-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/>
-            </svg>
-          </div>
-          <h4>Quarter Splitting</h4>
-          <p>Totals are distributed using league-specific scoring patterns.</p>
-        </div>
-        <div class="method-card">
-          <div class="method-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
-            </svg>
-          </div>
-          <h4>Best Bet</h4>
-          <p>Every quarter and half is analyzed for edge — the period with the strongest signal is highlighted.</p>
+          <h4>Quarter-by-Quarter Distribution</h4>
+          <p>Game totals are distributed across quarters using league-specific scoring patterns derived from historical data.</p>
         </div>
       </div>
     </section>
@@ -275,7 +271,7 @@
   <!-- Toast container — lives outside <main> so it survives any future DOM swaps -->
   <div id="toast-root" aria-live="polite"></div>
 
-  <footer class="footer-glass">
+  <footer>
     <p>Betting Intelligence — Predictions for informational purposes only.</p>
   </footer>
 

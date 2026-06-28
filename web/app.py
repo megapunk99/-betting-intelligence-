@@ -27,6 +27,7 @@ import csv
 import io
 import json
 import re
+import time
 
 from betting_intel.live.sport_configs import sport_key_to_group
 
@@ -317,6 +318,80 @@ def get_live_engine() -> "LivePredictionEngine":
     return _live_engine
 
 
+def _theoddsapi_status() -> dict:
+    """Return TheOddsAPI status + daily schedule for the dashboard banner."""
+    try:
+        engine = get_live_engine()
+        has_key = engine.has_valid_api_key
+        last_fetch = engine.last_theoddsapi_fetch
+        now = time.time()
+        quota_summary = engine.theoddsapi_quota_summary
+        schedule = engine.theoddsapi_schedule  # Daily scheduler info
+
+        if not has_key:
+            return {
+                "enabled": False, "last_call": None, "next_call": None,
+                "quota": None, "quota_remaining": None, "quota_used": None,
+                "credits_cost": None, "quota_pct": None,
+                "schedule": {"enabled": False, "hour": 6, "last_fetch": "never",
+                             "next_fetch": "disabled", "next_fetch_in_seconds": 0},
+            }
+
+        if last_fetch == 0.0:
+            next_str = schedule.get("next_fetch_display", "today")
+            return {
+                "enabled": True, "last_call": None, "next_call": next_str,
+                "quota": None, "quota_remaining": None, "quota_used": None,
+                "credits_cost": None, "quota_pct": None,
+                "schedule": {
+                    "enabled": schedule.get("daily_fetch_enabled", True),
+                    "hour": schedule.get("daily_fetch_hour", 6),
+                    "last_fetch": "never",
+                    "next_fetch": schedule.get("next_fetch_display", "today"),
+                    "next_fetch_in_seconds": schedule.get("next_fetch_in_seconds", 0),
+                },
+            }
+
+        # Use schedule info instead of old TTL-based next-call calculation
+        schedule_enabled = schedule.get("daily_fetch_enabled", True)
+        schedule_hour = schedule.get("daily_fetch_hour", 6)
+        next_fetch_display = schedule.get("next_fetch_display", "today")
+        last_fetch_display = schedule.get("last_fetch_display", "just now")
+
+        # Quota info from response headers
+        quota = quota_summary.get("remaining")
+        used = quota_summary.get("used")
+        credits_cost = quota_summary.get("credits_cost")
+        quota_pct = round((quota / 500.0) * 100, 1) if quota is not None else None
+
+        return {
+            "enabled": True,
+            "last_call": last_fetch_display,
+            "next_call": next_fetch_display,
+            "quota": str(quota) if quota is not None else None,
+            "quota_remaining": quota,
+            "quota_used": used,
+            "credits_cost": credits_cost,
+            "quota_pct": quota_pct,
+            "schedule": {
+                "enabled": schedule_enabled,
+                "hour": schedule_hour,
+                "last_fetch": last_fetch_display,
+                "next_fetch": next_fetch_display,
+                "next_fetch_in_seconds": schedule.get("next_fetch_in_seconds", 0),
+            },
+        }
+    except Exception as e:
+        logger.debug(f"_theoddsapi_status error: {e}")
+        return {
+            "enabled": False, "last_call": None, "next_call": None,
+            "quota": None, "quota_remaining": None, "quota_used": None,
+            "credits_cost": None, "quota_pct": None,
+            "schedule": {"enabled": False, "hour": 6, "last_fetch": "never",
+                         "next_fetch": "error", "next_fetch_in_seconds": 0},
+        }
+
+
 # ── Helper: LiveGame → bet dict ─────────────────────────────────────────
 
 def _livegame_to_bet(game: Any) -> dict:
@@ -334,6 +409,7 @@ def _livegame_to_bet(game: Any) -> dict:
         is_clear_pick_val = abs(edge_pct) > 0.03
         home_ml = getattr(game, 'home_ml', g.get('home_ml'))
         away_ml = getattr(game, 'away_ml', g.get('away_ml'))
+        draw_ml = getattr(game, 'draw_ml', g.get('draw_ml'))
         predicted_at = getattr(game, 'predicted_at', g.get('predicted_at', ''))
         # Totals fields
         total_prediction = getattr(game, 'total_prediction', g.get('total_prediction'))
@@ -352,6 +428,7 @@ def _livegame_to_bet(game: Any) -> dict:
         is_clear_pick_val = abs(edge_pct) > 0.03
         home_ml = g.get('home_ml')
         away_ml = g.get('away_ml')
+        draw_ml = g.get('draw_ml')
         predicted_at = g.get('predicted_at', '')
         # Totals fields
         total_prediction = g.get('total_prediction')
@@ -386,10 +463,11 @@ def _livegame_to_bet(game: Any) -> dict:
 
     # Line 2: Market context
     if home_ml and away_ml:
-        reasoning_lines.append(
-            f"Market odds: {home_short} {'+' if home_ml > 0 else ''}{home_ml}, "
-            f"{away_short} {'+' if away_ml > 0 else ''}{away_ml}"
-        )
+        ml_str = f"{home_short} {'+' if home_ml > 0 else ''}{home_ml}, "
+        ml_str += f"{away_short} {'+' if away_ml > 0 else ''}{away_ml}"
+        if sport_group == "Soccer" and draw_ml:
+            ml_str += f", Draw {'+' if draw_ml > 0 else ''}{draw_ml}"
+        reasoning_lines.append(f"Market odds: {ml_str}")
 
     # Line 3: Totals prediction from the totals regression model
     # This is SEPARATE from the moneyline edge — it predicts total points
@@ -511,6 +589,7 @@ def _livegame_to_bet(game: Any) -> dict:
         "away_team_short": away_short,
         "home_ml": home_ml,
         "away_ml": away_ml,
+        "draw_ml": draw_ml,
         "market_total": market_total,
         "predicted_total": predicted_total,
         "total_prediction": total_prediction,
@@ -598,6 +677,7 @@ async def live_refresh():
             "fresh_odds": snapshot.fresh_odds,
             "refreshed": True,
             "generated_at": snapshot.generated_at,
+            "theoddsapi_status": _theoddsapi_status(),
         })
     except asyncio.TimeoutError:
         logger.warning("Live refresh timed out after 45s — odds sources unreachable")
@@ -716,13 +796,15 @@ def _games_context(force_refresh: bool = False) -> dict:
             "generated_at": now_str,
             "n_bets": 0, "n_games": 0, "n_clear": 0,
             "today": today,
+
         }
 
     try:
         engine = get_live_engine()
         # NEVER auto-refresh on page load — only user-initiated refresh.
         # This prevents the dashboard from hanging when odds sources timeout.
-        games = engine.get_next_two_days(force_refresh=force_refresh) or []
+        snap = engine.get_snapshot(force_refresh=force_refresh)
+        games = snap.next_two_days or []
         n_before = len(games)
         logger.debug(f"_games_context: {n_before} games from engine (force_refresh={force_refresh})")
 
@@ -744,6 +826,15 @@ def _games_context(force_refresh: bool = False) -> dict:
 
         last_auto_resolve = getattr(engine, 'last_auto_resolve', None)
 
+        theoddsapi_status = _theoddsapi_status()
+
+        # Compute avg edge in Python (not Jinja2)
+        valid_edges = [b.get('edge_pct', 0) or 0 for b in bets]
+        avg_edge_pct = sum(valid_edges) / len(valid_edges) if valid_edges else 0.0
+
+        # Unique sport groups for filter tabs (computed in Python, not Jinja2)
+        sport_groups = sorted(set(b.get('league', 'NBA') for b in bets))
+
         # LIVE predictions only — no finished games mixed in.
         return {
             "bets": bets,
@@ -764,7 +855,10 @@ def _games_context(force_refresh: bool = False) -> dict:
             "n_bets": len(bets),
             "n_games": len(games),
             "n_clear": len(clear),
+            "avg_edge_pct": avg_edge_pct,
+            "sport_groups": sport_groups,
             "today": today,
+            "theoddsapi_status": theoddsapi_status,
         }
     except Exception as e:
         logger.warning(f"_games_context failed: {e}")
@@ -855,6 +949,8 @@ async def future_predictions_page(request: Request):
         "n_predictions": 0,
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "today": date.today().isoformat(),
+        "theoddsapi_status": _theoddsapi_status(),
+
     })
 
 
@@ -1067,6 +1163,36 @@ async def ws_live(websocket: WebSocket):
 # ═══════════════════════════════════════════════════════════════════════════
 #  HEALTH ROUTES
 # ═══════════════════════════════════════════════════════════════════════════
+
+
+@app.get("/api/arbitrage")
+async def api_arbitrage():
+    """JSON API — returns current arbitrage opportunities."""
+    try:
+        engine = get_live_engine()
+        snap = engine.get_snapshot(force_refresh=False)
+        return JSONResponse(content={
+            "opportunities": snap.arbitrage_opportunities or [],
+            "n_opportunities": snap.n_arbitrage or 0,
+            "generated_at": snap.generated_at or datetime.now().isoformat(),
+            "fresh_odds": snap.fresh_odds,
+        })
+    except Exception as e:
+        logger.debug(f"Arbitrage API failed: {e}")
+        return JSONResponse(content={
+            "opportunities": [],
+            "n_opportunities": 0,
+            "generated_at": datetime.now().isoformat(),
+        })
+
+
+@app.get("/arbitrage", response_class=HTMLResponse)
+async def arbitrage_page(request: Request):
+    """Arbitrage opportunities page — loads data client-side."""
+    return templates.TemplateResponse(request, "arbitrage.html", {
+        "today": date.today().isoformat(),
+        "theoddsapi_status": _theoddsapi_status(),
+    })
 
 
 @app.get("/api/health")

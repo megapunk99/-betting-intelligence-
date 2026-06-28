@@ -392,8 +392,8 @@ def run_backtest(periods: int = 5, test_size: int = 100) -> dict:
                 f"± {aggregate['error_adjusted']['std_accuracy']:.1%}")
 
     imp = aggregate["improvement"]
-    brier_color = "✓" if imp["brier_delta"] < 0 else "✗"
-    acc_color = "✓" if imp["accuracy_delta"] > 0 else "✗"
+    brier_color = "" if imp["brier_delta"] < 0 else ""
+    acc_color = "" if imp["accuracy_delta"] > 0 else ""
     logger.info(f"\n  Improvement (Error-Adjusted vs Classifier-Only):")
     logger.info(f"    {brier_color} Brier Δ:    {imp['brier_delta']:+.4f} "
                 f"({'IMPROVED' if imp['brier_delta'] < 0 else 'WORSENED'})")

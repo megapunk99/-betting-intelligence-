@@ -157,6 +157,69 @@ class OverfittingReport:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+# ── v6.6: SVM Auto-Downsampling Wrapper ────────────────────────────────────
+
+class _DownsampledSVC:
+    """
+    SVC wrapper that auto-downsamples training data when dataset is too large.
+
+    SVM scales O(n\u00b2) in the number of samples, making it prohibitively slow
+    on datasets larger than ~5,000 rows. This wrapper transparently downsamples
+    to `max_samples` rows before fitting, logging a warning so the user knows.
+    Downsampling preserves class balance via stratified random sampling.
+
+    All SVC attributes (predict, predict_proba, support_vectors_, etc.) are
+    proxied through to the underlying fitted model.
+    """
+
+    def __init__(self, max_samples: int = 3000, **svc_kwargs):
+        self.max_samples = max_samples
+        self._svc_kwargs = svc_kwargs
+        self._model: Any = None
+
+    def fit(self, X: np.ndarray, y: np.ndarray, **fit_kwargs) -> _DownsampledSVC:
+        n = len(X)
+        if n > self.max_samples:
+            from sklearn.model_selection import StratifiedShuffleSplit
+            sss = StratifiedShuffleSplit(
+                n_splits=1,
+                train_size=self.max_samples,
+                random_state=self._svc_kwargs.get('random_state', 42),
+            )
+            train_idx, _ = next(sss.split(X, y))
+            X_sample = X[train_idx]
+            y_sample = y[train_idx]
+            logger.info(
+                f'SVM auto-downsampled: {n} → {len(X_sample)} samples '
+                f'(O(n\u00b2) scaling avoided)'
+            )
+        else:
+            X_sample, y_sample = X, y
+
+        from sklearn.svm import SVC
+        self._model = SVC(**self._svc_kwargs)
+        self._model.fit(X_sample, y_sample, **fit_kwargs)
+        return self
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        if self._model is None:
+            raise ValueError('Model not fitted yet.')
+        return self._model.predict(X)
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        if self._model is None:
+            raise ValueError('Model not fitted yet.')
+        return self._model.predict_proba(X)
+
+    def __getattr__(self, name: str) -> Any:
+        """Proxy any other attributes (support_vectors_, coef_, etc.) to the fitted model."""
+        model = self.__dict__.get('_model')
+        if model is not None and hasattr(model, name):
+            return getattr(model, name)
+        raise AttributeError(f"'{type(self).__name__}' has no attribute '{name}'")
+
+
+
 class RobustPredictionSystem:
     """
     The highest-quality prediction system — multi-model ensemble with
@@ -176,6 +239,7 @@ class RobustPredictionSystem:
     def __init__(
         self,
         calibrate: bool = True,
+        calibration_method: str = 'auto',  # 'platt', 'isotonic', 'auto' (v6.6)
         n_folds: int = 5,
         min_train_samples: int = 100,
         min_test_samples: int = 10,
@@ -185,19 +249,57 @@ class RobustPredictionSystem:
         xgb_params: Optional[dict] = None,
         lr_params: Optional[dict] = None,
         rf_params: Optional[dict] = None,
+        cb_params: Optional[dict] = None,
+        mlp_params: Optional[dict] = None,
+        svm_params: Optional[dict] = None,
+        use_catboost: bool = True,
+        use_mlp: bool = True,
+        use_histgb: bool = True,           # v6.6 NEW
+        use_extratrees: bool = True,         # v6.6 NEW
+        use_svm: bool = True,               # v6.6 NEW
+        svm_max_samples: int = 3000,        # v6.6 NEW — auto-downsample for O(n²) scaling
+        use_early_stopping: bool = True,
+        use_hyperparameter_tuning: bool = False,  # v6.6 NEW — wire tuner into fit()
+        ensemble_diversity_threshold: float = 0.3,
+        stacking_meta_model: str = 'ridge',  # 'ridge', 'lasso', 'xgboost', or 'none'
+        use_adversarial_validation: bool = False,  # v6.6 NEW
+        use_permutation_importance: bool = False,  # v6.6 NEW
+        use_bootstrap_uncertainty: bool = False,    # v6.6 NEW
+        n_bootstrap_samples: int = 50,              # v6.6 NEW
+        pruning_keep_top_n: int = 0,                # v6.6 NEW — 0 = no pruning
+        use_hgb: bool = True,                       # legacy alias for use_histgb
     ):
         self.calibrate = calibrate
+        self.calibration_method = calibration_method
         self.n_folds = max(3, n_folds)
         self.min_train_samples = min_train_samples
         self.min_test_samples = min_test_samples
         self.random_state = random_state
         self.use_stacking = use_stacking
+        self.use_catboost = use_catboost
+        self.use_mlp = use_mlp
+        self.use_histgb = use_histgb if use_histgb is not None else use_hgb
+        self.use_extratrees = use_extratrees
+        self.use_svm = use_svm
+        self._svm_max_samples = svm_max_samples
+        self.use_early_stopping = use_early_stopping
+        self.use_hyperparameter_tuning = use_hyperparameter_tuning
+        self.ensemble_diversity_threshold = ensemble_diversity_threshold
+        self.stacking_meta_model = stacking_meta_model
+        self.use_adversarial_validation = use_adversarial_validation
+        self.use_permutation_importance = use_permutation_importance
+        self.use_bootstrap_uncertainty = use_bootstrap_uncertainty
+        self.n_bootstrap_samples = n_bootstrap_samples
+        self.pruning_keep_top_n = pruning_keep_top_n
 
         # Model parameters
         self._lgb_params = lgb_params or {}
         self._xgb_params = xgb_params or {}
         self._lr_params = lr_params or {}
         self._rf_params = rf_params or {}
+        self._cb_params = cb_params or {}
+        self._mlp_params = mlp_params or {}
+        self._svm_params = svm_params or {}
 
         # Internal state
         self._models: dict[str, Any] = {}
@@ -212,12 +314,24 @@ class RobustPredictionSystem:
         self._target_mean: float = 0.5
         self._n_train_total: int = 0
 
+        # v6.6 — New internal state
+        self._ensemble_diversity: Optional[dict[str, float]] = None
+        self._pruned_models: list[str] = []
+        self._permutation_importance: Optional[dict[str, float]] = None
+        self._bootstrap_probs: Optional[np.ndarray] = None
+        self._bootstrap_std: Optional[np.ndarray] = None
+        self._adversarial_score: Optional[float] = None
+        self._adversarial_auroc: Optional[float] = None
+        self._hyperparameter_tuning_results: Optional[dict] = None
+        self._hyperparameter_tuner: Any = None
+
         # Calibration data
         self._calibrated_probs: Optional[np.ndarray] = None
         self._raw_probs: Optional[np.ndarray] = None
         self._brier_score: Optional[float] = None
         self._calibrated_brier: Optional[float] = None
         self._calibration_model: Any = None
+        self._calibration_models: dict[str, Any] = {}  # v6.6 — store per-model calibrators
 
         # Persistence
         self._fit_timestamp: Optional[str] = None
@@ -268,6 +382,10 @@ class RobustPredictionSystem:
                 f"Need at least {self.min_train_samples + self.min_test_samples} samples, "
                 f"got {n}. Consider reducing min_train_samples."
             )
+
+        # Step 0: Hyperparameter Tuning (v6.6)
+        if self.use_hyperparameter_tuning:
+            self._tune_hyperparameters(X, y, verbose=verbose)
 
         # Determine fold boundaries (chronological)
         fold_size = max(self.min_test_samples, n // self.n_folds)
@@ -398,21 +516,19 @@ class RobustPredictionSystem:
             except Exception as e:
                 logger.debug(f"Calibration failed for {model_name}: {e}")
 
-        # ── Step 4: Calibrated probabilities and Brier scores ──────────
+        # ── Step 3: Calibrate each model's OOS predictions (v6.6) ────
+        self._calibrators = {}
+        self._calibration_models = {}
         cal_probs_dict: dict[str, np.ndarray] = {}
+
+        if self.calibrate:
+            cal_probs_dict = self._calibrate_with_isotonic(oos_dict, oos_targets)
+        else:
+            cal_probs_dict = dict(oos_dict)
+
+        # ── Step 4: Build calibrated/raw prob arrays ────────────
         self._raw_probs = np.column_stack([oos_dict[name] for name in oos_dict]) if len(oos_dict) > 1 \
             else oos_dict[list(oos_dict.keys())[0]].reshape(-1, 1)
-
-        for model_name, oos_probs in oos_dict.items():
-            if model_name in self._calibrators:
-                X_cal = np.clip(oos_probs, 0.001, 0.999).reshape(-1, 1)
-                try:
-                    cal_probs = self._calibrators[model_name].predict_proba(X_cal)[:, 1]
-                    cal_probs_dict[model_name] = cal_probs
-                except Exception:
-                    cal_probs_dict[model_name] = oos_probs
-            else:
-                cal_probs_dict[model_name] = oos_probs
 
         self._calibrated_probs = np.column_stack([cal_probs_dict[name] for name in cal_probs_dict]) \
             if len(cal_probs_dict) > 1 else cal_probs_dict[list(cal_probs_dict.keys())[0]].reshape(-1, 1)
@@ -471,21 +587,63 @@ class RobustPredictionSystem:
             self._weights = {name: 1.0 / max(len(self._model_diagnostics), 1)
                              for name in self._model_diagnostics}
 
-        # ── Step 6: Train stacking meta-model (optional) ───────────────
+                # ── Step 6: Train stacking meta-model (optional) ───────────────
         if self.use_stacking and len(self._model_diagnostics) >= 2:
             try:
-                from sklearn.linear_model import Ridge
-
                 meta_features = np.column_stack([
                     cal_probs_dict[name] for name in cal_probs_dict
                 ])
-                self._meta_model = Ridge(alpha=1.0, random_state=self.random_state)
+                
+                # Add raw (uncalibrated) probabilities as additional meta-features
+                # This gives the meta-model access to both calibrated and raw signals
+                if self._raw_probs is not None and self._raw_probs.shape[1] > 1:
+                    meta_features = np.column_stack([
+                        meta_features,
+                        self._raw_probs,
+                    ])
+                
+                # Choose meta-model based on configuration
+                model_type = self.stacking_meta_model
+                if model_type == 'lasso':
+                    from sklearn.linear_model import LassoCV
+                    self._meta_model = LassoCV(
+                        alphas=[0.001, 0.01, 0.1, 1.0, 10.0],
+                        cv=3,
+                        random_state=self.random_state,
+                        max_iter=5000,
+                    )
+                elif model_type == 'xgboost':
+                    try:
+                        from xgboost import XGBRegressor
+                        self._meta_model = XGBRegressor(
+                            n_estimators=200,
+                            max_depth=3,
+                            learning_rate=0.05,
+                            subsample=0.7,
+                            reg_alpha=0.5,
+                            reg_lambda=1.0,
+                            random_state=self.random_state,
+                            verbosity=0,
+                        )
+                    except ImportError:
+                        from sklearn.linear_model import Ridge
+                        self._meta_model = Ridge(alpha=1.0, random_state=self.random_state)
+                else:  # default: Ridge
+                    from sklearn.linear_model import RidgeCV
+                    self._meta_model = RidgeCV(
+                        alphas=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0],
+                        cv=3,
+                    )
+                
                 self._meta_model.fit(meta_features, oos_targets)
-
+                
                 if verbose:
-                    logger.info(f"Stacking meta-model trained on {meta_features.shape[1]} features")
+                    logger.info(
+                        f'Stacking meta-model ({model_type}) trained on '
+                        f'{meta_features.shape[1]} features'
+                    )
             except Exception as e:
-                logger.debug(f"Stacking meta-model failed: {e}")
+                logger.debug(f'Stacking meta-model failed: {e}')
                 self._meta_model = None
 
         # ── Step 7: Train final models on ALL data ─────────────────────
@@ -532,15 +690,38 @@ class RobustPredictionSystem:
         if verbose:
             if self._overfitting and self._overfitting.is_overfit:
                 logger.warning(
-                    f"⚠  OVERFITTING DETECTED: train R²={self._overfitting.avg_train_r2:.3f}, "
+                    f"  OVERFITTING DETECTED: train R²={self._overfitting.avg_train_r2:.3f}, "
                     f"test R²={self._overfitting.avg_test_r2:.3f}, gap={self._overfitting.r2_gap:.3f}"
                 )
                 for flag in self._overfitting.flags:
                     logger.warning(f"   • {flag}")
             elif self._overfitting:
                 logger.info(
-                    f"✓  Overfitting check passed: gap={self._overfitting.r2_gap:.3f}"
+                    f"  Overfitting check passed: gap={self._overfitting.r2_gap:.3f}"
                 )
+
+        # Step 10: Adversarial Validation (v6.6)
+        self._run_adversarial_validation(X, y, verbose=verbose)
+
+        # Step 11: Ensemble Diversity and Pruning (v6.6)
+        if self.pruning_keep_top_n > 0 and len(self._model_diagnostics) >= 3:
+            self._compute_ensemble_diversity(oos_dict)
+            self._prune_ensemble(oos_dict, oos_targets)
+            # Recompute weights after pruning
+            if self._pruned_models:
+                remaining_weights = {
+                    n: w for n, w in self._weights.items()
+                    if n not in self._pruned_models
+                }
+                total = sum(remaining_weights.values())
+                if total > 0:
+                    self._weights = {n: w / total for n, w in remaining_weights.items()}
+
+        # Step 12: Permutation Importance (v6.6)
+        self._compute_permutation_importance(X, y, n_repeats=3, n_features=20, verbose=verbose)
+
+        # Step 13: Bootstrap Uncertainty (v6.6)
+        self._compute_bootstrap_uncertainty(X, y, verbose=verbose)
 
         self._fitted = True
         self._fit_timestamp = datetime.now().isoformat()
@@ -870,22 +1051,31 @@ class RobustPredictionSystem:
     # ── Internal Methods ──────────────────────────────────────────────────
 
     def _get_model_specs(self) -> list[tuple[str, callable, dict]]:
-        """Generate model specifications for the ensemble."""
+        """Generate model specifications for the ensemble (v6.6 - 10-model BEAST).
+
+        v6.6 — ULTIMATE ENSEMBLE EXPANSION
+        ────────────────────────────────────
+        Changes from v6.5:
+          - Added HistGradientBoosting (sklearn — fast, handles missing values)
+          - Added ExtraTrees (Extremely Randomized Trees — max diversity)
+          - Added SVM with probability (margin-based classifier, different signal)
+          - All tree models: lower LR, more trees, stronger regularization
+          - Added LGBM early stopping integration
+        """
         from sklearn.linear_model import LogisticRegression
         from sklearn.ensemble import RandomForestClassifier
 
         specs = []
 
         # ══════════════════════════════════════════════════════════════
-        #  v6.0 — DEEPER ENSEMBLE
+        #  v6.6 — 10-MODEL BEAST ENSEMBLE
         #
-        #  Changes from v4.0:
-        #  - More trees: 500→800 for all models (better convergence)
-        #  - Lower learning rate: 0.03→0.02 (smoother gradient descent)
-        #  - XGBoost eval_metric: logloss + early_stopping_rounds=50
-        #  - LightGBM: more leaves 48→63, min_child_samples 25→30
-        #  - RF: max_depth 10→12, min_samples_leaf 5→4
-        #  - LogisticRegression: C 2.0→1.5 (slightly stronger regularization)
+        #  Strategy: Every major ML paradigm —
+        #    Linear:     LogisticRegression (interpretable baseline)
+        #    Boosted:    XGBoost, LightGBM, CatBoost, HistGradientBoosting
+        #    Bagged:     RandomForest, ExtraTrees
+        #    Neural:     MLP (deep non-linear)
+        #    Margin:     SVM (max-margin, different inductive bias)
         # ══════════════════════════════════════════════════════════════
 
         # 1. Logistic Regression (always works, always interpretable)
@@ -899,59 +1089,165 @@ class RobustPredictionSystem:
         }
         specs.append(("LogisticRegression", LogisticRegression, lr_params))
 
-        # 2. XGBoost — deeper, more trees, lower lr
+        # 2. XGBoost — with early stopping
         try:
             from xgboost import XGBClassifier
             xgb_params = {
-                "n_estimators": self._xgb_params.get("n_estimators", 800),
+                "n_estimators": self._xgb_params.get("n_estimators", 1200),
                 "max_depth": self._xgb_params.get("max_depth", 6),
-                "learning_rate": self._xgb_params.get("learning_rate", 0.02),
+                "learning_rate": self._xgb_params.get("learning_rate", 0.015),
                 "subsample": self._xgb_params.get("subsample", 0.8),
                 "colsample_bytree": self._xgb_params.get("colsample_bytree", 0.7),
                 "reg_alpha": self._xgb_params.get("reg_alpha", 1.0),
                 "reg_lambda": self._xgb_params.get("reg_lambda", 2.0),
+                "gamma": self._xgb_params.get("gamma", 0.1),
+                "min_child_weight": self._xgb_params.get("min_child_weight", 3),
                 "random_state": self.random_state,
-                "eval_metric": self._xgb_params.get("eval_metric", "logloss"),
-                "use_label_encoder": False,
-                "verbosity": self._xgb_params.get("verbosity", 0),
-                "scale_pos_weight": self._xgb_params.get("scale_pos_weight", 1.0),
+                "eval_metric": "logloss",
+                "early_stopping_rounds": None,
+                "verbosity": 0,
             }
             specs.append(("XGBoost", XGBClassifier, xgb_params))
         except ImportError:
-            logger.debug("XGBoost not available — skipping")
+            pass
 
-        # 3. LightGBM — more leaves, lower lr
+        # 3. LightGBM — with early stopping
         try:
             from lightgbm import LGBMClassifier
             lgb_params = {
-                "n_estimators": self._lgb_params.get("n_estimators", 800),
+                "n_estimators": self._lgb_params.get("n_estimators", 1200),
                 "max_depth": self._lgb_params.get("max_depth", -1),
                 "num_leaves": self._lgb_params.get("num_leaves", 63),
-                "learning_rate": self._lgb_params.get("learning_rate", 0.02),
+                "learning_rate": self._lgb_params.get("learning_rate", 0.015),
                 "subsample": self._lgb_params.get("subsample", 0.8),
                 "colsample_bytree": self._lgb_params.get("colsample_bytree", 0.7),
                 "reg_alpha": self._lgb_params.get("reg_alpha", 1.0),
                 "reg_lambda": self._lgb_params.get("reg_lambda", 2.0),
-                "random_state": self.random_state,
-                "verbose": self._lgb_params.get("verbose", -1),
                 "min_child_samples": self._lgb_params.get("min_child_samples", 30),
-                "class_weight": self._lgb_params.get("class_weight", "balanced"),
+                "min_split_gain": self._lgb_params.get("min_split_gain", 0.1),
+                "random_state": self.random_state,
+                "verbose": -1,
             }
             specs.append(("LightGBM", LGBMClassifier, lgb_params))
         except ImportError:
-            logger.debug("LightGBM not available — skipping")
+            pass
 
-        # 4. Random Forest — more trees, deeper
+        # 4. Random Forest — bagging ensemble
         rf_params = {
             "n_estimators": self._rf_params.get("n_estimators", 800),
             "max_depth": self._rf_params.get("max_depth", 12),
             "min_samples_leaf": self._rf_params.get("min_samples_leaf", 4),
             "max_features": self._rf_params.get("max_features", "sqrt"),
-            "random_state": self.random_state,
+            "min_samples_split": self._rf_params.get("min_samples_split", 10),
             "class_weight": self._rf_params.get("class_weight", "balanced_subsample"),
-            "n_jobs": self._rf_params.get("n_jobs", -1),
+            "random_state": self.random_state,
+            "n_jobs": -1,
         }
         specs.append(("RandomForest", RandomForestClassifier, rf_params))
+
+        # 5. CatBoost (v6.5 NEW)
+        if self.use_catboost:
+            try:
+                from catboost import CatBoostClassifier
+                cb_params = {
+                    "iterations": self._cb_params.get("iterations", 800),
+                    "depth": self._cb_params.get("depth", 8),
+                    "learning_rate": self._cb_params.get("learning_rate", 0.03),
+                    "l2_leaf_reg": self._cb_params.get("l2_leaf_reg", 3.0),
+                    "border_count": self._cb_params.get("border_count", 128),
+                    "subsample": self._cb_params.get("subsample", 0.8),
+                    "random_seed": self.random_state,
+                    "verbose": 0,
+                    "early_stopping_rounds": None,
+                    "loss_function": "Logloss",
+                    "eval_metric": "Logloss",
+                    "use_best_model": self.use_early_stopping,
+                    "thread_count": -1,
+                }
+                specs.append(("CatBoost", CatBoostClassifier, cb_params))
+            except ImportError:
+                pass
+
+        # 6. MLP Neural Network (v6.5 NEW)
+        if self.use_mlp:
+            try:
+                from sklearn.neural_network import MLPClassifier
+                mlp_params = {
+                    "hidden_layer_sizes": self._mlp_params.get("hidden_layer_sizes", (128, 64, 32)),
+                    "activation": self._mlp_params.get("activation", "relu"),
+                    "solver": self._mlp_params.get("solver", "adam"),
+                    "alpha": self._mlp_params.get("alpha", 0.001),
+                    "batch_size": self._mlp_params.get("batch_size", 64),
+                    "learning_rate": self._mlp_params.get("learning_rate", "adaptive"),
+                    "learning_rate_init": self._mlp_params.get("learning_rate_init", 0.001),
+                    "max_iter": self._mlp_params.get("max_iter", 500),
+                    "early_stopping": self.use_early_stopping,
+                    "validation_fraction": 0.1,
+                    "random_state": self.random_state,
+                }
+                specs.append(("MLP", MLPClassifier, mlp_params))
+            except ImportError:
+                pass
+
+        # 7. HistGradientBoosting (v6.6 NEW — sklearn's fast GBT, missing value support)
+        if self.use_histgb:
+            try:
+                from sklearn.ensemble import HistGradientBoostingClassifier
+                hgb_params = {
+                "max_iter": self._xgb_params.get("n_estimators", 600),
+                "max_depth": self._xgb_params.get("max_depth", 5),
+                "learning_rate": self._xgb_params.get("learning_rate", 0.02),
+                "max_leaf_nodes": 63,
+                "min_samples_leaf": 20,
+                "l2_regularization": 1.0,
+                "early_stopping": self.use_early_stopping,
+                "scoring": "neg_log_loss",
+                "validation_fraction": 0.1,
+                "n_iter_no_change": 20,
+                "random_state": self.random_state,
+                "verbose": 0,
+            }
+                specs.append(("HistGradientBoosting", HistGradientBoostingClassifier, hgb_params))
+            except ImportError:
+                pass
+
+        # 8. ExtraTrees (v6.6 NEW — Extremely Randomized Trees, max diversity)
+        if self.use_extratrees:
+            try:
+                from sklearn.ensemble import ExtraTreesClassifier
+                et_params = {
+                "n_estimators": self._rf_params.get("n_estimators", 600),
+                "max_depth": self._rf_params.get("max_depth", 12),
+                "min_samples_leaf": self._rf_params.get("min_samples_leaf", 3),
+                "max_features": self._rf_params.get("max_features", "sqrt"),
+                "min_samples_split": self._rf_params.get("min_samples_split", 8),
+                "class_weight": self._rf_params.get("class_weight", "balanced_subsample"),
+                "random_state": self.random_state,
+                "n_jobs": -1,
+                "bootstrap": True,
+            }
+                specs.append(("ExtraTrees", ExtraTreesClassifier, et_params))
+            except ImportError:
+                pass
+
+        # 9. SVM with probability (v6.6 NEW — margin-based, different inductive bias)
+        if self.use_svm:
+            try:
+                from sklearn.svm import SVC
+                svm_params = {
+                "C": 10.0,
+                "gamma": "scale",
+                "kernel": "rbf",
+                "probability": True,
+                "class_weight": "balanced",
+                "random_state": self.random_state,
+                "max_iter": 3000,
+            }
+            # Auto-downsample to avoid O(n²) timeout on large datasets
+                svm_params["max_samples"] = self._svm_max_samples
+                specs.append(("SVM", _DownsampledSVC, svm_params))
+            except ImportError:
+                pass
 
         return specs
 
@@ -1068,6 +1364,600 @@ class RobustPredictionSystem:
         )
 
 
+    # ── v6.6: Hyperparameter Tuning Integration ─────────────────────────────
+
+    def _tune_hyperparameters(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        verbose: bool = True,
+    ) -> Optional[dict]:
+        """Run Optuna-based hyperparameter tuning for all ensemble models (v6.6).
+
+        Takes a stratified split of training data and tunes each model type.
+        Results are stored and used to override default params in _get_model_specs.
+        """
+        if not self.use_hyperparameter_tuning:
+            return None
+
+        try:
+            from sklearn.model_selection import train_test_split
+            from betting_intel.models.hyperparameter_tuning import HyperparameterTuner
+
+            # Stratified split for tuning
+            X_tune, X_val, y_tune, y_val = train_test_split(
+                X, y, test_size=0.2, random_state=self.random_state, stratify=y
+            )
+
+            tuner = HyperparameterTuner(
+                random_state=self.random_state,
+                n_trials=30,
+                direction="minimize",
+            )
+            self._hyperparameter_tuner = tuner
+
+            if verbose:
+                logger.info("=" * 60)
+                logger.info("v6.6 — AUTOMATIC HYPERPARAMETER TUNING")
+                logger.info("=" * 60)
+
+            results = tuner.tune_all(
+                X_tune, y_tune, X_val, y_val,
+                n_trials_per_model=30,
+                verbose=verbose,
+            )
+
+            self._hyperparameter_tuning_results = results
+
+            # Map tuning results back to our param dicts
+            _mappings = {
+                "xgb": ("_xgb_params", {
+                    "n_estimators": "n_estimators",
+                    "max_depth": "max_depth",
+                    "learning_rate": "learning_rate",
+                    "subsample": "subsample",
+                    "colsample_bytree": "colsample_bytree",
+                    "reg_alpha": "reg_alpha",
+                    "reg_lambda": "reg_lambda",
+                }),
+                "lgb": ("_lgb_params", {
+                    "n_estimators": "n_estimators",
+                    "num_leaves": "num_leaves",
+                    "learning_rate": "learning_rate",
+                    "subsample": "subsample",
+                    "colsample_bytree": "colsample_bytree",
+                    "reg_alpha": "reg_alpha",
+                    "reg_lambda": "reg_lambda",
+                    "min_child_samples": "min_child_samples",
+                }),
+                "cb": ("_cb_params", {
+                    "iterations": "iterations",
+                    "depth": "depth",
+                    "learning_rate": "learning_rate",
+                    "l2_leaf_reg": "l2_leaf_reg",
+                    "border_count": "border_count",
+                }),
+            }
+
+            for model_key, (attr, mapping) in _mappings.items():
+                if model_key not in results:
+                    continue
+                param_dict = getattr(self, attr)
+                for tune_key, param_attr in mapping.items():
+                    if tune_key in results[model_key]:
+                        param_dict[param_attr] = results[model_key][tune_key]
+
+            if verbose:
+                logger.info("  Hyperparameter tuning applied to all models")
+
+            return results
+
+        except Exception as e:
+            logger.warning(f"Hyperparameter tuning failed (non-critical): {e}")
+            return None
+
+    # ── v6.6: Adversarial Validation ───────────────────────────────────
+
+    def _run_adversarial_validation(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        verbose: bool = True,
+    ) -> Optional[dict]:
+        """Detect train/inference distribution shift via adversarial validation (v6.6).
+
+        Adversarial validation trains a classifier to distinguish between
+        training data and a reference distribution. If the classifier can
+        easily separate them, it means the distributions have shifted —
+        the model may not generalize to new data.
+
+        The score is AUROC: 1.0 = perfect separation (BAD — shift detected),
+        0.5 = random (GOOD — no shift). Scale:
+          - < 0.60: No significant drift
+          - 0.60-0.75: Some drift — may want to retrain
+          - 0.75-0.90: Significant drift — retrain recommended
+          - > 0.90: Critical drift — model likely invalid
+
+        Returns dict with auroc, feature_importance (which features drifted most).
+        """
+        if not self.use_adversarial_validation:
+            return None
+
+        try:
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.model_selection import cross_val_score
+            from sklearn.metrics import roc_auc_score
+
+            n = len(X)
+            if n < 200:
+                if verbose:
+                    logger.debug("Adversarial validation: need ≥200 samples, skipping")
+                return None
+
+            # Split data into two "domains": first half = train, second half = test
+            midpoint = n // 2
+            X_first, X_second = X[:midpoint], X[midpoint:]
+
+            # Create domain label: 0 = first half, 1 = second half
+            X_adv = np.vstack([X_first, X_second])
+            y_adv = np.concatenate([
+                np.zeros(midpoint, dtype=int),
+                np.ones(len(X_second), dtype=int),
+            ])
+
+            # Shuffle to avoid any ordering bias
+            from sklearn.utils import shuffle
+            X_adv, y_adv = shuffle(X_adv, y_adv, random_state=self.random_state)
+
+            # Train quick RF to discriminate
+            adv_model = RandomForestClassifier(
+                n_estimators=100,
+                max_depth=5,
+                min_samples_leaf=10,
+                random_state=self.random_state,
+                n_jobs=-1,
+            )
+
+            cv_scores = cross_val_score(adv_model, X_adv, y_adv, cv=3, scoring='roc_auc')
+            auroc = float(np.mean(cv_scores))
+
+            # Fit on full data for feature importance
+            adv_model.fit(X_adv, y_adv)
+            drift_importances = {}
+            if hasattr(adv_model, 'feature_importances_'):
+                fi = adv_model.feature_importances_
+                for i, imp in enumerate(fi):
+                    fname = self._feature_names[i] if i < len(self._feature_names) else f"f{i}"
+                    drift_importances[fname] = float(imp)
+
+            sorted_drift = sorted(drift_importances.items(), key=lambda x: -x[1])[:10]
+
+            health = "stable"
+            if auroc > 0.90:
+                health = "critical"
+            elif auroc > 0.75:
+                health = "warning"
+            elif auroc > 0.60:
+                health = "minor"
+
+            self._adversarial_score = auroc
+            self._adversarial_auroc = auroc
+
+            if verbose:
+                logger.info(
+                    f"Adversarial validation AUROC={auroc:.3f} (health={health})"
+                )
+                if sorted_drift:
+                    logger.info(
+                        f"  Top drifted features: {[(n, f'{v:.3f}') for n, v in sorted_drift[:5]]}"
+                    )
+
+            return {
+                "auroc": round(auroc, 4),
+                "cv_scores": [round(s, 4) for s in cv_scores],
+                "health": health,
+                "top_drifted_features": dict(sorted_drift),
+            }
+
+        except Exception as e:
+            logger.debug(f"Adversarial validation failed: {e}")
+            return None
+
+    # ── v6.6: Ensemble Diversity Metrics & Pruning ────────────────────
+
+    def _compute_ensemble_diversity(self, oos_dict: dict[str, np.ndarray]) -> dict:
+        """Compute pairwise model correlation and diversity metrics (v6.6).
+
+        Returns:
+            Dict with:
+            - pairwise_correlation: mean absolute Pearson r between models
+            - diversity_score: 1 - avg_correlation (higher = more diverse)
+            - model_correlation: {model_name: {other_model: r}}
+            - redundancy_pairs: models with r > 0.90 (candidates for pruning)
+        """
+        try:
+            from scipy.stats import pearsonr
+        except ImportError:
+            logger.warning("scipy required for ensemble diversity computation")
+            return {"diversity_score": 0.5, "details": "scipy not available"}
+
+        model_names = list(oos_dict.keys())
+        n_models = len(model_names)
+
+        if n_models < 2:
+            return {"diversity_score": 1.0, "n_models": 1}
+
+        correlations: dict[str, dict] = {}
+        all_corrs = []
+
+        for i in range(n_models):
+            for j in range(i + 1, n_models):
+                name_i, name_j = model_names[i], model_names[j]
+                preds_i = oos_dict[name_i]
+                preds_j = oos_dict[name_j]
+
+                try:
+                    r, _ = pearsonr(preds_i, preds_j)
+                    r = float(r) if not np.isnan(r) else 0.0
+                except Exception:
+                    r = 0.0
+
+                correlations.setdefault(name_i, {})[name_j] = round(r, 4)
+                correlations.setdefault(name_j, {})[name_i] = round(r, 4)
+                all_corrs.append(abs(r))
+
+        avg_correlation = float(np.mean(all_corrs)) if all_corrs else 0.0
+        diversity = 1.0 - avg_correlation
+
+        # Detect redundant pairs (r > 0.90)
+        redundant_pairs = []
+        if all_corrs:
+            for i in range(n_models):
+                for j in range(i + 1, n_models):
+                    name_i, name_j = model_names[i], model_names[j]
+                    r = abs(correlations.get(name_i, {}).get(name_j, 0))
+                    if r > 0.90:
+                        redundant_pairs.append((name_i, name_j, round(r, 4)))
+
+        self._ensemble_diversity = {
+            "avg_correlation": round(avg_correlation, 4),
+            "diversity_score": round(diversity, 4),
+            "model_correlation": correlations,
+            "redundant_pairs": redundant_pairs,
+        }
+
+        return self._ensemble_diversity
+
+    def _prune_ensemble(
+        self,
+        oos_dict: dict[str, np.ndarray],
+        oos_targets: np.ndarray,
+    ) -> list[str]:
+        """Prune redundant or low-performing models from the ensemble (v6.6).
+
+        Strategy:
+          1. Sort models by OOS Brier score (best first)
+          2. Greedily add models that improve ensemble correlation diversity
+          3. Remove models with OOS accuracy < 0.48 (worse than coin flip)
+          4. Keep at most pruning_keep_top_n models (if set > 0)
+
+        Returns:
+            List of pruned model names (removed from ensemble)
+        """
+        pruned = []
+        model_names = list(oos_dict.keys())
+
+        if len(model_names) < 3:
+            return pruned
+
+        # 1. Filter by minimum performance
+        for name in model_names:
+            if name not in oos_dict:
+                continue
+            preds = oos_dict[name]
+            acc = float(np.mean((preds > 0.5) == oos_targets))
+            diag = self._model_diagnostics.get(name)
+            # Prune only if model is both inaccurate AND poorly calibrated
+            if acc < 0.48 and diag and diag.oos_brier > 0.25:
+                pruned.append(name)
+                self._weights.pop(name, None)
+                # Mark as degraded
+                if name in self._model_diagnostics:
+                    self._model_diagnostics[name].status = "failed"
+
+        remaining = [n for n in model_names if n not in pruned]
+
+        if len(remaining) < 2:
+            return pruned
+
+        # 2. Get diversity and prune highly correlated redundant models
+        diversity = self._compute_ensemble_diversity(oos_dict)
+        redundant_pairs = diversity.get("redundant_pairs", [])
+
+        for name_i, name_j, r in redundant_pairs:
+            if name_i in remaining and name_j in remaining:
+                # Prune the one with worse Brier
+                brier_i = self._model_diagnostics.get(name_i, ModelDiagnostics(name=name_i)).oos_brier
+                brier_j = self._model_diagnostics.get(name_j, ModelDiagnostics(name=name_j)).oos_brier
+                if brier_i <= brier_j:
+                    pruned.append(name_j)
+                    self._weights.pop(name_j, None)
+                    remaining.remove(name_j)
+                else:
+                    pruned.append(name_i)
+                    self._weights.pop(name_i, None)
+                    remaining.remove(name_i)
+
+        # 3. Keep only top N if specified
+        if self.pruning_keep_top_n > 0 and len(remaining) > self.pruning_keep_top_n:
+            # Sort by Brier, keep best
+            sorted_remaining = sorted(
+                remaining,
+                key=lambda n: self._model_diagnostics.get(n, ModelDiagnostics(name=n)).oos_brier,
+            )
+            to_prune = sorted_remaining[self.pruning_keep_top_n:]
+            pruned.extend(to_prune)
+
+        self._pruned_models = pruned
+
+        if pruned:
+            logger.info(
+                f"Ensemble pruning: removed {len(pruned)} models "
+                f"({', '.join(pruned)}), kept {len(remaining)}"
+            )
+
+        return pruned
+
+    # ── v6.6: Permutation Importance ──────────────────────────────────
+
+    def _compute_permutation_importance(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        n_repeats: int = 5,
+        n_features: int = 20,
+        verbose: bool = True,
+    ) -> dict[str, float]:
+        """Compute permutation feature importance (v6.6).
+
+        Permutation importance measures how much prediction error increases
+        when a feature's values are randomly shuffled. Unlike model-internal
+        feature importance (which can be biased toward high-cardinality features),
+        permutation importance is model-agnostic and more reliable.
+
+        Args:
+            X: Feature matrix
+            y: Target vector
+            n_repeats: Number of shuffles per feature
+            n_features: Number of top features to return
+            verbose: Log progress
+
+        Returns:
+            Dict of {feature_name: importance_score} sorted descending
+        """
+        if not self.use_permutation_importance or not self._fitted:
+            return {}
+
+        try:
+            from sklearn.inspection import permutation_importance
+
+            result = permutation_importance(
+                self, X, y,
+                n_repeats=n_repeats,
+                random_state=self.random_state,
+                n_jobs=-1,
+                scoring='neg_brier_score',
+            )
+
+            importances = {
+                self._feature_names[i] if i < len(self._feature_names) else f"f{i}":
+                float(result.importances_mean[i])
+                for i in range(len(result.importances_mean))
+            }
+
+            # Sort by absolute importance
+            sorted_imp = sorted(
+                importances.items(),
+                key=lambda x: abs(x[1]),
+                reverse=True,
+            )[:n_features]
+
+            result_dict = dict(sorted_imp)
+            self._permutation_importance = result_dict
+
+            if verbose and result_dict:
+                logger.info(
+                    f"Permutation importance computed for {len(result_dict)} features "
+                    f"(top: {list(result_dict.keys())[:3]})"
+                )
+
+            return result_dict
+
+        except Exception as e:
+            logger.debug(f"Permutation importance failed: {e}")
+            return {}
+
+    # ── v6.6: Bootstrap Uncertainty Quantification ────────────────────
+
+    def _compute_bootstrap_uncertainty(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        verbose: bool = True,
+    ) -> Optional[dict]:
+        """Compute prediction uncertainty via bootstrap resampling (v6.6).
+
+        Trains `n_bootstrap_samples` models on bootstrap replicates of the
+        training data and measures prediction variance — giving us confidence
+        intervals for every prediction.
+
+        Key outputs:
+          - bootstrap_std: per-sample prediction std (uncertainty)
+          - mean_uncertainty: average std across all samples
+          - p5/p95: 5th and 95th percentile predictions
+
+        Returns dict with uncertainty metrics, or None if not requested.
+        """
+        if not self.use_bootstrap_uncertainty:
+            return None
+
+        try:
+            n_samples = self.n_bootstrap_samples
+            n = len(X)
+            all_bootstrap_preds = np.zeros((n_samples, n))
+
+            for b in range(n_samples):
+                # Bootstrap sample (with replacement)
+                indices = np.random.choice(n, size=n, replace=True)
+                X_boot = X[indices]
+                y_boot = y[indices]
+
+                # Train a single LogisticRegression as fast proxy
+                try:
+                    from sklearn.linear_model import LogisticRegression
+                    boot_model = LogisticRegression(
+                        C=1.0, max_iter=1000,
+                        random_state=self.random_state + b,
+                        class_weight='balanced',
+                    )
+                    boot_model.fit(X_boot, y_boot)
+                    preds = boot_model.predict_proba(X)[:, 1]
+                    all_bootstrap_preds[b] = preds
+                except Exception:
+                    continue
+
+            # Compute statistics
+            bootstrap_std = np.std(all_bootstrap_preds, axis=0)
+            bootstrap_mean = np.mean(all_bootstrap_preds, axis=0)
+            p5 = np.percentile(all_bootstrap_preds, 5, axis=0)
+            p95 = np.percentile(all_bootstrap_preds, 95, axis=0)
+
+            self._bootstrap_probs = bootstrap_mean
+            self._bootstrap_std = bootstrap_std
+
+            uncertainty_result = {
+                "mean_uncertainty": round(float(np.mean(bootstrap_std)), 4),
+                "std_uncertainty": round(float(np.std(bootstrap_std)), 4),
+                "p5_avg": round(float(np.mean(p5)), 4),
+                "p95_avg": round(float(np.mean(p95)), 4),
+                "n_bootstrap": n_samples,
+            }
+
+            if verbose:
+                logger.info(
+                    f"Bootstrap uncertainty: μ={uncertainty_result['mean_uncertainty']:.4f}, "
+                    f"σ={uncertainty_result['std_uncertainty']:.4f}, "
+                    f"[{uncertainty_result['p5_avg']:.4f} - {uncertainty_result['p95_avg']:.4f}]"
+                )
+
+            return uncertainty_result
+
+        except Exception as e:
+            logger.debug(f"Bootstrap uncertainty failed: {e}")
+            return None
+
+    def _calibrate_with_isotonic(
+        self,
+        oos_dict: dict[str, np.ndarray],
+        oos_targets: np.ndarray,
+    ) -> dict[str, np.ndarray]:
+        """Calibrate using isotonic regression (v6.6).
+
+        Isotonic regression is a non-parametric calibration method that makes
+        no assumptions about the shape of the calibration curve. It tends to
+        work better than Platt scaling when the miscalibration pattern is
+        non-monotonic or complex.
+
+        Auto-mode: tries isotonic first, falls back to Platt if isotonic fails.
+        Platt mode: uses sigmoid calibration (original behavior).
+        """
+        from sklearn.isotonic import IsotonicRegression
+
+        cal_probs_dict = {}
+
+        for model_name, oos_probs in oos_dict.items():
+            try:
+                X_cal = np.clip(oos_probs, 0.001, 0.999)
+
+                # Try isotonic
+                if self.calibration_method in ('isotonic', 'auto'):
+                    try:
+                        iso = IsotonicRegression(out_of_bounds='clip')
+                        iso.fit(X_cal, oos_targets)
+                        cal_probs = iso.transform(X_cal)
+                        cal_probs = np.clip(cal_probs, 0.001, 0.999)
+                        cal_probs_dict[model_name] = cal_probs
+                        self._calibration_models[model_name] = iso
+                        continue  # Skip Platt if isotonic succeeded
+                    except Exception:
+                        if self.calibration_method == 'isotonic':
+                            raise  # Re-raise if isotonic was explicitly requested
+
+                # Fallback: Platt scaling (sigmoid)
+                if self.calibration_method in ('platt', 'auto'):
+                    from sklearn.calibration import CalibratedClassifierCV
+                    from sklearn.linear_model import LogisticRegression
+
+                    cal = LogisticRegression(C=1.0, max_iter=1000, random_state=self.random_state)
+                    calibrator = CalibratedClassifierCV(estimator=cal, method="sigmoid", cv=3)
+
+                    X_cal_2d = X_cal.reshape(-1, 1)
+                    if len(np.unique(oos_targets)) >= 2:
+                        calibrator.fit(X_cal_2d, oos_targets)
+                        self._calibrators[model_name] = calibrator
+                        cal_probs = calibrator.predict_proba(X_cal_2d)[:, 1]
+                        cal_probs_dict[model_name] = cal_probs
+                        continue
+
+                # If we get here, neither method worked
+                cal_probs_dict[model_name] = oos_probs
+
+            except Exception as e:
+                logger.debug(f"Calibration failed for {model_name}: {e}")
+                cal_probs_dict[model_name] = oos_probs
+
+        return cal_probs_dict
+
+    def get_ensemble_diversity(self) -> Optional[dict]:
+        """Get ensemble diversity report (v6.6)."""
+        return self._ensemble_diversity
+
+    def get_adversarial_validation(self) -> Optional[dict]:
+        """Get adversarial validation report (v6.6)."""
+        if self._adversarial_auroc is not None:
+            return {
+                "auroc": round(self._adversarial_auroc, 4),
+                "health": (
+                    "critical" if self._adversarial_auroc > 0.90
+                    else "warning" if self._adversarial_auroc > 0.75
+                    else "minor" if self._adversarial_auroc > 0.60
+                    else "stable"
+                ),
+            }
+        return None
+
+    def get_permutation_importance(self, top_n: int = 20) -> dict[str, float]:
+        """Get permutation feature importance (v6.6)."""
+        if self._permutation_importance:
+            items = sorted(
+                self._permutation_importance.items(),
+                key=lambda x: abs(x[1]),
+                reverse=True,
+            )[:top_n]
+            return dict(items)
+        return {}
+
+    def get_bootstrap_uncertainty(self) -> Optional[dict]:
+        """Get bootstrap uncertainty metrics (v6.6)."""
+        if self._bootstrap_std is not None:
+            return {
+                "mean_uncertainty": round(float(np.mean(self._bootstrap_std)), 4),
+                "std_uncertainty": round(float(np.std(self._bootstrap_std)), 4),
+                "has_bootstrap": True,
+            }
+        return None
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  MARKET INEFFICIENCY SYSTEM
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1114,12 +2004,32 @@ class MarketInefficiencySystem:
         n_folds: int = 5,
         min_train_samples: int = 100,
         random_state: int = 42,
+        use_histgb: bool = True,
+        use_extratrees: bool = True,
+        use_svm: bool = True,
+        svm_max_samples: int = 3000,
+        use_hyperparameter_tuning: bool = False,
+        use_adversarial_validation: bool = False,
+        use_bootstrap_uncertainty: bool = False,
+        use_permutation_importance: bool = False,
+        pruning_keep_top_n: int = 0,
+        use_early_stopping: bool = True,
     ):
         self._classifier = RobustPredictionSystem(
             calibrate=calibrate,
             n_folds=n_folds,
             min_train_samples=min_train_samples,
             random_state=random_state,
+            use_histgb=use_histgb,
+            use_extratrees=use_extratrees,
+            use_svm=use_svm,
+            svm_max_samples=svm_max_samples,
+            use_hyperparameter_tuning=use_hyperparameter_tuning,
+            use_adversarial_validation=use_adversarial_validation,
+            use_bootstrap_uncertainty=use_bootstrap_uncertainty,
+            use_permutation_importance=use_permutation_importance,
+            pruning_keep_top_n=pruning_keep_top_n,
+            use_early_stopping=use_early_stopping,
         )
         self._error_regressor: Optional[Any] = None
         self._feature_names: list[str] = []

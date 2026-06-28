@@ -18,6 +18,9 @@ from betting_intel.config import ODDS_CACHE_TTL_SECONDS
 PREDICTION_REFRESH_INTERVAL = 60   # Re-generate predictions every 60s
 LIVE_GAME_LEEWAY_MINUTES = 60      # Game is "live" if started within 60 min of now
 MIN_EDGE_THRESHOLD = 0.03          # No recommendations below 3% edge
+# Note: TheOddsAPI daily fetch schedule is configured in config/settings.py
+# via daily_fetch_hour (default 6 AM) and daily_fetch_enabled (default True).
+# The OddsFetcher checks the schedule in _is_time_for_daily_fetch().
 
 
 # ── Data Models ───────────────────────────────────────────────────────────
@@ -41,6 +44,7 @@ class LiveGame:
     # Market lines (from consensus across sportsbooks)
     home_ml: Optional[float] = None
     away_ml: Optional[float] = None
+    draw_ml: Optional[float] = None  # Soccer 3-way market (1X2)
     spread: Optional[float] = None
     market_total: Optional[float] = None
     over_odds: Optional[float] = None
@@ -135,6 +139,10 @@ class LivePredictionSnapshot:
     # Pre-computed chart data (built once when snapshot is constructed)
     chart_data: Optional[dict] = None
 
+    # Arbitrage opportunities (detected from raw odds)
+    arbitrage_opportunities: list[dict] = field(default_factory=list)
+    n_arbitrage: int = 0
+
     # Fields to exclude from serialization (chart_data, internal state)
     _exclude_from_dict: set = field(default_factory=lambda: {"chart_data", "_exclude_from_dict"})
 
@@ -143,6 +151,7 @@ class LivePredictionSnapshot:
         self.n_today = len(self.today_games)
         self.n_tomorrow = len(self.tomorrow_games)
         self.n_total = len(self.next_two_days)
+        self.n_arbitrage = len(self.arbitrage_opportunities)
         self.chart_data = self._build_chart_data()
 
     def _build_chart_data(self) -> dict:
@@ -212,6 +221,8 @@ class LivePredictionSnapshot:
             "n_tomorrow": self.n_tomorrow,
             "n_total": self.n_total,
             "fresh_odds": self.fresh_odds,
+            "arbitrage_opportunities": self.arbitrage_opportunities,
+            "n_arbitrage": self.n_arbitrage,
         }
         exclude = getattr(self, '_exclude_from_dict', set())
         for field_name in exclude:

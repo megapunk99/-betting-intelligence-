@@ -98,16 +98,24 @@ class LivePredictionEngine:
         self._odds_parser = OddsParser()
 
         # Kelly staker
-        from betting_intel.recommendations.staking import KellyStaker
-        self._kelly_staker = KellyStaker(
-            initial_bankroll=10_000.0,
-            kelly_fraction=0.25,
-        )
+        try:
+            from betting_intel.recommendations.staking import KellyStaker
+            self._kelly_staker = KellyStaker(
+                initial_bankroll=10_000.0,
+                kelly_fraction=0.25,
+            )
+        except Exception as e:
+            logger.warning(f"Kelly staker initialization failed: {e}")
+            self._kelly_staker = None
 
         # Market odds store
-        from betting_intel.db.market_odds_store import MarketOddsStore
-        self._market_odds_store = MarketOddsStore()
-        self._market_odds_store.ensure_table()
+        try:
+            from betting_intel.db.market_odds_store import MarketOddsStore
+            self._market_odds_store = MarketOddsStore()
+            self._market_odds_store.ensure_table()
+        except Exception as e:
+            logger.warning(f"Market odds store initialization failed: {e}")
+            self._market_odds_store = None
 
         # Predictor
         self._predictor = GamePredictor(
@@ -141,35 +149,47 @@ class LivePredictionEngine:
 
     @property
     def _robust_system(self) -> Any:
+        if self._predictor is None:
+            return None
         return self._predictor._robust_system
 
     @_robust_system.setter
     def _robust_system(self, value: Any):
-        self._predictor._robust_system = value
+        if self._predictor is not None:
+            self._predictor._robust_system = value
 
     @property
     def _robust_system_fitted(self) -> bool:
+        if self._predictor is None:
+            return False
         return self._predictor._robust_system_fitted
 
     @_robust_system_fitted.setter
     def _robust_system_fitted(self, value: bool):
-        self._predictor._robust_system_fitted = value
+        if self._predictor is not None:
+            self._predictor._robust_system_fitted = value
 
     @property
     def _totals_fitted(self) -> bool:
+        if self._predictor is None:
+            return False
         return self._predictor._totals_fitted
 
     @_totals_fitted.setter
     def _totals_fitted(self, value: bool):
-        self._predictor._totals_fitted = value
+        if self._predictor is not None:
+            self._predictor._totals_fitted = value
 
     @property
     def _last_auto_resolve(self) -> Optional[str]:
+        if self._snapshot_builder is None:
+            return None
         return self._snapshot_builder._last_auto_resolve
 
     @_last_auto_resolve.setter
     def _last_auto_resolve(self, value: Optional[str]):
-        self._snapshot_builder._last_auto_resolve = value
+        if self._snapshot_builder is not None:
+            self._snapshot_builder._last_auto_resolve = value
 
     # ── Public properties (delegating to sub-modules) ─────────────────
 
@@ -194,6 +214,32 @@ class LivePredictionEngine:
         with self._lock:
             return self._snapshot is not None and self._snapshot.n_total > 0
 
+    @property
+    def has_valid_api_key(self) -> bool:
+        return self._odds_fetcher.has_valid_api_key()
+
+    @property
+    def last_theoddsapi_fetch(self) -> float:
+        return self._odds_fetcher._last_theoddsapi_fetch
+
+    @property
+    def theoddsapi_quota_remaining(self) -> Optional[str]:
+        return self._odds_fetcher._last_quota_remaining
+
+    @property
+    def theoddsapi_schedule(self) -> dict:
+        """Return the daily fetch schedule summary."""
+        return self._odds_fetcher._schedule_summary(self._odds_fetcher._last_theoddsapi_fetch)
+
+    @property
+    def theoddsapi_quota_summary(self) -> dict:
+        return self._odds_fetcher.quota_summary
+
+    @property
+    def theoddsapi_schedule_status(self) -> dict:
+        """Return schedule status for the dashboard API banner."""
+        return self._odds_fetcher._get_schedule_status_dict(self._odds_fetcher._last_theoddsapi_fetch)
+
     # ── Public API ────────────────────────────────────────────────────────
 
     def get_snapshot(self, force_refresh: bool = False) -> LivePredictionSnapshot:
@@ -211,10 +257,11 @@ class LivePredictionEngine:
                     return LivePredictionSnapshot()
 
         # Fall through: force refresh or cache expired
-
+        # Propagate force_refresh to _build_snapshot so user-initiated
+        # refreshes bypass the daily schedule but auto-refreshes respect it.
         now = time.time()
         try:
-            snapshot = self._build_snapshot()
+            snapshot = self._build_snapshot(force_theoddsapi=force_refresh)
             with self._lock:
                 self._snapshot = snapshot
                 self._last_refresh = now
@@ -249,6 +296,9 @@ class LivePredictionEngine:
             self._last_odds_fetch = 0.0
             self._cached_odds_raw = None
 
+        # Reset fetch timer so the daily morning schedule triggers next time
+        self._odds_fetcher._last_theoddsapi_fetch = 0.0
+
         # Clear external scraper caches (best-effort, non-critical)
         import importlib
         _scraper_modules = [
@@ -271,8 +321,13 @@ class LivePredictionEngine:
     def _has_valid_api_key(self) -> bool:
         return self._odds_fetcher.has_valid_api_key()
 
-    def _fetch_realtime_odds(self) -> list[dict]:
-        """Fetch odds, using engine-level cache for TTL management."""
+    def _fetch_realtime_odds(self, force_theoddsapi: bool = False) -> list[dict]:
+        """Fetch odds, using engine-level cache for TTL management.
+
+        Args:
+            force_theoddsapi: If True, bypass the daily schedule and call TheOddsAPI.
+                              Set to True on user-initiated "Refresh" button clicks.
+        """
         now = time.time()
 
         # Fast-path: return cached if still fresh
@@ -285,6 +340,7 @@ class LivePredictionEngine:
             last_odds_fetch=self._last_odds_fetch,
             cache_lock=self._lock,
             now=now,
+            force_theoddsapi=force_theoddsapi,
         )
 
         # Update engine-level cache
@@ -342,7 +398,8 @@ class LivePredictionEngine:
             from betting_intel.analytics.tracker import ResultsTracker
             tracker = ResultsTracker()
             n = tracker.resolve_all()
-            self._snapshot_builder.set_auto_resolve_timestamp(datetime.now().isoformat())
+            if self._snapshot_builder is not None:
+                self._snapshot_builder.set_auto_resolve_timestamp(datetime.now().isoformat())
             if n > 0:
                 logger.info(f"Auto-resolved {n} completed game(s)")
             return n
@@ -354,16 +411,22 @@ class LivePredictionEngine:
 
     # ── Snapshot Builder — engine orchestrates, snapshot builder assembles ─
 
-    def _build_snapshot(self) -> LivePredictionSnapshot:
+    def _build_snapshot(self, force_theoddsapi: bool = False) -> LivePredictionSnapshot:
         """
         Build a complete prediction snapshot.
+
+        Args:
+            force_theoddsapi: If True, bypass the daily schedule and call TheOddsAPI.
+                              True = user clicked Refresh (force_refresh=True).
+                              False = auto-refresh from stale cache — respects schedule.
 
         Flow:
           1. Auto-resolve completed games (engine-owned, non-blocking)
           2. Fetch real-time odds (engine-owned, respects cache TTL)
           3. Parse odds into LiveGame objects (via OddsParser)
-          4. Run ML predictions (engine-owned, via predictor)
-          5. Assemble snapshot (via SnapshotBuilder, pure assembler)
+          4. If no real games found, auto-seed with offline data (offseason fallback)
+          5. Run ML predictions (engine-owned, via predictor)
+          6. Assemble snapshot (via SnapshotBuilder, pure assembler)
 
         All steps before assembly are engine-level so tests can patch them.
         Each step is self-healing: failure in one step does not block subsequent steps.
@@ -372,12 +435,16 @@ class LivePredictionEngine:
         self._auto_resolve_completed_games()
 
         # Step 2 - 4: Fetch, parse, predict — each handles empty gracefully
-        raw_odds = self._fetch_realtime_odds()
+        # force_theoddsapi is True when user clicked Refresh (force_refresh=True).
+        # When False (stale cache auto-refresh), the daily schedule governs calls.
+        raw_odds = self._fetch_realtime_odds(force_theoddsapi=force_theoddsapi)
         fresh_odds = bool(raw_odds)
         if not fresh_odds:
             logger.debug("No fresh odds — will use cached/empty games")
 
         all_games: list[LiveGame] = []
+        is_seeded = False
+
         if raw_odds:
             try:
                 all_games = self._odds_parser.parse_games(raw_odds)
@@ -386,17 +453,35 @@ class LivePredictionEngine:
                 logger.warning(f"Odds parsing failed: {e}")
                 all_games = []
 
+        # Offseason: when no real games are found, show an honest empty state
+        if not all_games:
+            logger.info("No real games available — displaying empty state (offseason)")
+
         try:
             self._predict_games(all_games)
         except Exception as e:
             logger.warning(f"ML prediction step failed: {e}")
 
-        # Step 5: Assemble snapshot (pure assembler, no side effects)
-        return self._snapshot_builder.build_snapshot(
+        # Step 5: Detect arbitrage opportunities from raw odds
+        arb_opportunities: list[dict] = []
+        if raw_odds and len(raw_odds) > 0:
+            try:
+                from betting_intel.arbitrage import detect_arbitrage
+                arb_results = detect_arbitrage(raw_odds)
+                arb_opportunities = [o.to_dict() for o in arb_results]
+            except Exception as e:
+                logger.debug(f"Arbitrage detection failed (non-critical): {e}")
+
+        # Step 6: Assemble snapshot (pure assembler, no side effects)
+        snap = self._snapshot_builder.build_snapshot(
             all_games=all_games,
             fresh_odds=fresh_odds,
         )
-
+        snap.arbitrage_opportunities = arb_opportunities
+        snap.n_arbitrage = len(arb_opportunities)
+        if arb_opportunities:
+            logger.info(f"Arbitrage opportunities: {len(arb_opportunities)} found")
+        return snap
     def _predict_games(self, games: list[LiveGame]) -> list[LiveGame]:
         """Run all available prediction tiers on games.
 
@@ -438,6 +523,27 @@ class LivePredictionEngine:
             except Exception as e:
                 logger.warning(f"Totals prediction failed: {e}")
 
+        # TIER 3: Soccer Prediction — ELO + Poisson for EPL
+        soccer_games = [g for g in games if g.sport_group == "Soccer"]
+        if soccer_games:
+            try:
+                from betting_intel.live.soccer_predictor import EPLSoccerPredictor
+
+                for game in soccer_games:
+                    try:
+                        # Moneyline prediction (home/draw/away)
+                        game = EPLSoccerPredictor.predict_moneyline(game)
+                        # Totals prediction (over/under goals)
+                        game = EPLSoccerPredictor.predict_totals(game)
+                    except Exception as e:
+                        logger.debug(f"Soccer prediction failed for {game.matchup}: {e}")
+                        continue
+
+                n_soccer = sum(1 for g in soccer_games if g.edge_pct != 0 and g.edge_pct is not None)
+                logger.info(f"Soccer ELO predictor: predicted {n_soccer} EPL games")
+            except Exception as e:
+                logger.warning(f"Soccer prediction pipeline failed: {e}")
+
         # Fallback for unpredicted games — ensures every game has
         # sensible defaults so the dashboard never sees None fields.
         now_iso = datetime.now().isoformat()
@@ -453,6 +559,8 @@ class LivePredictionEngine:
 
             # Basketball: use market total as predicted total proxy
             if game.sport_group == "Basketball":
+                game.predicted_total = float(game.market_total) if game.market_total and game.market_total > 0 else None
+            elif game.sport_group == "Soccer":
                 game.predicted_total = float(game.market_total) if game.market_total and game.market_total > 0 else None
             else:
                 game.predicted_total = None

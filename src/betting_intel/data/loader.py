@@ -43,7 +43,13 @@ class NBADataLoader:
         if not self.db_path or not self.db_path.exists():
             logger.warning(f"Database not found at {self.db_path} — returning empty DataFrame")
             return pd.DataFrame()
-        conn = sqlite3.connect(str(self.db_path))
+
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+        except (sqlite3.Error, OSError) as e:
+            logger.error(f"Failed to connect to database at {self.db_path}: {e}")
+            return pd.DataFrame()
+
         query = """
         SELECT
             SEASON_ID, TEAM_ID, TEAM_ABBREVIATION, TEAM_NAME,
@@ -55,11 +61,21 @@ class NBADataLoader:
         FROM game_logs
         ORDER BY GAME_DATE, TEAM_ID
         """
-        df = pd.read_sql_query(query, conn)
-        conn.close()
+        try:
+            df = pd.read_sql_query(query, conn)
+        except (pd.io.sql.DatabaseError, sqlite3.Error) as e:
+            logger.error(f"Failed to read game_logs table: {e}")
+            conn.close()
+            return pd.DataFrame()
+        finally:
+            conn.close()
+
+        if df.empty:
+            logger.warning("game_logs table is empty")
+            return df
 
         # Parse dates
-        df["GAME_DATE"] = pd.to_datetime(df["GAME_DATE"])
+        df["GAME_DATE"] = pd.to_datetime(df["GAME_DATE"], errors="coerce")
         # Parse numeric columns
         numeric_cols = [
             "MIN", "PTS", "FGM", "FGA", "FG_PCT", "FG3M", "FG3A", "FG3_PCT",
@@ -67,7 +83,8 @@ class NBADataLoader:
             "BLK", "TOV", "PF", "PLUS_MINUS"
         ]
         for col in numeric_cols:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
 
         return df
 
@@ -82,51 +99,76 @@ class NBADataLoader:
         if df is None or df.empty:
             return pd.DataFrame()
 
-        # Parse home/away from MATCHUP
-        df["IS_HOME"] = df["MATCHUP"].fillna("").str.contains("vs.").astype(int)
-        df["OPPONENT"] = df["MATCHUP"].fillna("").str.split(" ").str[-1]
+        try:
+            # Parse home/away from MATCHUP
+            df["IS_HOME"] = df["MATCHUP"].fillna("").str.contains("vs.").astype(int)
+            df["OPPONENT"] = df["MATCHUP"].fillna("").str.split(" ").str[-1]
 
-        # Rename columns for clarity
-        team_cols = {
-            "PTS": "team_pts", "FGM": "team_fgm", "FGA": "team_fga",
-            "FG_PCT": "team_fg_pct", "FG3M": "team_fg3m", "FG3A": "team_fg3a",
-            "FG3_PCT": "team_fg3_pct", "FTM": "team_ftm", "FTA": "team_fta",
-            "FT_PCT": "team_ft_pct", "OREB": "team_oreb", "DREB": "team_dreb",
-            "REB": "team_reb", "AST": "team_ast", "STL": "team_stl",
-            "BLK": "team_blk", "TOV": "team_tov", "PF": "team_pf",
-            "PLUS_MINUS": "team_plus_minus"
-        }
-        df = df.rename(columns=team_cols)
+            # Rename columns for clarity
+            team_cols = {
+                "PTS": "team_pts", "FGM": "team_fgm", "FGA": "team_fga",
+                "FG_PCT": "team_fg_pct", "FG3M": "team_fg3m", "FG3A": "team_fg3a",
+                "FG3_PCT": "team_fg3_pct", "FTM": "team_ftm", "FTA": "team_fta",
+                "FT_PCT": "team_ft_pct", "OREB": "team_oreb", "DREB": "team_dreb",
+                "REB": "team_reb", "AST": "team_ast", "STL": "team_stl",
+                "BLK": "team_blk", "TOV": "team_tov", "PF": "team_pf",
+                "PLUS_MINUS": "team_plus_minus"
+            }
+            # Only rename columns that exist
+            rename_map = {k: v for k, v in team_cols.items() if k in df.columns}
+            df = df.rename(columns=rename_map)
 
-        # Merge both teams' stats per game
-        home = df[df["IS_HOME"] == 1].copy()
-        away = df[df["IS_HOME"] == 0].copy()
+            # Merge both teams' stats per game
+            home = df[df["IS_HOME"] == 1].copy()
+            away = df[df["IS_HOME"] == 0].copy()
 
-        # Merge on GAME_ID
-        games = pd.merge(
-            home, away,
-            on="GAME_ID",
-            suffixes=("_home", "_away"),
-            how="inner"
-        )
+            if home.empty or away.empty:
+                logger.warning(f"Missing home ({len(home)}) or away ({len(away)}) rows in game dataset")
+                return pd.DataFrame()
 
-        # Basic game-level features
-        games["GAME_DATE"] = games["GAME_DATE_home"]
-        games["total_points"] = games["team_pts_home"] + games["team_pts_away"]
-        games["point_diff"] = games["team_pts_home"] - games["team_pts_away"]
-        games["pace"] = (
-            games["team_fga_home"] + games["team_tov_home"]
-            - games["team_oreb_home"] +
-            games["team_fga_away"] + games["team_tov_away"]
-            - games["team_oreb_away"]
-        )
-        games["eFG_home"] = (games["team_fgm_home"] + 0.5 * games["team_fg3m_home"]) / games["team_fga_home"]
-        games["eFG_away"] = (games["team_fgm_away"] + 0.5 * games["team_fg3m_away"]) / games["team_fga_away"]
+            # Merge on GAME_ID
+            games = pd.merge(
+                home, away,
+                on="GAME_ID",
+                suffixes=("_home", "_away"),
+                how="inner"
+            )
 
-        # Sort by date
-        games = games.sort_values("GAME_DATE").reset_index(drop=True)
+            if games.empty:
+                logger.warning("Merged game dataset is empty — likely GAME_ID mismatch")
+                return pd.DataFrame()
 
-        return games
+            # Basic game-level features (with divide-by-zero guard)
+            games["GAME_DATE"] = games["GAME_DATE_home"]
+            games["total_points"] = games["team_pts_home"] + games["team_pts_away"]
+            games["point_diff"] = games["team_pts_home"] - games["team_pts_away"]
+            games["pace"] = (
+                games["team_fga_home"].fillna(0) + games["team_tov_home"].fillna(0)
+                - games["team_oreb_home"].fillna(0) +
+                games["team_fga_away"].fillna(0) + games["team_tov_away"].fillna(0)
+                - games["team_oreb_away"].fillna(0)
+            )
+            games["eFG_home"] = np.where(
+                games["team_fga_home"].fillna(0) > 0,
+                (games["team_fgm_home"].fillna(0) + 0.5 * games["team_fg3m_home"].fillna(0)) / games["team_fga_home"].clip(lower=1),
+                0.0
+            )
+            games["eFG_away"] = np.where(
+                games["team_fga_away"].fillna(0) > 0,
+                (games["team_fgm_away"].fillna(0) + 0.5 * games["team_fg3m_away"].fillna(0)) / games["team_fga_away"].clip(lower=1),
+                0.0
+            )
+
+            # Sort by date
+            games = games.sort_values("GAME_DATE").reset_index(drop=True)
+
+            return games
+
+        except Exception as e:
+            logger.error(f"Failed to build game dataset: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            return pd.DataFrame()
 
     def compute_rest_days(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -135,13 +177,29 @@ class NBADataLoader:
         """
         if df is None or df.empty:
             return pd.DataFrame()
-        df = df.copy()
-        df["GAME_DATE"] = pd.to_datetime(df["GAME_DATE"])
-        df = df.sort_values(["TEAM_ID", "GAME_DATE"])
-        df["rest_days"] = df.groupby("TEAM_ID")["GAME_DATE"].diff().dt.days
-        df["rest_days"] = df["rest_days"].fillna(MAX_REST_DAYS).clip(0, MAX_REST_DAYS)
-        df["is_back_to_back"] = (df["rest_days"] <= 1).astype(int)
-        return df
+        try:
+            df = df.copy()
+            df["GAME_DATE"] = pd.to_datetime(df["GAME_DATE"], errors="coerce")
+
+            # Determine team identifier column (TEAM_ID for NBA, TEAM_NAME for NCAAB)
+            team_id_col = "TEAM_ID" if "TEAM_ID" in df.columns else "TEAM_NAME"
+            if team_id_col not in df.columns:
+                logger.warning(f"No team identifier column found for rest days computation")
+                df["rest_days"] = MAX_REST_DAYS
+                df["is_back_to_back"] = 0
+                return df
+
+            df = df.sort_values([team_id_col, "GAME_DATE"])
+            df["rest_days"] = df.groupby(team_id_col)["GAME_DATE"].diff().dt.days
+            df["rest_days"] = df["rest_days"].fillna(MAX_REST_DAYS).clip(0, MAX_REST_DAYS)
+            df["is_back_to_back"] = (df["rest_days"] <= 1).astype(int)
+            return df
+        except Exception as e:
+            logger.error(f"Failed to compute rest days: {e}")
+            df = df.copy() if df is not None else pd.DataFrame()
+            df["rest_days"] = MAX_REST_DAYS
+            df["is_back_to_back"] = 0
+            return df
 
 
 # ── NCAAB Data Loader (ESPN-based) ───────────────────────────────────────

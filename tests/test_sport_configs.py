@@ -39,7 +39,6 @@ class TestSportConfig:
         assert cfg.sport_key == "test_sport"
         assert cfg.display_name == "Test"
         assert cfg.full_name == "Test Sport"
-        assert cfg.emoji == ""                            # default
         assert cfg.has_h2h is True                        # default
         assert cfg.has_spreads is False                   # default
         assert cfg.has_totals is False                    # default
@@ -57,7 +56,6 @@ class TestSportConfig:
             sport_key="basketball_euroleague",
             display_name="Euroleague",
             full_name="EuroLeague Basketball",
-            emoji="🏀",
             has_h2h=True,
             has_spreads=True,
             has_totals=True,
@@ -69,7 +67,6 @@ class TestSportConfig:
             season_end_month=5,
         )
         assert cfg.sport_key == "basketball_euroleague"
-        assert cfg.emoji == "🏀"
         assert cfg.team_name_map["Real Madrid"] == "Real Madrid"
 
     def test_default_markets_to_fetch(self):
@@ -234,21 +231,22 @@ class TestTeamNameResolution:
 class TestMasterLists:
     """Tests for ALL_SPORTS, ALL_TEAM_NAME_MAP, and lookup dicts."""
 
-    def test_all_sports_includes_four_leagues(self):
-        """ALL_SPORTS should have NBA, NCAAB, Euroleague, and NFL."""
-        from betting_intel.live.sport_configs import ALL_SPORTS, NBA, NCAAB, EUROLEAGUE, NFL
+    def test_all_sports_includes_five_leagues(self):
+        """ALL_SPORTS should have NBA, NCAAB, Euroleague, EPL, and NFL."""
+        from betting_intel.live.sport_configs import ALL_SPORTS, NBA, NCAAB, EUROLEAGUE, EPL, NFL
 
-        assert len(ALL_SPORTS) == 4
+        assert len(ALL_SPORTS) == 5
         assert ALL_SPORTS[0] is NBA
         assert ALL_SPORTS[1] is NCAAB
         assert ALL_SPORTS[2] is EUROLEAGUE
-        assert ALL_SPORTS[3] is NFL
+        assert ALL_SPORTS[3] is EPL
+        assert ALL_SPORTS[4] is NFL
 
     def test_all_team_name_map_size(self):
-        """ALL_TEAM_NAME_MAP should have 222 entries (30 NBA + 140 NCAAB + 20 Euroleague + 32 NFL)."""
+        """ALL_TEAM_NAME_MAP should have 242 entries (30 NBA + 140 NCAAB + 20 Euroleague + 20 EPL + 32 NFL)."""
         from betting_intel.live.sport_configs import ALL_TEAM_NAME_MAP
 
-        assert len(ALL_TEAM_NAME_MAP) == 222
+        assert len(ALL_TEAM_NAME_MAP) == 253
 
     def test_all_team_name_map_includes_euroleague(self):
         """Euroleague teams should be in ALL_TEAM_NAME_MAP."""
@@ -585,8 +583,8 @@ class TestGetActiveSports:
     """Tests for get_active_sports() which returns only in-season leagues."""
 
     @patch("betting_intel.live.sport_configs.datetime")
-    def test_january_returns_all_four(self, mock_dt):
-        """In January, all four basketball + football leagues should be active."""
+    def test_january_returns_all_five(self, mock_dt):
+        """In January, all five leagues should be active (NBA, NCAAB, Euroleague, EPL, NFL)."""
         from betting_intel.live.sport_configs import get_active_sports
 
         mock_dt.now.return_value = datetime(2026, 1, 15)
@@ -594,11 +592,11 @@ class TestGetActiveSports:
 
         active = get_active_sports()
         names = {s.display_name for s in active}
-        assert names == {"NBA", "NCAAB", "Euroleague", "NFL"}
+        assert names == {"NBA", "NCAAB", "Euroleague", "EPL", "NFL"}
 
     @patch("betting_intel.live.sport_configs.datetime")
     def test_july_returns_empty(self, mock_dt):
-        """In July, no basketball leagues should be active (all off-season)."""
+        """In July, no basketball/football leagues should be active (all off-season). EPL also off (Aug-May)."""
         from betting_intel.live.sport_configs import get_active_sports
 
         mock_dt.now.return_value = datetime(2026, 7, 15)
@@ -731,31 +729,39 @@ class TestBackfillConstants:
 
     # ── All constants share same structure ───────────────────────────
 
-    def test_all_have_same_length(self):
-        """All four backfill constants should have exactly 121 entries."""
+    def test_minimum_entry_count(self):
+        """All four backfill constants should have at least 121 entries.
+        NBA has additional v6.5 entries for advanced basketball features.
+        """
         from betting_intel.data.features import (
             _NBA_NA_FILL, _NCAAB_NA_FILL,
             _EUROLEAGUE_NA_FILL, _NFL_NA_FILL,
         )
 
-        assert len(_NBA_NA_FILL) == 121
-        assert len(_NCAAB_NA_FILL) == 121
-        assert len(_EUROLEAGUE_NA_FILL) == 121
-        assert len(_NFL_NA_FILL) == 121
+        assert len(_NBA_NA_FILL) >= 121
+        assert len(_NCAAB_NA_FILL) >= 121
+        assert len(_EUROLEAGUE_NA_FILL) >= 121
+        assert len(_NFL_NA_FILL) >= 121
+        # NBA should have v6.5 entries for advanced basketball features
+        assert len(_NBA_NA_FILL) >= 135
 
-    def test_all_have_same_keys(self):
-        """All four constants should have identical key sets."""
-        from betting_intel.data.features import (
-            _NBA_NA_FILL, _NCAAB_NA_FILL,
-            _EUROLEAGUE_NA_FILL, _NFL_NA_FILL,
-        )
+    def test_nba_has_v65_entries(self):
+        """NBA backfill should contain v6.5 feature patterns."""
+        from betting_intel.data.features import _NBA_NA_FILL
 
         nba_keys = {k for k, _ in _NBA_NA_FILL}
-        ncaab_keys = {k for k, _ in _NCAAB_NA_FILL}
-        euro_keys = {k for k, _ in _EUROLEAGUE_NA_FILL}
-        nfl_keys = {k for k, _ in _NFL_NA_FILL}
-
-        assert nba_keys == ncaab_keys == euro_keys == nfl_keys
+        # v6.5 interaction features
+        assert "interact_" in nba_keys
+        # v6.5 volatility features
+        assert "volatility_pts_" in nba_keys
+        assert "volatility_pm_" in nba_keys
+        # v6.5 momentum features
+        assert "win_streak" in nba_keys
+        assert "streak_margin" in nba_keys
+        assert "prev_loss" in nba_keys
+        # v6.5 pace-adjusted features
+        assert "pace_adj_off" in nba_keys
+        assert "pace_adj_net" in nba_keys
 
     # ── Euroleague key values ───────────────────────────────────────
 

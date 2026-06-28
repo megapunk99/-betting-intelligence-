@@ -272,6 +272,13 @@ class GamePredictor:
 
     def _predict_with_robust_system(self, games: list[LiveGame]) -> list[LiveGame]:
         """Predict games using the MarketInefficiencySystem with full feature pipeline."""
+        if not games:
+            return games
+
+        # Guard: if kelly staker failed to init, skip stake computations
+        if self._kelly_staker is None:
+            logger.warning("Kelly staker not available — predictions will have zero stakes")
+
         from betting_intel.recommendations.staking import american_to_decimal
         from betting_intel.features.market_inefficiency import (
             american_to_implied_prob,
@@ -288,26 +295,46 @@ class GamePredictor:
                 return games
 
             games_df = loader.build_game_dataset(raw_df)
+            if games_df is None or games_df.empty:
+                return games
+
             raw_df = loader.compute_rest_days(raw_df)
+            if raw_df is None or raw_df.empty:
+                return games
+
             fe = FeatureEngineer()
             features_df = fe.build_all_features(games_df, raw_df)
             if features_df is None or features_df.empty:
                 return games
 
             system = self._robust_system
+            if system is None:
+                logger.warning("Robust system not initialized — skipping predictions")
+                return games
+
             system_feature_cols = self._robust_feature_cols or []
             n_expected = len(system_feature_cols) if system_feature_cols else 0
 
             for game in games:
                 try:
+                    # Guard: skip if no matchup data
+                    if not game.matchup:
+                        continue
+
                     # Market-implied probability
                     market_prob = None
                     if game.home_ml is not None and game.away_ml is not None:
-                        home_implied = american_to_implied_prob(game.home_ml)
-                        away_implied = american_to_implied_prob(game.away_ml)
-                        market_prob, _ = remove_vig(home_implied, away_implied)
+                        try:
+                            home_implied = american_to_implied_prob(game.home_ml)
+                            away_implied = american_to_implied_prob(game.away_ml)
+                            market_prob, _ = remove_vig(home_implied, away_implied)
+                        except Exception:
+                            logger.debug(f"Failed to compute market prob for {game.matchup}")
+                            market_prob = None
 
                     # Build feature vector
+                    if not game.home_team_short or not game.away_team_short:
+                        continue
                     feat = self._build_feature_vector(
                         game.home_team_short,
                         game.away_team_short,
@@ -327,18 +354,23 @@ class GamePredictor:
                     X_pred = feat.values.reshape(1, -1)
                     result = system.predict_with_details(X_pred, market_prob=market_prob)
 
-                    if result.calibration_failed and result.calibration_warning:
+                    if result is None:
+                        continue
+
+                    # Guard: check calibration_failed attr exists
+                    if getattr(result, 'calibration_failed', False) and getattr(result, 'calibration_warning', None):
                         logger.warning(
                             f"Calibration warning for {game.matchup}: {result.calibration_warning}"
                         )
 
-                    home_win_prob = result.home_win_prob
+                    home_win_prob = getattr(result, 'home_win_prob', 0.5)
 
                     # Feature importance
-                    if result.feature_importance:
+                    feature_importance = getattr(result, 'feature_importance', None)
+                    if feature_importance:
                         top_features = dict(
                             sorted(
-                                result.feature_importance.items(),
+                                feature_importance.items(),
                                 key=lambda x: x[1],
                                 reverse=True,
                             )[:8]
@@ -347,7 +379,7 @@ class GamePredictor:
 
                     # Apply predictions
                     if market_prob is not None:
-                        predicted_error = result.edge_pct if result.edge_pct is not None else 0.0
+                        predicted_error = result.edge_pct if getattr(result, 'edge_pct', None) is not None else 0.0
 
                         if abs(predicted_error) < MIN_EDGE_THRESHOLD:
                             game.edge_pct = 0.0
@@ -357,28 +389,28 @@ class GamePredictor:
                         else:
                             game.edge_pct = predicted_error
                             game.direction = "home" if predicted_error > 0 else "away"
-                            game.confidence = (result.confidence_label or "low").lower()
+                            game.confidence = (getattr(result, 'confidence_label', None) or "low").lower()
 
                         if predicted_error >= 0:
-                            decimal_odds = american_to_decimal(game.home_ml)
+                            decimal_odds = american_to_decimal(game.home_ml) if game.home_ml else 2.0
                             team_for_kelly = game.home_team_short
                             win_prob_for_kelly = home_win_prob
                         else:
-                            decimal_odds = american_to_decimal(game.away_ml)
+                            decimal_odds = american_to_decimal(game.away_ml) if game.away_ml else 2.0
                             team_for_kelly = game.away_team_short
                             win_prob_for_kelly = 1.0 - home_win_prob
 
                         stake_result = self._kelly_staker.compute_stake(
                             win_probability=max(win_prob_for_kelly, 0.01),
                             decimal_odds=decimal_odds,
-                            confidence_score=result.confidence_score,
-                            confidence_label=result.confidence_label,
+                            confidence_score=getattr(result, 'confidence_score', 0.5),
+                            confidence_label=getattr(result, 'confidence_label', 'low'),
                             edge_pct=abs(predicted_error),
                             league=game.league,
                             team=team_for_kelly,
                             game_id=game.game_id,
                         )
-                        game.stake_dollars = stake_result.stake_dollars
+                        game.stake_dollars = stake_result.stake_dollars if stake_result else 0.0
                     else:
                         game.edge_pct = 0.0
                         game.direction = "neutral"

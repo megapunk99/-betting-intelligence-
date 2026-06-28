@@ -221,7 +221,7 @@ class DraftKingsScraper:
                 # Apply stealth to hide automation
                 try:
                     from playwright_stealth import Stealth
-                    Stealth(page)
+                    Stealth().apply_stealth_sync(context)
                     logger.debug("Stealth applied to Playwright page")
                 except ImportError:
                     logger.debug("playwright-stealth not available")
@@ -274,8 +274,8 @@ class DraftKingsScraper:
                     except Exception as e2:
                         logger.debug(f"DraftKings fetch fallback failed: {e2}")
 
-                # Wait for API responses to arrive
-                page.wait_for_timeout(8000)
+                # Wait for API responses to arrive (reduced timeout — Cloudflare usually blocks)
+                page.wait_for_timeout(3000)
 
                 browser.close()
 

@@ -394,7 +394,7 @@ class StealthBrowser:
                 # Apply stealth if available
                 try:
                     from playwright_stealth import Stealth
-                    Stealth(page)
+                    Stealth().apply_stealth_sync(context)
                     logger.debug("Stealth plugin applied to Playwright page")
                 except ImportError:
                     logger.debug("playwright-stealth not available, launching without stealth")

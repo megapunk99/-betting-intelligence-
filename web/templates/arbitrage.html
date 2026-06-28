@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="api-key" content="{{ api_key }}">
+  <title>Betting Intelligence — Arbitrage</title>
+  <script>
+    (function() {
+      var theme = localStorage.getItem('betting-intel-theme');
+      if (!theme) {
+        theme = window.matchMedia('(prefers-color-scheme:light)').matches ? 'light' : 'dark';
+      }
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/future-predictions.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><line x1='50' y1='10' x2='50' y2='70' stroke='%234f8cff' stroke-width='6' stroke-linecap='round'/><line x1='15' y1='70' x2='85' y2='70' stroke='%234f8cff' stroke-width='6' stroke-linecap='round'/><line x1='35' y1='70' x2='50' y2='90' stroke='%234f8cff' stroke-width='6' stroke-linecap='round'/><line x1='65' y1='70' x2='50' y2='90' stroke='%234f8cff' stroke-width='6' stroke-linecap='round'/></svg>">
+</head>
+<body>
+
+  <nav>
+    <div class="nav-inner">
+      <a href="/" class="logo">
+        <span class="logo-symbol">BI</span>
+        Betting Intel
+      </a>
+      <div class="nav-links">
+        <a href="/" class="nav-link">Dashboard</a>
+        <a href="/future-predictions" class="nav-link">Future</a>
+        <a href="/arbitrage" class="nav-link active">Arbitrage</a>
+        <button id="theme-toggle" class="theme-btn" title="Toggle theme" aria-label="Toggle dark/light theme">
+          <span class="theme-icon-dark">&#127769;</span>
+          <span class="theme-icon-light">&#9728;&#65039;</span>
+        </button>
+        <span id="live-indicator" class="live-indicator">Arbitrage</span>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    <div class="stats-row">
+      <div class="stat-card">
+        <span class="stat-label">Arbitrage Opportunities</span>
+        <span class="stat-value" id="arb-count">0</span>
+        <span class="stat-sub">guaranteed profit situations</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Best Profit</span>
+        <span class="stat-value green" id="arb-best-profit">0.00%</span>
+        <span class="stat-sub">highest guaranteed return</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Active Games</span>
+        <span class="stat-value" id="arb-games">0</span>
+        <span class="stat-sub">with arbitrage potential</span>
+      </div>
+    </div>
+
+    <div class="action-bar">
+      <button class="btn btn-primary" onclick="refreshArbitrage()">
+        &#8635; Refresh Arbitrage
+      </button>
+      <span class="freshness">
+        Last updated: <span id="arb-updated-at">—</span>
+      </span>
+    </div>
+
+    <div class="section-header">
+      <h2 class="section-title">
+        &#9878; Arbitrage Opportunities
+        <span class="badge-count" id="arb-badge">0</span>
+      </h2>
+    </div>
+
+    <!-- Error state (hidden by default) -->
+    <div class="empty-state" id="arb-error" style="display:none;">
+      <div class="empty-icon">&#9888;</div>
+      <h3>Unable to Scan</h3>
+      <p id="arb-error-text">No odds data available. Refresh the dashboard first to fetch live odds.</p>
+      <div class="empty-actions">
+        <button class="btn btn-primary" onclick="refreshArbitrage()">&#8635; Refresh Now</button>
+      </div>
+    </div>
+
+    <!-- Loading skeleton (hidden by default) -->
+    <div class="skeleton-area active" id="arb-skeleton">
+      <div class="skeleton-grid">
+        {% for i in range(3) %}
+        <div class="skeleton-card">
+          <div class="skel-row">
+            <div class="skel skel-badge"></div>
+            <div class="skel skel-date"></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:0.75rem;">
+            <div class="skel-shimmer" style="flex:1;height:16px;border-radius:4px;"></div>
+            <div class="skel" style="width:30px;height:10px;border-radius:3px;"></div>
+            <div class="skel-shimmer" style="flex:1;height:16px;border-radius:4px;"></div>
+          </div>
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.25rem;">
+              <div class="skel" style="width:120px;height:10px;border-radius:3px;"></div>
+              <div class="skel" style="width:60px;height:14px;border-radius:3px;"></div>
+            </div>
+            <div class="skel" style="width:100%;height:3px;border-radius:2px;"></div>
+          </div>
+          <div class="skel-details">
+            <div class="skel skel-chip-wide"></div>
+            <div class="skel skel-chip"></div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Empty state (hidden by default) -->
+    <div class="empty-state" id="arb-empty" style="display:none;">
+      <div class="empty-icon">&#9981;</div>
+      <h3>No Arbitrage Found</h3>
+      <p>No guaranteed-profit opportunities detected in current odds data.</p>
+      <p class="hint">Arbitrage requires at least 2 sportsbooks with conflicting prices on the same game. Try refreshing when more games are available.</p>
+    </div>
+
+    <!-- Cards container -->
+    <div class="arb-grid" id="arb-grid"></div>
+
+    {% if theoddsapi_status.enabled %}
+    <div class="api-banner" id="api-banner">
+      <span class="api-banner-icon">&#9889;</span>
+      <span class="api-banner-text">
+        <strong>TheOddsAPI</strong>
+        {% if theoddsapi_status.last_call %}
+        &mdash; last called <span>{{ theoddsapi_status.last_call }}</span>
+        {% else %}
+        &mdash; <span>not yet called</span>
+        {% endif %}
+        &middot; arbitrage requires multiple sportsbooks per game
+      </span>
+    </div>
+    {% endif %}
+  </main>
+
+  <div id="toast-root" aria-live="polite"></div>
+
+  <footer>
+    <p>Betting Intelligence — Arbitrage detection across all supported sportsbooks</p>
+  </footer>
+
+  <script>
+    // ── Theme toggle ────────────────────────────────────────────────────
+    document.getElementById('theme-toggle').addEventListener('click', function() {
+      var html = document.documentElement;
+      var current = html.getAttribute('data-theme');
+      var next = current === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('betting-intel-theme', next);
+    });
+
+    // ── Toast system ────────────────────────────────────────────────────
+    function showToast(message, type) {
+      var root = document.getElementById('toast-root');
+      var toast = document.createElement('div');
+      toast.className = 'toast-float ' + (type || 'info');
+      var icon = type === 'success' ? '&#10003;' : type === 'error' ? '&#10007;' : '&#9432;';
+      toast.innerHTML = '<span>' + icon + '</span> ' + message;
+      root.appendChild(toast);
+      setTimeout(function() {
+        toast.classList.add('dismissing');
+        setTimeout(function() { toast.remove(); }, 300);
+      }, 4000);
+    }
+
+    // ── Format helpers ──────────────────────────────────────────────────
+    function fmtPct(val) {
+      var num = parseFloat(val);
+      if (isNaN(num)) return '0.00%';
+      return (num >= 0 ? '+' : '') + (num * 100).toFixed(2) + '%';
+    }
+
+    function fmtDollars(val) {
+      var num = parseFloat(val);
+      if (isNaN(num)) return '$0';
+      return '$' + num.toFixed(0);
+    }
+
+    function fmtOdds(val) {
+      var num = parseInt(val, 10);
+      if (isNaN(num)) return '—';
+      return num > 0 ? '+' + num : '' + num;
+    }
+
+    // ── Render arb card ─────────────────────────────────────────────────
+    function renderArbCard(arb) {
+      var grade = 'grade-' + (arb.profit_grade || 'F').charAt(0);
+      var typeLabels = {
+        'standard_2way': '2-Way H2H',
+        'three_way': '3-Way',
+        'totals': 'Totals'
+      };
+      var typeLabel = typeLabels[arb.arb_type] || arb.arb_type;
+
+      var legsHtml = (arb.legs || []).map(function(leg) {
+        var pointStr = leg.point != null ? ' ' + leg.point.toFixed(1) : '';
+        return '<div class="arb-leg">' +
+          '<span class="arb-leg-book">' + leg.bookmaker + '</span>' +
+          '<span class="arb-leg-team">' + leg.team + pointStr + '</span>' +
+          '<span class="arb-leg-odds">' + fmtOdds(leg.price) + '</span>' +
+          '<span class="arb-leg-stake">' + fmtDollars(leg.stake_dollars) + '</span>' +
+          '<span class="arb-leg-pct">' + (leg.stake_pct * 100).toFixed(1) + '%</span>' +
+        '</div>';
+      }).join('');
+
+      return '<div class="arb-card grade-' + (arb.profit_grade || 'F').charAt(0) + '">' +
+        '<div class="arb-card-header">' +
+          '<span class="league-badge league-' + (arb.league || '').toLowerCase() + '">' + (arb.league || '') + '</span>' +
+          '<span class="arb-type-badge">' + typeLabel + '</span>' +
+          '<span class="arb-grade">' + (arb.profit_grade || 'F') + '</span>' +
+          '<span class="game-date">' + (arb.game_date || '').slice(0, 10) + '</span>' +
+        '</div>' +
+        '<div class="arb-matchup">' +
+          '<span class="arb-matchup-text">' + (arb.matchup || '') + '</span>' +
+          '<span class="arb-books-n">' + (arb.n_books || 0) + ' books</span>' +
+        '</div>' +
+        '<div class="arb-profit-row">' +
+          '<span class="arb-profit-label">Guaranteed Profit</span>' +
+          '<span class="arb-profit-value">' + fmtPct(arb.profit_pct) + '</span>' +
+          '<span class="arb-profit-perk">' + fmtDollars(arb.profit_per_1k) + ' / $1k</span>' +
+        '</div>' +
+        '<div class="arb-bar-track">' +
+          '<div class="arb-bar-fill" style="width:' + Math.min(arb.profit_pct * 500, 100) + '%"></div>' +
+        '</div>' +
+        '<div class="arb-legs">' +
+          '<div class="arb-legs-title">Place These Bets</div>' +
+          legsHtml +
+        '</div>' +
+        '<div class="arb-implied-row">' +
+          '<span>Total implied: <strong>' + (arb.total_implied_prob * 100).toFixed(2) + '%</strong></span>' +
+          '<span>Depth: ' + (arb.depth || 2) + '-way</span>' +
+        '</div>' +
+      '</div>';
+    }
+
+    // ── Fetch and render arbitrage data ────────────────────────────────
+    function refreshArbitrage() {
+      var grid = document.getElementById('arb-grid');
+      var skeleton = document.getElementById('arb-skeleton');
+      var empty = document.getElementById('arb-empty');
+      var error = document.getElementById('arb-error');
+
+      skeleton.classList.add('active');
+      grid.innerHTML = '';
+      empty.style.display = 'none';
+      error.style.display = 'none';
+
+      // First refresh the engine to get fresh data
+      fetch('/api/live/refresh', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(refreshResult) {
+          // Now fetch arbitrage data
+          return fetch('/api/arbitrage');
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          skeleton.classList.remove('active');
+          var arbs = data.opportunities || [];
+
+          document.getElementById('arb-count').textContent = arbs.length;
+          document.getElementById('arb-badge').textContent = arbs.length;
+          document.getElementById('arb-updated-at').textContent = data.generated_at || '—';
+
+          if (arbs.length > 0) {
+            var bestProfit = 0;
+            arbs.forEach(function(a) { if (a.profit_pct > bestProfit) bestProfit = a.profit_pct; });
+            document.getElementById('arb-best-profit').textContent = fmtPct(bestProfit);
+          } else {
+            document.getElementById('arb-best-profit').textContent = '0.00%';
+          }
+
+          // Unique games with arbs
+          var gameIds = new Set();
+          arbs.forEach(function(a) { if (a.game_id) gameIds.add(a.game_id); });
+          document.getElementById('arb-games').textContent = gameIds.size;
+
+          if (arbs.length === 0) {
+            empty.style.display = 'block';
+            return;
+          }
+
+          var html = '';
+          arbs.forEach(function(arb) {
+            html += renderArbCard(arb);
+          });
+          grid.innerHTML = html;
+        })
+        .catch(function(err) {
+          skeleton.classList.remove('active');
+          error.style.display = 'block';
+          document.getElementById('arb-error-text').textContent = 'Failed to fetch arbitrage data: ' + (err.message || err);
+          showToast('Failed to load arbitrage data', 'error');
+        });
+    }
+
+    // On page load, automatically fetch arbitrage data from cached snapshot
+    (function() {
+      var skeleton = document.getElementById('arb-skeleton');
+      var empty = document.getElementById('arb-empty');
+      var error = document.getElementById('arb-error');
+
+      fetch('/api/arbitrage')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          skeleton.classList.remove('active');
+          var arbs = data.opportunities || [];
+
+          document.getElementById('arb-count').textContent = arbs.length;
+          document.getElementById('arb-badge').textContent = arbs.length;
+          document.getElementById('arb-updated-at').textContent = data.generated_at || '—';
+
+          if (arbs.length > 0) {
+            var bestProfit = 0;
+            arbs.forEach(function(a) { if (a.profit_pct > bestProfit) bestProfit = a.profit_pct; });
+            document.getElementById('arb-best-profit').textContent = fmtPct(bestProfit);
+            var gameIds = new Set();
+            arbs.forEach(function(a) { if (a.game_id) gameIds.add(a.game_id); });
+            document.getElementById('arb-games').textContent = gameIds.size;
+            var html = '';
+            arbs.forEach(function(arb) { html += renderArbCard(arb); });
+            document.getElementById('arb-grid').innerHTML = html;
+          } else {
+            empty.style.display = 'block';
+          }
+        })
+        .catch(function() {
+          skeleton.classList.remove('active');
+          empty.style.display = 'block';
+        });
+    })();
+  </script>
+</body>
+</html>
