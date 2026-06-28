@@ -919,5 +919,75 @@ def train_pipeline(
     click.echo()
 
 
+# ── Telegram Commands ───────────────────────────────────────────────────
+@cli.group()
+def telegram():
+    """Telegram notification commands."""
+    pass
+
+
+@telegram.command("test")
+def telegram_test():
+    """Send a test message to verify Telegram configuration.
+
+    Checks TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env or environment,
+    then sends a test message to verify the setup is working.
+    """
+    from betting_intel.notifications.telegram_bot import TelegramNotifier
+
+    notifier = TelegramNotifier()
+    click.echo("Testing Telegram configuration...")
+
+    if notifier.is_configured:
+        token_masked = notifier.bot_token[:6] + "..." + notifier.bot_token[-4:]
+        click.echo(f"  Bot token: {token_masked}")
+        click.echo(f"  Chat ID:   {notifier.chat_id}")
+    else:
+        click.echo("\n  Telegram is not configured.")
+        click.echo("  Set these in your .env file:")
+        click.echo()
+        click.echo(click.style("    TELEGRAM_BOT_TOKEN=your_bot_token_here", fg="cyan"))
+        click.echo(click.style("    TELEGRAM_CHAT_ID=your_chat_id_here", fg="cyan"))
+        click.echo()
+        click.echo("  How to set up:")
+        click.echo("  1. Open Telegram and search for @BotFather")
+        click.echo("  2. Send /newbot and follow the prompts to create a bot")
+        click.echo("  3. Copy the bot token")
+        click.echo("  4. Start a chat with your new bot and send /start")
+        click.echo("  5. Visit: https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates")
+        click.echo("  6. Find your chat_id in the JSON response")
+        click.echo()
+        raise click.Abort()
+
+    result = notifier.send_test_message_sync()
+    click.echo(f"\n  Result: {result}")
+
+
+@telegram.command("status")
+def telegram_status():
+    """Show Telegram notification configuration status."""
+    from betting_intel.notifications.telegram_bot import TelegramNotifier
+
+    notifier = TelegramNotifier()
+
+    click.echo("\n  Telegram Notification Status")
+    click.echo("  " + "-" * 30)
+
+    if notifier.is_configured:
+        token_masked = notifier.bot_token[:6] + "..." + notifier.bot_token[-4:]
+        click.echo(f"  Status:     {click.style('CONFIGURED', fg='green')}")
+        click.echo(f"  Bot token:  {token_masked}")
+        click.echo(f"  Chat ID:    {notifier.chat_id}")
+        click.echo(f"  Notified:   {len(notifier._notified_game_ids)} game(s) tracked")
+    else:
+        click.echo(f"  Status:     {click.style('NOT CONFIGURED', fg='red')}")
+        click.echo()
+        click.echo("  To configure, add to .env:")
+        click.echo(f"    {click.style('TELEGRAM_BOT_TOKEN=xxx', fg='cyan')}")
+        click.echo(f"    {click.style('TELEGRAM_CHAT_ID=xxx', fg='cyan')}")
+
+    click.echo()
+
+
 if __name__ == "__main__":
     cli()

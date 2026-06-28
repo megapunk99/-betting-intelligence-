@@ -22,6 +22,10 @@ ODDS_CACHE_TTL_SECONDS = 300       # Refresh odds every 5 minutes
 THEODDSAPI_REFRESH_INTERVAL = 0  # Throttle removed — scheduler handles daily cadence
 CACHE_DIR = PROJECT_ROOT / "cache"
 
+# ── Telegram Notifications ─────────────────────────────────────────────
+TELEGRAM_BOT_TOKEN = _settings.telegram_bot_token
+TELEGRAM_CHAT_ID = _settings.telegram_chat_id
+
 # ── Daily Fetch Schedule (minimize API usage) ─────────────────────────
 DAILY_FETCH_ENABLED = _settings.daily_fetch_enabled
 DAILY_FETCH_HOUR = _settings.daily_fetch_hour
@@ -35,4 +39,5 @@ __all__ = [
     "ROLLING_WINDOWS", "MAX_REST_DAYS",
     "ODDS_API_KEY", "ODDS_API_BASE_URL", "ODDS_CACHE_TTL_SECONDS", "CACHE_DIR",
     "DAILY_FETCH_ENABLED", "DAILY_FETCH_HOUR", "DAILY_FETCH_TIMEZONE",
+    "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
 ]

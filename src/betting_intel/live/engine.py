@@ -42,6 +42,7 @@ from betting_intel.live.odds_parser import OddsParser
 from betting_intel.live.predictor import GamePredictor
 from betting_intel.live.snapshot_builder import SnapshotBuilder
 from betting_intel.live.worker import LivePredictionWorker
+from betting_intel.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 # Re-export symbols that tests and other modules import from engine.py
 __all__ = [
@@ -138,6 +139,9 @@ class LivePredictionEngine:
 
         # Model lock (owned by engine for thread safety)
         self._model_lock = Lock()
+
+        # Telegram notifier (lazy — only instantiated if configured)
+        self._notifier: Optional[Any] = None
 
         logger.info(
             "LivePredictionEngine initialized — zero synthetic games. "
@@ -481,7 +485,59 @@ class LivePredictionEngine:
         snap.n_arbitrage = len(arb_opportunities)
         if arb_opportunities:
             logger.info(f"Arbitrage opportunities: {len(arb_opportunities)} found")
+
+        # Send Telegram alerts for high-confidence picks (non-blocking, best-effort)
+        try:
+            self._send_high_confidence_alerts(all_games)
+        except Exception as e:
+            logger.debug(f"Telegram alert dispatch failed: {e}")
+
         return snap
+
+    # ── Telegram Alerts — high-confidence picks ─────────────────────────
+
+    def _send_high_confidence_alerts(self, games: list[LiveGame]):
+        """Send Telegram alerts for high-confidence picks.
+
+        High confidence = confidence is "high" (or equivalent) AND
+        edge_pct >= MIN_EDGE_THRESHOLD (3%).
+
+        Non-blocking, best-effort. Silently skips if Telegram is
+        not configured or no games qualify.
+        """
+        from betting_intel.live.models import MIN_EDGE_THRESHOLD
+
+        if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+            return
+
+        # Filter to high-confidence picks that haven't been notified yet
+        high_conf = []
+        for g in games:
+            if g.game_id is None:
+                continue
+            edge = abs(g.edge_pct or 0.0)
+            conf = (g.confidence or "low").lower()
+            if edge >= MIN_EDGE_THRESHOLD and conf in ("high", "very_high"):
+                high_conf.append(g)
+
+        if not high_conf:
+            return
+
+        # Lazy-init notifier (only on first use)
+        if self._notifier is None:
+            from betting_intel.notifications.telegram_bot import TelegramNotifier
+            self._notifier = TelegramNotifier(
+                bot_token=TELEGRAM_BOT_TOKEN,
+                chat_id=TELEGRAM_CHAT_ID,
+            )
+
+        notifier = self._notifier
+
+        # Send a single digest for all new high-confidence picks
+        n_sent = notifier.send_digest_sync(high_conf)
+        if n_sent > 0:
+            logger.info(f"Telegram: sent digest with {n_sent} high-confidence pick(s)")
+
     def _predict_games(self, games: list[LiveGame]) -> list[LiveGame]:
         """Run all available prediction tiers on games.
 

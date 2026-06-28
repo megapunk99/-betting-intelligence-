@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     daily_fetch_hour: int = 6                  # Hour (0-23) for the daily fetch
     daily_fetch_timezone: str = "local"       # "local" or "utc"
 
+    # ── Telegram Notifications ────────────────────────────────────────
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+
     # ── Kelly Staking ───────────────────────────────────────────────
     initial_bankroll: float = 10_000.0
     min_edge_threshold: float = 0.02
