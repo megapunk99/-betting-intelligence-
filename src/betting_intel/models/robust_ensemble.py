@@ -157,69 +157,6 @@ class OverfittingReport:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-# ── v6.6: SVM Auto-Downsampling Wrapper ────────────────────────────────────
-
-class _DownsampledSVC:
-    """
-    SVC wrapper that auto-downsamples training data when dataset is too large.
-
-    SVM scales O(n\u00b2) in the number of samples, making it prohibitively slow
-    on datasets larger than ~5,000 rows. This wrapper transparently downsamples
-    to `max_samples` rows before fitting, logging a warning so the user knows.
-    Downsampling preserves class balance via stratified random sampling.
-
-    All SVC attributes (predict, predict_proba, support_vectors_, etc.) are
-    proxied through to the underlying fitted model.
-    """
-
-    def __init__(self, max_samples: int = 3000, **svc_kwargs):
-        self.max_samples = max_samples
-        self._svc_kwargs = svc_kwargs
-        self._model: Any = None
-
-    def fit(self, X: np.ndarray, y: np.ndarray, **fit_kwargs) -> _DownsampledSVC:
-        n = len(X)
-        if n > self.max_samples:
-            from sklearn.model_selection import StratifiedShuffleSplit
-            sss = StratifiedShuffleSplit(
-                n_splits=1,
-                train_size=self.max_samples,
-                random_state=self._svc_kwargs.get('random_state', 42),
-            )
-            train_idx, _ = next(sss.split(X, y))
-            X_sample = X[train_idx]
-            y_sample = y[train_idx]
-            logger.info(
-                f'SVM auto-downsampled: {n} → {len(X_sample)} samples '
-                f'(O(n\u00b2) scaling avoided)'
-            )
-        else:
-            X_sample, y_sample = X, y
-
-        from sklearn.svm import SVC
-        self._model = SVC(**self._svc_kwargs)
-        self._model.fit(X_sample, y_sample, **fit_kwargs)
-        return self
-
-    def predict(self, X: np.ndarray) -> np.ndarray:
-        if self._model is None:
-            raise ValueError('Model not fitted yet.')
-        return self._model.predict(X)
-
-    def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        if self._model is None:
-            raise ValueError('Model not fitted yet.')
-        return self._model.predict_proba(X)
-
-    def __getattr__(self, name: str) -> Any:
-        """Proxy any other attributes (support_vectors_, coef_, etc.) to the fitted model."""
-        model = self.__dict__.get('_model')
-        if model is not None and hasattr(model, name):
-            return getattr(model, name)
-        raise AttributeError(f"'{type(self).__name__}' has no attribute '{name}'")
-
-
-
 class RobustPredictionSystem:
     """
     The highest-quality prediction system — multi-model ensemble with
@@ -250,14 +187,8 @@ class RobustPredictionSystem:
         lr_params: Optional[dict] = None,
         rf_params: Optional[dict] = None,
         cb_params: Optional[dict] = None,
-        mlp_params: Optional[dict] = None,
-        svm_params: Optional[dict] = None,
         use_catboost: bool = True,
         use_mlp: bool = True,
-        use_histgb: bool = True,           # v6.6 NEW
-        use_extratrees: bool = True,         # v6.6 NEW
-        use_svm: bool = True,               # v6.6 NEW
-        svm_max_samples: int = 3000,        # v6.6 NEW — auto-downsample for O(n²) scaling
         use_early_stopping: bool = True,
         use_hyperparameter_tuning: bool = False,  # v6.6 NEW — wire tuner into fit()
         ensemble_diversity_threshold: float = 0.3,
@@ -267,7 +198,6 @@ class RobustPredictionSystem:
         use_bootstrap_uncertainty: bool = False,    # v6.6 NEW
         n_bootstrap_samples: int = 50,              # v6.6 NEW
         pruning_keep_top_n: int = 0,                # v6.6 NEW — 0 = no pruning
-        use_hgb: bool = True,                       # legacy alias for use_histgb
     ):
         self.calibrate = calibrate
         self.calibration_method = calibration_method
@@ -277,11 +207,6 @@ class RobustPredictionSystem:
         self.random_state = random_state
         self.use_stacking = use_stacking
         self.use_catboost = use_catboost
-        self.use_mlp = use_mlp
-        self.use_histgb = use_histgb if use_histgb is not None else use_hgb
-        self.use_extratrees = use_extratrees
-        self.use_svm = use_svm
-        self._svm_max_samples = svm_max_samples
         self.use_early_stopping = use_early_stopping
         self.use_hyperparameter_tuning = use_hyperparameter_tuning
         self.ensemble_diversity_threshold = ensemble_diversity_threshold
@@ -298,8 +223,6 @@ class RobustPredictionSystem:
         self._lr_params = lr_params or {}
         self._rf_params = rf_params or {}
         self._cb_params = cb_params or {}
-        self._mlp_params = mlp_params or {}
-        self._svm_params = svm_params or {}
 
         # Internal state
         self._models: dict[str, Any] = {}
@@ -1051,17 +974,7 @@ class RobustPredictionSystem:
     # ── Internal Methods ──────────────────────────────────────────────────
 
     def _get_model_specs(self) -> list[tuple[str, callable, dict]]:
-        """Generate model specifications for the ensemble (v6.6 - 10-model BEAST).
-
-        v6.6 — ULTIMATE ENSEMBLE EXPANSION
-        ────────────────────────────────────
-        Changes from v6.5:
-          - Added HistGradientBoosting (sklearn — fast, handles missing values)
-          - Added ExtraTrees (Extremely Randomized Trees — max diversity)
-          - Added SVM with probability (margin-based classifier, different signal)
-          - All tree models: lower LR, more trees, stronger regularization
-          - Added LGBM early stopping integration
-        """
+        """Generate model specifications for the ensemble (5 models)."""
         from sklearn.linear_model import LogisticRegression
         from sklearn.ensemble import RandomForestClassifier
 
@@ -1145,7 +1058,7 @@ class RobustPredictionSystem:
         }
         specs.append(("RandomForest", RandomForestClassifier, rf_params))
 
-        # 5. CatBoost (v6.5 NEW)
+        # 5. CatBoost
         if self.use_catboost:
             try:
                 from catboost import CatBoostClassifier
@@ -1168,86 +1081,13 @@ class RobustPredictionSystem:
             except ImportError:
                 pass
 
-        # 6. MLP Neural Network (v6.5 NEW)
-        if self.use_mlp:
-            try:
-                from sklearn.neural_network import MLPClassifier
-                mlp_params = {
-                    "hidden_layer_sizes": self._mlp_params.get("hidden_layer_sizes", (128, 64, 32)),
-                    "activation": self._mlp_params.get("activation", "relu"),
-                    "solver": self._mlp_params.get("solver", "adam"),
-                    "alpha": self._mlp_params.get("alpha", 0.001),
-                    "batch_size": self._mlp_params.get("batch_size", 64),
-                    "learning_rate": self._mlp_params.get("learning_rate", "adaptive"),
-                    "learning_rate_init": self._mlp_params.get("learning_rate_init", 0.001),
-                    "max_iter": self._mlp_params.get("max_iter", 500),
-                    "early_stopping": self.use_early_stopping,
-                    "validation_fraction": 0.1,
-                    "random_state": self.random_state,
-                }
-                specs.append(("MLP", MLPClassifier, mlp_params))
-            except ImportError:
-                pass
 
-        # 7. HistGradientBoosting (v6.6 NEW — sklearn's fast GBT, missing value support)
-        if self.use_histgb:
-            try:
-                from sklearn.ensemble import HistGradientBoostingClassifier
-                hgb_params = {
-                "max_iter": self._xgb_params.get("n_estimators", 600),
-                "max_depth": self._xgb_params.get("max_depth", 5),
-                "learning_rate": self._xgb_params.get("learning_rate", 0.02),
-                "max_leaf_nodes": 63,
-                "min_samples_leaf": 20,
-                "l2_regularization": 1.0,
-                "early_stopping": self.use_early_stopping,
-                "scoring": "neg_log_loss",
-                "validation_fraction": 0.1,
-                "n_iter_no_change": 20,
-                "random_state": self.random_state,
-                "verbose": 0,
-            }
-                specs.append(("HistGradientBoosting", HistGradientBoostingClassifier, hgb_params))
-            except ImportError:
-                pass
 
-        # 8. ExtraTrees (v6.6 NEW — Extremely Randomized Trees, max diversity)
-        if self.use_extratrees:
-            try:
-                from sklearn.ensemble import ExtraTreesClassifier
-                et_params = {
-                "n_estimators": self._rf_params.get("n_estimators", 600),
-                "max_depth": self._rf_params.get("max_depth", 12),
-                "min_samples_leaf": self._rf_params.get("min_samples_leaf", 3),
-                "max_features": self._rf_params.get("max_features", "sqrt"),
-                "min_samples_split": self._rf_params.get("min_samples_split", 8),
-                "class_weight": self._rf_params.get("class_weight", "balanced_subsample"),
-                "random_state": self.random_state,
-                "n_jobs": -1,
-                "bootstrap": True,
-            }
-                specs.append(("ExtraTrees", ExtraTreesClassifier, et_params))
-            except ImportError:
-                pass
 
-        # 9. SVM with probability (v6.6 NEW — margin-based, different inductive bias)
-        if self.use_svm:
-            try:
-                from sklearn.svm import SVC
-                svm_params = {
-                "C": 10.0,
-                "gamma": "scale",
-                "kernel": "rbf",
-                "probability": True,
-                "class_weight": "balanced",
-                "random_state": self.random_state,
-                "max_iter": 3000,
-            }
-            # Auto-downsample to avoid O(n²) timeout on large datasets
-                svm_params["max_samples"] = self._svm_max_samples
-                specs.append(("SVM", _DownsampledSVC, svm_params))
-            except ImportError:
-                pass
+
+
+
+
 
         return specs
 
@@ -2004,10 +1844,6 @@ class MarketInefficiencySystem:
         n_folds: int = 5,
         min_train_samples: int = 100,
         random_state: int = 42,
-        use_histgb: bool = True,
-        use_extratrees: bool = True,
-        use_svm: bool = True,
-        svm_max_samples: int = 3000,
         use_hyperparameter_tuning: bool = False,
         use_adversarial_validation: bool = False,
         use_bootstrap_uncertainty: bool = False,
@@ -2020,10 +1856,6 @@ class MarketInefficiencySystem:
             n_folds=n_folds,
             min_train_samples=min_train_samples,
             random_state=random_state,
-            use_histgb=use_histgb,
-            use_extratrees=use_extratrees,
-            use_svm=use_svm,
-            svm_max_samples=svm_max_samples,
             use_hyperparameter_tuning=use_hyperparameter_tuning,
             use_adversarial_validation=use_adversarial_validation,
             use_bootstrap_uncertainty=use_bootstrap_uncertainty,

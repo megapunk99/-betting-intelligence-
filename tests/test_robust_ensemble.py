@@ -47,140 +47,15 @@ class TestRobustPredictionSystem:
 
     # ── v6.6 New Models Tests ────────────────────────────────────────
 
-    def test_histgradientboosting_included(self, sample_data):
-        """Test that HistGradientBoosting is included when use_histgb=True."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
-        X, y = sample_data
-        system = self._make_fast_system(use_histgb=True, use_svm=False, use_mlp=False, use_extratrees=False)
-        system.fit(X, y, verbose=False)
 
-        assert "HistGradientBoosting" in system._models
-        # Check it contributes to predictions
-        probs = system.predict_proba(X[:5])
-        assert probs.shape == (5, 2)
 
-    def test_histgradientboosting_disabled(self, sample_data):
-        """Test that HistGradientBoosting is excluded when use_histgb=False."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
-        X, y = sample_data
-        system = self._make_fast_system(use_histgb=False, use_svm=False, use_mlp=False, use_extratrees=False)
-        system.fit(X, y, verbose=False)
 
-        assert "HistGradientBoosting" not in system._models
 
-    def test_extratrees_included(self, sample_data):
-        """Test that ExtraTrees is included when use_extratrees=True."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
-        X, y = sample_data
-        system = self._make_fast_system(use_extratrees=True, use_svm=False, use_mlp=False, use_histgb=False)
-        system.fit(X, y, verbose=False)
 
-        assert "ExtraTrees" in system._models
 
-    def test_extratrees_disabled(self, sample_data):
-        """Test that ExtraTrees is excluded when use_extratrees=False."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
-
-        X, y = sample_data
-        system = self._make_fast_system(use_extratrees=False, use_svm=False, use_mlp=False, use_histgb=False)
-        system.fit(X, y, verbose=False)
-
-        assert "ExtraTrees" not in system._models
-
-    def test_svm_included(self, sample_data):
-        """Test that SVM (via _DownsampledSVC) is included when use_svm=True."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
-
-        X, y = sample_data
-        system = self._make_fast_system(use_svm=True, use_mlp=False, use_histgb=False, use_extratrees=False)
-        system.fit(X, y, verbose=False)
-
-        assert "SVM" in system._models
-
-    def test_svm_disabled(self, sample_data):
-        """Test that SVM is excluded when use_svm=False."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
-
-        X, y = sample_data
-        system = self._make_fast_system(use_svm=False, use_mlp=False, use_histgb=False, use_extratrees=False)
-        system.fit(X, y, verbose=False)
-
-        assert "SVM" not in system._models
-
-    def test_svm_downsampled_svc_wrapper(self):
-        """Test _DownsampledSVC wrapper directly."""
-        from betting_intel.models.robust_ensemble import _DownsampledSVC
-
-        X = np.random.randn(500, 5)
-        y = (X[:, 0] + X[:, 1] > 0).astype(int)
-
-        svm = _DownsampledSVC(max_samples=3000, probability=True, random_state=42)
-        svm.fit(X, y)
-        preds = svm.predict_proba(X[:10])
-        assert preds.shape == (10, 2)
-        assert np.allclose(preds.sum(axis=1), 1.0)
-
-        # Test attribute proxying
-        assert hasattr(svm, 'support_vectors_')
-        assert svm.support_vectors_ is not None
-
-    def test_svm_downsampled_svc_triggers(self):
-        """Test that _DownsampledSVC actually downsamples when n > max_samples."""
-        from betting_intel.models.robust_ensemble import _DownsampledSVC
-
-        X = np.random.randn(300, 5)
-        y = (X[:, 0] > 0).astype(int)
-
-        svm = _DownsampledSVC(max_samples=100, probability=True, random_state=42)
-        svm.fit(X, y)
-
-        # Check that internal model was trained on <= 100 samples
-        assert svm._model is not None
-        assert len(svm._model.support_vectors_) <= len(X)  # Support vectors subset
-
-    def test_svm_downsampled_svc_picklable(self, tmp_path):
-        """Test that _DownsampledSVC survives pickle roundtrip via joblib."""
-        import joblib
-        from betting_intel.models.robust_ensemble import _DownsampledSVC
-
-        X = np.random.randn(200, 5)
-        y = (X[:, 0] > 0).astype(int)
-
-        svm = _DownsampledSVC(max_samples=3000, probability=True, random_state=42)
-        svm.fit(X, y)
-
-        path = tmp_path / "svm_test.joblib"
-        joblib.dump(svm, path)
-
-        loaded = joblib.load(path)
-        preds_before = svm.predict_proba(X[:5])
-        preds_after = loaded.predict_proba(X[:5])
-        assert np.allclose(preds_before, preds_after, atol=1e-6)
-
-    def test_all_three_new_models_together(self, sample_data):
-        """Test that all 3 new models train together without issues."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
-
-        X, y = sample_data
-        system = self._make_fast_system(
-            use_histgb=True, use_extratrees=True, use_svm=True,
-            use_mlp=False, use_catboost=False,
-        )
-        system.fit(X, y, verbose=False)
-
-        # All 3 should be in the ensemble
-        assert "HistGradientBoosting" in system._models
-        assert "ExtraTrees" in system._models
-        assert "SVM" in system._models
-        # Ensemble should make valid predictions
-        probs = system.predict_proba(X[:5])
-        assert probs.shape == (5, 2)
-        assert np.allclose(probs.sum(axis=1), 1.0)
-
-    # ── v6.6 Calibration Tests ───────────────────────────────────────
 
     def test_calibrate_with_isotonic_method(self, sample_data):
         """Test that calibration_method='isotonic' uses isotonic regression."""
@@ -322,16 +197,15 @@ class TestRobustPredictionSystem:
         X, y = sample_data
         system = self._make_fast_system(
             pruning_keep_top_n=3,
-            use_svm=False, use_mlp=False, use_catboost=False,
+            use_catboost=False,
         )
         system.fit(X, y, verbose=False)
 
         summary = system.get_summary()
-        # With 5 models (LR, XGB, LGB, RF, HGB) and pruning_keep_top_n=3,
-        # pruning should reduce to at most 5 (may not prune if all models are
-        # diverse and accurate). The test just verifies it doesn't error.
+        # With up to 5 models (LR, XGB, LGB, RF, CB) and pruning_keep_top_n=3,
+        # pruning should reduce to at most 5. The test just verifies it doesn't error.
         assert summary["n_models"] >= 1
-        assert summary["n_models"] <= 6  # Should never exceed base model count
+        assert summary["n_models"] <= 5
 
     # ── v6.6 Permutation Importance Tests ─────────────────────────────
 

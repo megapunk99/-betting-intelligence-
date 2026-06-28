@@ -6,7 +6,6 @@ Provides automatic hyperparameter search for all ensemble models:
   - LightGBM: learning_rate, num_leaves, min_child_samples, subsample, reg_alpha, reg_lambda
   - RandomForest: n_estimators, max_depth, min_samples_leaf, max_features
   - CatBoost: learning_rate, depth, l2_leaf_reg, border_count
-  - MLP: hidden_layer_sizes, alpha, learning_rate_init, batch_size
   - LogisticRegression: C, penalty
 
 Uses Optuna's TPE (Tree-structured Parzen Estimator) sampler for efficient search.
@@ -239,62 +238,6 @@ class HyperparameterTuner:
 
         return dict(self._best_params)
 
-    def tune_mlp(
-        self,
-        X_train: np.ndarray,
-        y_train: np.ndarray,
-        X_val: np.ndarray,
-        y_val: np.ndarray,
-        n_trials: Optional[int] = None,
-        verbose: bool = True,
-    ) -> dict:
-        """Tune MLP hyperparameters using Optuna."""
-        if not self._create_study("mlp_tuning"):
-            return self._default_mlp_params()
-
-        n_trials = n_trials or self.n_trials
-
-        def objective(trial):
-            from sklearn.neural_network import MLPClassifier
-            from sklearn.metrics import log_loss
-
-            n_layers = trial.suggest_int("n_layers", 1, 4)
-            hidden_sizes = tuple(
-                trial.suggest_int(f"layer_{i}_size", 16, 256, step=16)
-                for i in range(n_layers)
-            )
-
-            params = {
-                "hidden_layer_sizes": hidden_sizes,
-                "activation": trial.suggest_categorical("activation", ["relu", "tanh"]),
-                "solver": "adam",
-                "alpha": trial.suggest_float("alpha", 1e-5, 0.01, log=True),
-                "batch_size": trial.suggest_categorical("batch_size", [32, 64, 128, 256]),
-                "learning_rate": "adaptive",
-                "learning_rate_init": trial.suggest_float("learning_rate_init", 1e-4, 0.01, log=True),
-                "max_iter": 500,
-                "early_stopping": True,
-                "validation_fraction": 0.1,
-                "random_state": self.random_state,
-            }
-
-            model = MLPClassifier(**params)
-            model.fit(X_train, y_train)
-            preds = model.predict_proba(X_val)
-            return float(log_loss(y_val, preds))
-
-        self._study.optimize(objective, n_trials=n_trials, timeout=self.timeout_seconds)
-
-        self._best_params = self._study.best_params
-        self._best_value = self._study.best_value
-
-        if verbose:
-            logger.info(
-                f"MLP tuning: best logloss={self._best_value:.4f}, "
-                f"params={self._best_params}"
-            )
-
-        return dict(self._best_params)
 
     def tune_all(
         self,
@@ -333,14 +276,6 @@ class HyperparameterTuner:
         if verbose:
             logger.info("\n--- Tuning CatBoost ---")
         results["cb"] = self.tune_catboost(
-            X_train, y_train, X_val, y_val,
-            n_trials=n_trials_per_model, verbose=verbose,
-        )
-
-        # MLP
-        if verbose:
-            logger.info("\n--- Tuning MLP ---")
-        results["mlp"] = self.tune_mlp(
             X_train, y_train, X_val, y_val,
             n_trials=n_trials_per_model, verbose=verbose,
         )
@@ -386,14 +321,6 @@ class HyperparameterTuner:
             "subsample": 0.8,
         }
 
-    def _default_mlp_params(self) -> dict:
-        return {
-            "hidden_layer_sizes": (128, 64, 32),
-            "activation": "relu",
-            "alpha": 0.001,
-            "batch_size": 64,
-            "learning_rate_init": 0.001,
-        }
 
     @staticmethod
     def _has_early_stopping() -> bool:
