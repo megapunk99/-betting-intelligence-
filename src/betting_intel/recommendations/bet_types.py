@@ -263,11 +263,6 @@ def SpreadBet(
     """Create a spread bet suggestion."""
     # If team is favored (negative spread line), they need to win by more than the spread
     # If team is underdog (positive spread line), they need to not lose by more than the spread
-    covers = (
-        (predicted_margin > spread_line)
-        if spread_line < 0
-        else (predicted_margin > -spread_line)
-    )
 
     # PROPER probability: sigmoid function calibrated for spread betting
     # k=0.03 means 10pt margin diff → ~58% confidence (not the crude linear 70%)

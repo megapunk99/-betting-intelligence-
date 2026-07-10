@@ -413,12 +413,6 @@ class NCAABDataLoader:
         )
 
         # Standardize team name columns for FeatureEngineer
-        home_team_col = (
-            "TEAM_NAME_home" if "TEAM_NAME_home" in games.columns else "home_team"
-        )
-        away_team_col = (
-            "TEAM_NAME_away" if "TEAM_NAME_away" in games.columns else "away_team"
-        )
 
         # Ensure these exist for ELO and other name-dependent features
         if "TEAM_NAME_home" not in games.columns and "home_team" in games.columns:

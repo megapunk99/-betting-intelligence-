@@ -273,7 +273,7 @@ class OddsPoller:
             await self._process_snapshot(snapshot)
 
         # Broadcast heartbeat
-        now_ts = time.time()
+        time.time()
         await self.manager.broadcast(
             {
                 "type": "heartbeat",

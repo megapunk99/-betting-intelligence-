@@ -338,7 +338,7 @@ def web_start(host: str, port: int, reload: bool):
     import sys as _sys
     import subprocess
 
-    web_dir = Path(__file__).resolve().parent.parent.parent.parent / "web"
+    Path(__file__).resolve().parent.parent.parent.parent / "web"
     click.echo(f" Starting FastAPI Web App at http://localhost:{port}")
     click.echo(f" Dashboard:  http://localhost:{port}/")
     click.echo(f" Clear Picks: http://localhost:{port}/clear-picks")

@@ -36,6 +36,7 @@ from typing import Optional
 import pandas as pd
 
 from betting_intel.db.connection import DatabaseManager
+from betting_intel.live.models import LiveGame
 
 logger = logging.getLogger(__name__)
 

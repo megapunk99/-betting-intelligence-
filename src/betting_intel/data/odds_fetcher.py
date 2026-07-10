@@ -34,7 +34,7 @@ try:
 except ImportError:
     REQUESTS_AVAILABLE = False
 
-from betting_intel.config import ODDS_API_KEY, ODDS_API_BASE_URL, CACHE_DIR
+from betting_intel.config import ODDS_API_KEY, ODDS_API_BASE_URL, CACHE_DIR  # noqa: E402
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1045,8 +1045,8 @@ class OddsAPIClient:
         if len(home_games) < 5 or len(away_games) < 5:
             return None
 
-        last_home = home_games.iloc[-1]
-        last_away = away_games.iloc[-1]
+        home_games.iloc[-1]
+        away_games.iloc[-1]
 
         recent_home_home = (
             historical_df[(historical_df["TEAM_ID_home"] == home_id)]

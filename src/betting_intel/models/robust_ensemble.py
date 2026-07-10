@@ -1221,7 +1221,7 @@ class RobustPredictionSystem:
         if not all_preds:
             return np.full(X.shape[0], self._target_mean)
 
-        total_weight = sum(all_weights)
+        sum(all_weights)
         weighted_avg = (
             np.average(np.column_stack(all_preds), axis=1, weights=all_weights)
             if len(all_preds) > 1
@@ -2058,7 +2058,7 @@ class MarketInefficiencySystem:
         Returns:
             self (fitted)
         """
-        n = len(X)
+        len(X)
         self._feature_names = feature_names or [f"f{i}" for i in range(X.shape[1])]
         self._target_mean = float(np.mean(y_binary))
 
@@ -2159,7 +2159,7 @@ class MarketInefficiencySystem:
                 # Evaluate with simple CV
                 train_preds = model.predict(X)
                 train_mae = mean_absolute_error(y_error, train_preds)
-                train_r2 = r2_score(y_error, train_preds)
+                r2_score(y_error, train_preds)
 
                 # Walk-forward OOS evaluation — CHRONOLOGICAL folds
                 oos_preds = np.full(n, np.nan)

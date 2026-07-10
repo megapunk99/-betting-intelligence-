@@ -38,7 +38,7 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 # Import shared team name mappings
-from betting_intel.data.odds_fetcher import ODDS_TO_SHORT_NAME, SHORT_TO_ODDS_NAME
+from betting_intel.data.odds_fetcher import ODDS_TO_SHORT_NAME, SHORT_TO_ODDS_NAME  # noqa: E402
 
 # How long to cache results (seconds)
 ODDS_CACHE_TTL = 120  # 2 minutes

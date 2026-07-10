@@ -267,7 +267,7 @@ class DriftMonitor:
             return None
 
         recent_mean = float(np.mean(recent))
-        recent_std = float(np.std(recent))
+        float(np.std(recent))
 
         # Z-score of mean shift
         se = self._reference_pred_std / math.sqrt(len(recent))

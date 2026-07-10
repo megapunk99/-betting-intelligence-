@@ -1454,7 +1454,6 @@ class FeatureEngineer:
         df = df.copy()
 
         for team_prefix, suffix in [("home", "home"), ("away", "away")]:
-            team_id_col = f"TEAM_ID_{suffix}"
             opp_pts_col = f"team_pts_{team_prefix}"
             opp_id_col = f"TEAM_ID_{'away' if suffix == 'home' else 'home'}"
             opp_pts_allowed_col = f"team_pts_{'away' if suffix == 'home' else 'home'}"
@@ -2155,7 +2154,6 @@ class FeatureEngineer:
         for suffix, team_prefix in [("home", "home"), ("away", "away")]:
             team_id_col = f"TEAM_ID_{suffix}"
             perf_col = f"perf_vs_expected_{suffix}"
-            pm_col = f"team_plus_minus_{team_prefix}"
 
             if perf_col not in df.columns:
                 continue
@@ -2228,7 +2226,6 @@ class FeatureEngineer:
             team_prefix = suffix
             team_id_col = f"TEAM_ID_{suffix}"
             wl_num_col = f"WL_num_{team_prefix}"
-            pm_col = f"team_plus_minus_{team_prefix}"
 
             # ── Composite Power Rating ─────────────────────────────────
             # Blend: 40% ELO, 30% net rating (pm), 30% recent win rate
@@ -2252,7 +2249,6 @@ class FeatureEngineer:
             # ── Performance vs Expectation ─────────────────────────────
             # Rolling difference between actual margin and ELO-expected margin
             # Positive = team is outperforming what ELO predicts = hot
-            elo_prob_col = "elo_home_prob"
             if suffix == "away":
                 elo_prob_val = 1.0 - df.get("elo_home_prob", 0.5)
             else:
@@ -2641,7 +2637,6 @@ class FeatureEngineer:
         df = df.copy()
 
         for suffix, team_prefix in [("home", "home"), ("away", "away")]:
-            team_id_col = f"TEAM_ID_{suffix}"
             pts_col = f"avg_pts_10g_{suffix}"
             pace_col = f"avg_pace_10g_{suffix}"
 

@@ -346,12 +346,12 @@ class HyperparameterTuner:
     @staticmethod
     def _has_early_stopping() -> bool:
         try:
-            from lightgbm import early_stopping as lgb_early_stopping
+            from lightgbm import early_stopping as lgb_early_stopping  # noqa: F401
 
             return True
         except ImportError:
             try:
-                from lightgbm.callback import early_stopping
+                from lightgbm.callback import early_stopping  # noqa: F401
 
                 return True
             except ImportError:

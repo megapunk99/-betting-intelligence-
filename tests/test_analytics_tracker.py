@@ -1127,7 +1127,6 @@ class TestResolveAllPreResolved:
                     "stake_dollars": 100.0,
                     "model_name": "m1",
                     "league": "NBA",
-                    "bet_type": "total",
                 },
                 {
                     "game_date": "2026-01-15",
@@ -1138,7 +1137,6 @@ class TestResolveAllPreResolved:
                     "stake_dollars": 100.0,
                     "model_name": "m1",
                     "league": "NBA",
-                    "bet_type": "total",
                 },
             ],
         ):

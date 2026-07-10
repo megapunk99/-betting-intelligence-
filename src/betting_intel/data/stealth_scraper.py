@@ -40,7 +40,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # Import shared team name mappings from odds_fetcher
-from betting_intel.data.odds_fetcher import ODDS_TO_SHORT_NAME, SHORT_TO_ODDS_NAME
+from betting_intel.data.odds_fetcher import ODDS_TO_SHORT_NAME, SHORT_TO_ODDS_NAME  # noqa: E402
 
 # Alias for code clarity: ESPN team names -> short names
 ESPN_TEAM_SHORT: dict[str, str] = ODDS_TO_SHORT_NAME
@@ -230,7 +230,7 @@ class StealthBrowser:
     def _parse_espn_event(cls, event: dict, now_utc: datetime) -> Optional[dict]:
         """Parse an ESPN event into TheOddsAPI format (partial — odds added later)."""
         event_id = event.get("id", "")
-        name = event.get("name", "")
+        event.get("name", "")
         competitions = event.get("competitions", [])
         if not competitions:
             return None
@@ -362,10 +362,10 @@ class StealthBrowser:
         """Merge ESPN odds into a game dict, matching team names to outcome names."""
         home_full = game.get("home_team", "")
         away_full = game.get("away_team", "")
-        home_short = ESPN_TEAM_SHORT.get(
+        ESPN_TEAM_SHORT.get(
             home_full, home_full.split()[-1] if " " in home_full else home_full
         )
-        away_short = ESPN_TEAM_SHORT.get(
+        ESPN_TEAM_SHORT.get(
             away_full, away_full.split()[-1] if " " in away_full else away_full
         )
 

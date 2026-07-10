@@ -43,6 +43,7 @@ from betting_intel.live.predictor import GamePredictor
 from betting_intel.live.snapshot_builder import SnapshotBuilder
 from betting_intel.live.worker import LivePredictionWorker
 from betting_intel.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+import pandas as pd
 
 # Re-export symbols that tests and other modules import from engine.py
 __all__ = [

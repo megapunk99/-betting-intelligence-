@@ -40,7 +40,7 @@ LEAGUE_TO_ESPN_PATH: dict[str, str] = {
 # Mapping from ESPN team names to short names.
 # NBA+NCAAB names come from sport_configs.py (single source of truth).
 # ESPN-specific aliases (API name variants) are added on top.
-from betting_intel.live.sport_configs import ALL_TEAM_NAME_MAP
+from betting_intel.live.sport_configs import ALL_TEAM_NAME_MAP  # noqa: E402
 
 # ESPN API occasionally returns alternate name variants for some teams
 _ESPN_NBA_ALIASES: dict[str, str] = {

@@ -150,7 +150,9 @@ class TotalsRegressor:
         _small_data = n < 500
         _n_est = 300 if _small_data else 600
         _max_depth = 4 if _small_data else 6
-        _lr = 0.05 if _small_data else 0.03  # Higher LR for small data = faster convergence
+        _lr = (
+            0.05 if _small_data else 0.03
+        )  # Higher LR for small data = faster convergence
         _leaf_ratio = 0.5 if _small_data else 1.0
 
         if verbose:
@@ -220,6 +222,7 @@ class TotalsRegressor:
         # ── 2. LightGBM Regressor ────────────────────────────────────
         try:
             from lightgbm import LGBMRegressor
+
             # Lazy import LGBMEarlyStopping to avoid ImportError on older versions
             try:
                 from lightgbm import early_stopping as _lgb_early_stopping

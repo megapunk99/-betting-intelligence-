@@ -8,6 +8,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 
 from betting_intel.api.schemas import PredictionRequest
+from betting_intel.live.engine import LivePredictionEngine
+from betting_intel.live.future_predictor import FutureGamePredictor
 from betting_intel.models.persistence import model_registry
 
 router = APIRouter(prefix="/predict", tags=["Prediction"])
@@ -21,8 +23,6 @@ def _get_engine():
     """Get or create the singleton LivePredictionEngine (lazy-init)."""
     global _live_engine
     if _live_engine is None:
-        from betting_intel.live.engine import LivePredictionEngine
-
         _live_engine = LivePredictionEngine()
     return _live_engine
 
@@ -31,8 +31,6 @@ def _get_future_predictor():
     """Get or create the singleton FutureGamePredictor (lazy-init)."""
     global _future_predictor
     if _future_predictor is None:
-        from betting_intel.live.future_predictor import FutureGamePredictor
-
         _future_predictor = FutureGamePredictor()
         _future_predictor.load()
     return _future_predictor

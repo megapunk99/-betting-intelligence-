@@ -533,7 +533,7 @@ class TestCacheInteraction:
             patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=[]),
             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=[]),
         ):
-            result = eng._fetch_realtime_odds()
+            eng._fetch_realtime_odds()
 
         with eng._lock:
             assert eng._cached_odds_raw == []

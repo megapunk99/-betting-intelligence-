@@ -258,8 +258,8 @@ async def get_bankroll_status():
             consecutive_losses = 0
 
     total_return_pct = ((cumulative - initial) / initial) * 100 if initial > 0 else 0.0
-    wins = sum(1 for b in report.recent_bets if b.result == "WIN")
-    losses = sum(1 for b in report.recent_bets if b.result == "LOSS")
+    sum(1 for b in report.recent_bets if b.result == "WIN")
+    sum(1 for b in report.recent_bets if b.result == "LOSS")
 
     return BankrollResponse(
         initial_bankroll=initial,

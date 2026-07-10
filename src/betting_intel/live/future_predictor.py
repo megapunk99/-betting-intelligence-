@@ -203,7 +203,7 @@ def _league_config(league: str) -> dict:
 # ESPN API team name → short name map.
 # Uses sport_configs.py as the single source of truth for all sports.
 # ESPN-specific API name variants are added as overrides.
-from betting_intel.live.sport_configs import ALL_TEAM_NAME_MAP
+from betting_intel.live.sport_configs import ALL_TEAM_NAME_MAP  # noqa: E402
 
 _ESPN_ALIASES: dict[str, str] = {
     # ESPN returns multiple naming variants for some NBA teams

@@ -195,7 +195,7 @@ class HistoricalScraper:
         # SOURCE 2: ESPN API fallback (slower but comprehensive)
         logger.info("  TheOddsAPI unavailable — falling back to ESPN")
         today = datetime.now()
-        start_date = (today - timedelta(days=days_back)).strftime("%Y%m%d")
+        (today - timedelta(days=days_back)).strftime("%Y%m%d")
         try:
             espn_key = self.LEAGUE_TO_ESPN.get(league, league)
             upcoming = self._espn.load_upcoming(espn_key, limit=300)
