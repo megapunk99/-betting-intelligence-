@@ -271,6 +271,7 @@ class TelegramNotifier:
     def send_test_message_sync(self) -> str:
         """Synchronous wrapper for send_test_message."""
         import asyncio
+
         try:
             loop = asyncio.get_running_loop()
             # If a loop is running (e.g., inside the live engine), use it
@@ -285,6 +286,7 @@ class TelegramNotifier:
     def send_pick_alert_sync(self, game) -> bool:
         """Synchronous wrapper for send_pick_alert."""
         import asyncio
+
         try:
             loop = asyncio.get_running_loop()
             if loop.is_running():
@@ -298,6 +300,7 @@ class TelegramNotifier:
     def send_digest_sync(self, games: list) -> int:
         """Synchronous wrapper for send_digest."""
         import asyncio
+
         try:
             loop = asyncio.get_running_loop()
             if loop.is_running():

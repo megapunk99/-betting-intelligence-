@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, Query
 
@@ -57,7 +56,7 @@ async def alerts_health():
                 for a in alerts
             ],
             "note": "Alert dispatch (Telegram/Discord) was removed during cleanup. "
-                    "Alerts are written to JSONL for external monitoring.",
+            "Alerts are written to JSONL for external monitoring.",
         }
     except Exception as e:
         return {
@@ -128,8 +127,10 @@ async def alert_stats():
         unique_strategies = set(a.get("strategy_name", "") for a in alerts)
         cutoff = datetime.now().timestamp() - 86400 * 7
         recent_alerts = [
-            a for a in alerts
-            if a.get("timestamp") and datetime.fromisoformat(a["timestamp"]).timestamp() > cutoff
+            a
+            for a in alerts
+            if a.get("timestamp")
+            and datetime.fromisoformat(a["timestamp"]).timestamp() > cutoff
         ]
 
         return {

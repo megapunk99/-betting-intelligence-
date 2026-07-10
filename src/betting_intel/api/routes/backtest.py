@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -26,13 +25,18 @@ def _get_tracker() -> ResultsTracker:
 def _get_kelly_staker():
     """Get a KellyStaker with default bankroll for bankroll status endpoint."""
     from betting_intel.recommendations.staking import KellyStaker
+
     return KellyStaker(initial_bankroll=10_000.0, kelly_fraction=0.25)
 
 
 @router.post("/backtest")
 async def run_backtest(
-    strategy: str = Query(..., description="Strategy name (model/league/bet_type filter)"),
-    window_days: int = Query(90, description="Performance window in days", ge=7, le=365),
+    strategy: str = Query(
+        ..., description="Strategy name (model/league/bet_type filter)"
+    ),
+    window_days: int = Query(
+        90, description="Performance window in days", ge=7, le=365
+    ),
 ):
     """
     Run a backtest for a specific strategy using real historical performance data.
@@ -58,8 +62,7 @@ async def run_backtest(
     # Filter strategies matching the requested strategy name
     strategy_lower = strategy.lower()
     matching_strategies = [
-        s for s in report.strategies
-        if strategy_lower in s.strategy_name.lower()
+        s for s in report.strategies if strategy_lower in s.strategy_name.lower()
     ]
 
     if not matching_strategies:
@@ -94,12 +97,10 @@ async def run_backtest(
 
         # Try to filter by league or bet type
         league_matches = [
-            s for s in report.strategies
-            if strategy_lower in s.league.lower()
+            s for s in report.strategies if strategy_lower in s.league.lower()
         ]
         type_matches = [
-            s for s in report.strategies
-            if strategy_lower in s.bet_type.lower()
+            s for s in report.strategies if strategy_lower in s.bet_type.lower()
         ]
 
         if league_matches:
@@ -124,20 +125,22 @@ async def run_backtest(
     # Build results from matching strategies
     results = []
     for s in matching_strategies:
-        results.append(BacktestResultSchema(
-            strategy=s.strategy_name,
-            model=s.model,
-            total_bets=s.n_bets,
-            wins=s.wins,
-            losses=s.losses,
-            win_rate=round(s.win_rate, 4),
-            total_profit=round(s.total_profit, 2),
-            roi_pct=round(s.roi * 100, 2),
-            sharpe_ratio=s.sharpe,
-            max_drawdown=0.0,
-            avg_edge=round(s.avg_edge, 4),
-            is_significant=s.n_bets >= 10,
-        ))
+        results.append(
+            BacktestResultSchema(
+                strategy=s.strategy_name,
+                model=s.model,
+                total_bets=s.n_bets,
+                wins=s.wins,
+                losses=s.losses,
+                win_rate=round(s.win_rate, 4),
+                total_profit=round(s.total_profit, 2),
+                roi_pct=round(s.roi * 100, 2),
+                sharpe_ratio=s.sharpe,
+                max_drawdown=0.0,
+                avg_edge=round(s.avg_edge, 4),
+                is_significant=s.n_bets >= 10,
+            )
+        )
 
     results.sort(key=lambda r: r.roi_pct, reverse=True)
     total_bets = sum(r.total_bets for r in results)
@@ -155,7 +158,9 @@ async def run_backtest(
 
 @router.get("/edges")
 async def get_edges(
-    min_samples: int = Query(10, description="Minimum samples for a signal to be actionable", ge=5, le=500),
+    min_samples: int = Query(
+        10, description="Minimum samples for a signal to be actionable", ge=5, le=500
+    ),
 ):
     """
     Get detected market inefficiencies from actual strategy performance.
@@ -179,21 +184,23 @@ async def get_edges(
         if s.n_bets < min_samples:
             continue
         if s.roi > 0:
-            signals.append(EdgeSignalSchema(
-                strategy=s.strategy_name,
-                edge_type="STRATEGY_EDGE",
-                description=(
-                    f"{s.league} {s.bet_type} ({s.model}): "
-                    f"{s.n_bets} bets, {s.wins}W-{s.losses}L, "
-                    f"ROI {s.roi:.1%}"
-                ),
-                avg_edge_pct=round(s.avg_edge * 100, 2),
-                sample_size=s.n_bets,
-                win_rate=round(s.win_rate, 4),
-                expected_value=round(s.roi * 100, 2),
-                confidence=min(0.95, s.n_bets / 100.0),
-                is_actionable=s.n_bets >= 20 and s.roi > 0.02,
-            ))
+            signals.append(
+                EdgeSignalSchema(
+                    strategy=s.strategy_name,
+                    edge_type="STRATEGY_EDGE",
+                    description=(
+                        f"{s.league} {s.bet_type} ({s.model}): "
+                        f"{s.n_bets} bets, {s.wins}W-{s.losses}L, "
+                        f"ROI {s.roi:.1%}"
+                    ),
+                    avg_edge_pct=round(s.avg_edge * 100, 2),
+                    sample_size=s.n_bets,
+                    win_rate=round(s.win_rate, 4),
+                    expected_value=round(s.roi * 100, 2),
+                    confidence=min(0.95, s.n_bets / 100.0),
+                    is_actionable=s.n_bets >= 20 and s.roi > 0.02,
+                )
+            )
 
     signals.sort(key=lambda sig: sig.expected_value, reverse=True)
     actionable = sum(1 for sig in signals if sig.is_actionable)

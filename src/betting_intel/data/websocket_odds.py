@@ -42,13 +42,14 @@ import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import httpx
 import pandas as pd
 
 try:
     from fastapi import WebSocket, WebSocketDisconnect
+
     FASTAPI_AVAILABLE = True
 except ImportError:
     FASTAPI_AVAILABLE = False
@@ -273,12 +274,14 @@ class OddsPoller:
 
         # Broadcast heartbeat
         now_ts = time.time()
-        await self.manager.broadcast({
-            "type": "heartbeat",
-            "timestamp": datetime.now().isoformat(),
-            "games_tracked": len(self._last_snapshots),
-            "connections": self.manager.active_connections,
-        })
+        await self.manager.broadcast(
+            {
+                "type": "heartbeat",
+                "timestamp": datetime.now().isoformat(),
+                "games_tracked": len(self._last_snapshots),
+                "connections": self.manager.active_connections,
+            }
+        )
 
     async def _cleanup_loop(self):
         """Periodically evict stale snapshots from memory.
@@ -299,7 +302,8 @@ class OddsPoller:
 
         # In-memory eviction
         stale = [
-            key for key, snap in self._last_snapshots.items()
+            key
+            for key, snap in self._last_snapshots.items()
             if snap.captured_at < cutoff
         ]
         for key in stale:
@@ -326,7 +330,9 @@ class OddsPoller:
                 conn.commit()
                 conn.close()
                 if deleted:
-                    logger.info(f"Evicted {deleted} stale odds snapshots from SQLite DB")
+                    logger.info(
+                        f"Evicted {deleted} stale odds snapshots from SQLite DB"
+                    )
             except Exception as exc:
                 logger.debug(f"Failed to evict stale snapshots from DB: {exc}")
 
@@ -389,10 +395,18 @@ class OddsPoller:
                         if key == "h2h":
                             for outcome in outcomes:
                                 if outcome.get("name", "").lower() == home_team.lower():
-                                    if best_home_ml is None or outcome.get("price", 0) > best_home_ml:
+                                    if (
+                                        best_home_ml is None
+                                        or outcome.get("price", 0) > best_home_ml
+                                    ):
                                         best_home_ml = outcome.get("price")
-                                elif outcome.get("name", "").lower() == away_team.lower():
-                                    if best_away_ml is None or outcome.get("price", 0) > best_away_ml:
+                                elif (
+                                    outcome.get("name", "").lower() == away_team.lower()
+                                ):
+                                    if (
+                                        best_away_ml is None
+                                        or outcome.get("price", 0) > best_away_ml
+                                    ):
                                         best_away_ml = outcome.get("price")
                         elif key == "spreads":
                             for outcome in outcomes:
@@ -405,18 +419,20 @@ class OddsPoller:
 
                 game_id = f"{league}_{home_team}-{away_team}".replace(" ", "_")
 
-                snapshots.append(OddsSnapshot(
-                    game_id=game_id,
-                    league=league,
-                    home_team=home_team,
-                    away_team=away_team,
-                    game_date=game_date,
-                    home_ml=best_home_ml,
-                    away_ml=best_away_ml,
-                    spread=best_spread,
-                    total=best_total,
-                    captured_at=time.time(),
-                ))
+                snapshots.append(
+                    OddsSnapshot(
+                        game_id=game_id,
+                        league=league,
+                        home_team=home_team,
+                        away_team=away_team,
+                        game_date=game_date,
+                        home_ml=best_home_ml,
+                        away_ml=best_away_ml,
+                        spread=best_spread,
+                        total=best_total,
+                        captured_at=time.time(),
+                    )
+                )
 
             return sport, snapshots
 
@@ -435,7 +451,7 @@ class OddsPoller:
         # Cancel any tasks that didn't finish in time
         for task in pending:
             task.cancel()
-            logger.debug(f"Cancelled timed-out TheOddsAPI task")
+            logger.debug("Cancelled timed-out TheOddsAPI task")
 
         # Collect results from completed tasks
         all_snapshots: list[OddsSnapshot] = []
@@ -479,41 +495,49 @@ class OddsPoller:
                 if old_val is not None and new_val is not None and old_val != 0:
                     change = abs(new_val - old_val) / abs(old_val)
                     if change >= self.movement_threshold:
-                        movements.append(OddsMovement(
-                            game_id=snapshot.game_id,
-                            league=snapshot.league,
-                            matchup=f"{snapshot.away_team} @ {snapshot.home_team}",
-                            movement_type=label,
-                            old_value=old_val,
-                            new_value=new_val,
-                            change_pct=round(change * 100, 2),
-                            direction="up" if new_val > old_val else "down",
-                        ))
+                        movements.append(
+                            OddsMovement(
+                                game_id=snapshot.game_id,
+                                league=snapshot.league,
+                                matchup=f"{snapshot.away_team} @ {snapshot.home_team}",
+                                movement_type=label,
+                                old_value=old_val,
+                                new_value=new_val,
+                                change_pct=round(change * 100, 2),
+                                direction="up" if new_val > old_val else "down",
+                            )
+                        )
 
         # Broadcast if significant or if first snapshot
         if movements:
             for movement in movements:
-                await self.manager.broadcast({
-                    "type": "odds_movement",
-                    "movement": asdict(movement),
-                }, league=snapshot.league)
+                await self.manager.broadcast(
+                    {
+                        "type": "odds_movement",
+                        "movement": asdict(movement),
+                    },
+                    league=snapshot.league,
+                )
 
         # Broadcast current odds for this game
-        await self.manager.broadcast({
-            "type": "odds_update",
-            "game": {
-                "game_id": snapshot.game_id,
-                "league": snapshot.league,
-                "matchup": f"{snapshot.away_team} @ {snapshot.home_team}",
-                "home_team": snapshot.home_team,
-                "away_team": snapshot.away_team,
-                "home_ml": snapshot.home_ml,
-                "away_ml": snapshot.away_ml,
-                "spread": snapshot.spread,
-                "total": snapshot.total,
-                "captured_at": snapshot.captured_at,
+        await self.manager.broadcast(
+            {
+                "type": "odds_update",
+                "game": {
+                    "game_id": snapshot.game_id,
+                    "league": snapshot.league,
+                    "matchup": f"{snapshot.away_team} @ {snapshot.home_team}",
+                    "home_team": snapshot.home_team,
+                    "away_team": snapshot.away_team,
+                    "home_ml": snapshot.home_ml,
+                    "away_ml": snapshot.away_ml,
+                    "spread": snapshot.spread,
+                    "total": snapshot.total,
+                    "captured_at": snapshot.captured_at,
+                },
             },
-        }, league=snapshot.league)
+            league=snapshot.league,
+        )
 
     async def _store_snapshot_async(self, snapshot: OddsSnapshot):
         """Store odds snapshot in SQLite for CLV tracking.
@@ -610,9 +634,15 @@ class OddsPoller:
                     conn.close()
                     if row:
                         previous = OddsSnapshot(
-                            game_id=key, league="", home_team="", away_team="",
-                            game_date="", home_ml=row[0], away_ml=row[1],
-                            spread=row[2], total=row[3],
+                            game_id=key,
+                            league="",
+                            home_team="",
+                            away_team="",
+                            game_date="",
+                            home_ml=row[0],
+                            away_ml=row[1],
+                            spread=row[2],
+                            total=row[3],
                         )
                 except Exception:
                     pass
@@ -624,15 +654,17 @@ class OddsPoller:
                     if old is not None and new is not None and old != 0:
                         change = abs(new - old) / abs(old)
                         if change >= self.movement_threshold:
-                            movements.append({
-                                "game_id": snap.game_id,
-                                "league": snap.league,
-                                "matchup": f"{snap.away_team} @ {snap.home_team}",
-                                "type": label,
-                                "old_value": old,
-                                "new_value": new,
-                                "change_pct": round(change * 100, 2),
-                            })
+                            movements.append(
+                                {
+                                    "game_id": snap.game_id,
+                                    "league": snap.league,
+                                    "matchup": f"{snap.away_team} @ {snap.home_team}",
+                                    "type": label,
+                                    "old_value": old,
+                                    "new_value": new,
+                                    "change_pct": round(change * 100, 2),
+                                }
+                            )
 
         if league:
             movements = [m for m in movements if m.get("league") == league]
@@ -675,11 +707,13 @@ class OddsWebSocketManager:
         try:
             # Send initial state
             current_odds = self.poller.get_current_odds()
-            await websocket.send_json({
-                "type": "initial_state",
-                "games": current_odds,
-                "timestamp": datetime.now().isoformat(),
-            })
+            await websocket.send_json(
+                {
+                    "type": "initial_state",
+                    "games": current_odds,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
 
             # Handle incoming messages (subscription management)
             while True:
@@ -691,43 +725,53 @@ class OddsWebSocketManager:
                     if msg_type == "subscribe":
                         leagues = msg.get("leagues", msg.get("params", []))
                         await self.connection_manager.subscribe(websocket, leagues)
-                        await websocket.send_json({
-                            "type": "subscribed",
-                            "leagues": leagues,
-                        })
+                        await websocket.send_json(
+                            {
+                                "type": "subscribed",
+                                "leagues": leagues,
+                            }
+                        )
 
                     elif msg_type == "unsubscribe":
                         leagues = msg.get("leagues", msg.get("params", []))
                         await self.connection_manager.unsubscribe(websocket, leagues)
-                        await websocket.send_json({
-                            "type": "unsubscribed",
-                            "leagues": leagues,
-                        })
+                        await websocket.send_json(
+                            {
+                                "type": "unsubscribed",
+                                "leagues": leagues,
+                            }
+                        )
 
                     elif msg_type == "get_odds":
                         league = msg.get("league")
                         odds = self.poller.get_current_odds(league=league)
-                        await websocket.send_json({
-                            "type": "odds_snapshot",
-                            "games": odds,
-                        })
+                        await websocket.send_json(
+                            {
+                                "type": "odds_snapshot",
+                                "games": odds,
+                            }
+                        )
 
                     elif msg_type == "get_movements":
                         league = msg.get("league")
                         movements = self.poller.get_live_movements(league=league)
-                        await websocket.send_json({
-                            "type": "live_movements",
-                            "movements": movements,
-                        })
+                        await websocket.send_json(
+                            {
+                                "type": "live_movements",
+                                "movements": movements,
+                            }
+                        )
 
                     elif msg_type == "ping":
                         await websocket.send_json({"type": "pong"})
 
                 except json.JSONDecodeError:
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": "Invalid JSON",
-                    })
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "message": "Invalid JSON",
+                        }
+                    )
 
         except WebSocketDisconnect:
             await self.connection_manager.disconnect(websocket)

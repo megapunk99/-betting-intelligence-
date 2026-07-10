@@ -55,10 +55,10 @@ ESPN_TEAM_TO_SHORT.update(_ESPN_NBA_ALIASES)
 
 # Default season dates per league (used to find the right year to query)
 LEAGUE_DEFAULT_MONTHS: dict[str, tuple[int, int]] = {
-    "nba": (10, 6),          # Oct-Jun
-    "ncaab": (11, 4),        # Nov-Apr
-    "euroleague": (9, 5),    # Sep-May
-    "nfl": (9, 2),             # Sep-Feb
+    "nba": (10, 6),  # Oct-Jun
+    "ncaab": (11, 4),  # Nov-Apr
+    "euroleague": (9, 5),  # Sep-May
+    "nfl": (9, 2),  # Sep-Feb
 }
 
 # Cache the number of days in each month to avoid repeated calendar lookups
@@ -67,7 +67,6 @@ _DAYS_IN_MONTH_CACHE: dict[tuple[int, int], int] = {}
 
 def _days_in_month(year: int, month: int) -> int:
     """Get the number of days in a month, with caching."""
-    import calendar
     key = (year, month)
     if key not in _DAYS_IN_MONTH_CACHE:
         _DAYS_IN_MONTH_CACHE[key] = calendar.monthrange(year, month)[1]
@@ -95,13 +94,15 @@ class ESPNLeagueSource:
     def __init__(self, cache_dir: Optional[Path] = None):
         self.cache_dir = cache_dir
         self._session = requests.Session()
-        self._session.headers.update({
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-        })
+        self._session.headers.update(
+            {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+            }
+        )
         self._last_request = 0.0
 
     def _rate_limit(self):
@@ -187,16 +188,18 @@ class ESPNLeagueSource:
                 status = comp.get("status", {}).get("type", {}).get("name", "")
                 is_completed = status in {"STATUS_FINAL", "STATUS_FINAL_ALT"}
 
-                records.append({
-                    "game_id": event.get("id", f"espn_{league_key}_{date_str}"),
-                    "league": league_key,
-                    "date": date_str,
-                    "home_team": _team_short(home.get("displayName", "")),
-                    "away_team": _team_short(away.get("displayName", "")),
-                    "home_score": home.get("score", None) if is_completed else None,
-                    "away_score": away.get("score", None) if is_completed else None,
-                    "status": "completed" if is_completed else "scheduled",
-                })
+                records.append(
+                    {
+                        "game_id": event.get("id", f"espn_{league_key}_{date_str}"),
+                        "league": league_key,
+                        "date": date_str,
+                        "home_team": _team_short(home.get("displayName", "")),
+                        "away_team": _team_short(away.get("displayName", "")),
+                        "home_score": home.get("score", None) if is_completed else None,
+                        "away_score": away.get("score", None) if is_completed else None,
+                        "status": "completed" if is_completed else "scheduled",
+                    }
+                )
 
             return pd.DataFrame(records)
 
@@ -253,9 +256,7 @@ class ESPNLeagueSource:
         """Get the number of days in a month (falls back to module-level function)."""
         return _days_in_month(d.year, d.month)
 
-    def _fetch_date(
-        self, espn_path: str, league_key: str, date_str: str
-    ) -> list[dict]:
+    def _fetch_date(self, espn_path: str, league_key: str, date_str: str) -> list[dict]:
         """Fetch all games for a specific date."""
         self._rate_limit()
 
@@ -281,7 +282,11 @@ class ESPNLeagueSource:
                 continue
 
             status = comp.get("status", {}).get("type", {}).get("name", "")
-            is_completed = status in {"STATUS_FINAL", "STATUS_FINAL_ALT", "STATUS_FINAL_ALT_2"}
+            is_completed = status in {
+                "STATUS_FINAL",
+                "STATUS_FINAL_ALT",
+                "STATUS_FINAL_ALT_2",
+            }
             if not is_completed:
                 continue
 
@@ -295,20 +300,24 @@ class ESPNLeagueSource:
             event_date = event.get("date", "")[:10]
 
             # Two rows (one per team) to match CANONICAL_SCHEMA
-            gid = event.get("id", f"espn_{league_key}_{event_date}_{home_short}_{away_short}")
+            gid = event.get(
+                "id", f"espn_{league_key}_{event_date}_{home_short}_{away_short}"
+            )
 
-            records.append({
-                "game_id": gid,
-                "league": league_key,
-                "season": str(season_year_from_date(event_date)),
-                "date": event_date,
-                "home_team": home_short,
-                "away_team": away_short,
-                "home_score": int(home_score),
-                "away_score": int(away_score),
-                "total_points": int(home_score) + int(away_score),
-                "home_win": 1 if int(home_score) > int(away_score) else 0,
-            })
+            records.append(
+                {
+                    "game_id": gid,
+                    "league": league_key,
+                    "season": str(season_year_from_date(event_date)),
+                    "date": event_date,
+                    "home_team": home_short,
+                    "away_team": away_short,
+                    "home_score": int(home_score),
+                    "away_score": int(away_score),
+                    "total_points": int(home_score) + int(away_score),
+                    "home_win": 1 if int(home_score) > int(away_score) else 0,
+                }
+            )
 
         return records
 

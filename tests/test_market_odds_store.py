@@ -19,8 +19,6 @@ Test coverage:
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any
 
 import pandas as pd
 import pytest
@@ -40,6 +38,7 @@ def memory_db() -> DatabaseManager:
     manager = DatabaseManager(database_url="sqlite:///:memory:")
     # Create the MarketOdds table
     from betting_intel.db.schema import Base, MarketOdds
+
     Base.metadata.create_all(manager.engine, tables=[MarketOdds.__table__])
     return manager
 
@@ -57,6 +56,7 @@ def store(memory_db: DatabaseManager) -> MarketOddsStore:
 
 class _LiveGameStub:
     """Minimal LiveGame-like object for testing log_snapshot_from_live_game."""
+
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
             setattr(self, k, v)
@@ -158,7 +158,9 @@ class TestLogSnapshot:
         assert len(df) == 1
         row = df.iloc[0]
         assert row["home_ml"] is None or pd.isna(row["home_ml"])
-        assert row["vig_removed_home_prob"] is None or pd.isna(row["vig_removed_home_prob"])
+        assert row["vig_removed_home_prob"] is None or pd.isna(
+            row["vig_removed_home_prob"]
+        )
 
     def test_snapshot_with_home_favorite_odds(self, store: MarketOddsStore):
         """Log a snapshot where home team is favored (-150). Checks vig-free prob."""
@@ -241,12 +243,13 @@ class TestLogSnapshot:
             home_team="Boston Celtics",
             away_team="Los Angeles Lakers",
             home_team_short="",  # Will fall back to "Celtics"
-            away_team_short="",   # Will fall back to "Lakers"
+            away_team_short="",  # Will fall back to "Lakers"
         )
         assert ok is True
 
         # Verify short names were auto-populated
         from betting_intel.db.schema import MarketOdds
+
         session = store._db.get_session()
         try:
             record = session.query(MarketOdds).filter_by(game_id="GAME_007").first()
@@ -269,6 +272,7 @@ class TestLogSnapshot:
         assert ok is True
 
         from betting_intel.db.schema import MarketOdds
+
         session = store._db.get_session()
         try:
             record = session.query(MarketOdds).filter_by(game_id="GAME_008").first()
@@ -322,7 +326,9 @@ class TestLogSnapshot:
 class TestLogSnapshotFromLiveGame:
     """Unit tests for log_snapshot_from_live_game."""
 
-    def test_from_live_game_basic(self, store: MarketOddsStore, sample_live_game: _LiveGameStub):
+    def test_from_live_game_basic(
+        self, store: MarketOddsStore, sample_live_game: _LiveGameStub
+    ):
         """Log a snapshot from a LiveGame-like object."""
         ok = store.log_snapshot_from_live_game(sample_live_game)
         assert ok is True
@@ -330,7 +336,9 @@ class TestLogSnapshotFromLiveGame:
         stats = store.get_stats()
         assert stats["total_snapshots"] == 1
 
-    def test_from_live_game_all_fields_persisted(self, store: MarketOddsStore, sample_live_game: _LiveGameStub):
+    def test_from_live_game_all_fields_persisted(
+        self, store: MarketOddsStore, sample_live_game: _LiveGameStub
+    ):
         """All fields from the LiveGame object are correctly persisted."""
         store.log_snapshot_from_live_game(sample_live_game)
 
@@ -463,43 +471,47 @@ class TestLogBatch:
         """Mix of games with and without odds — only those with odds are logged."""
         games = []
         for i in range(5):
-            games.append(_LiveGameStub(
-                game_id=f"with_odds_{i}",
-                game_date="2025-01-25",
-                home_team="Home Team",
-                away_team="Away Team",
-                home_team_short="Home",
-                away_team_short="Away",
-                home_ml=-110.0,
-                away_ml=-110.0,
-                spread=0.0,
-                market_total=220.0,
-                over_odds=-110.0,
-                under_odds=-110.0,
-                n_books_ml=3,
-                n_books_total=3,
-                ml_std=5.0,
-                sport_key="basketball_nba",
-            ))
+            games.append(
+                _LiveGameStub(
+                    game_id=f"with_odds_{i}",
+                    game_date="2025-01-25",
+                    home_team="Home Team",
+                    away_team="Away Team",
+                    home_team_short="Home",
+                    away_team_short="Away",
+                    home_ml=-110.0,
+                    away_ml=-110.0,
+                    spread=0.0,
+                    market_total=220.0,
+                    over_odds=-110.0,
+                    under_odds=-110.0,
+                    n_books_ml=3,
+                    n_books_total=3,
+                    ml_std=5.0,
+                    sport_key="basketball_nba",
+                )
+            )
         for i in range(5):
-            games.append(_LiveGameStub(
-                game_id=f"no_odds_{i}",
-                game_date="2025-01-25",
-                home_team="Home Team",
-                away_team="Away Team",
-                home_team_short="Home",
-                away_team_short="Away",
-                home_ml=None,
-                away_ml=None,
-                spread=None,
-                market_total=None,
-                over_odds=None,
-                under_odds=None,
-                n_books_ml=0,
-                n_books_total=0,
-                ml_std=None,
-                sport_key="basketball_nba",
-            ))
+            games.append(
+                _LiveGameStub(
+                    game_id=f"no_odds_{i}",
+                    game_date="2025-01-25",
+                    home_team="Home Team",
+                    away_team="Away Team",
+                    home_team_short="Home",
+                    away_team_short="Away",
+                    home_ml=None,
+                    away_ml=None,
+                    spread=None,
+                    market_total=None,
+                    over_odds=None,
+                    under_odds=None,
+                    n_books_ml=0,
+                    n_books_total=0,
+                    ml_std=None,
+                    sport_key="basketball_nba",
+                )
+            )
 
         count = store.log_batch(games)
         assert count == 5  # Only the 5 with odds
@@ -583,9 +595,12 @@ class TestGetOddsForDate:
     def test_exact_match(self, store: MarketOddsStore):
         """Single game on a specific date is returned."""
         store.log_snapshot(
-            game_id="GAME_010", game_date="2025-01-15",
-            home_team="Boston Celtics", away_team="Los Angeles Lakers",
-            home_ml=-150.0, away_ml=+130.0,
+            game_id="GAME_010",
+            game_date="2025-01-15",
+            home_team="Boston Celtics",
+            away_team="Los Angeles Lakers",
+            home_ml=-150.0,
+            away_ml=+130.0,
         )
         df = store.get_odds_for_date("2025-01-15")
         assert len(df) == 1
@@ -595,8 +610,10 @@ class TestGetOddsForDate:
         """Multiple games on the same date all appear."""
         for i in range(5):
             store.log_snapshot(
-                game_id=f"GAME_{i:04d}", game_date="2025-01-15",
-                home_team=f"Home {i}", away_team=f"Away {i}",
+                game_id=f"GAME_{i:04d}",
+                game_date="2025-01-15",
+                home_team=f"Home {i}",
+                away_team=f"Away {i}",
             )
         df = store.get_odds_for_date("2025-01-15")
         assert len(df) == 5
@@ -604,14 +621,20 @@ class TestGetOddsForDate:
     def test_latest_only_false_returns_all_snapshots(self, store: MarketOddsStore):
         """With latest_only=False, all snapshots for the same game are returned."""
         store.log_snapshot(
-            game_id="GAME_011", game_date="2025-01-15",
-            home_team="Boston Celtics", away_team="Los Angeles Lakers",
-            home_ml=-150.0, away_ml=+130.0,
+            game_id="GAME_011",
+            game_date="2025-01-15",
+            home_team="Boston Celtics",
+            away_team="Los Angeles Lakers",
+            home_ml=-150.0,
+            away_ml=+130.0,
         )
         store.log_snapshot(
-            game_id="GAME_011", game_date="2025-01-15",
-            home_team="Boston Celtics", away_team="Los Angeles Lakers",
-            home_ml=-160.0, away_ml=+140.0,
+            game_id="GAME_011",
+            game_date="2025-01-15",
+            home_team="Boston Celtics",
+            away_team="Los Angeles Lakers",
+            home_ml=-160.0,
+            away_ml=+140.0,
         )
 
         df_all = store.get_odds_for_date("2025-01-15", latest_only=False)
@@ -641,13 +664,17 @@ class TestGetOddsForDate:
     def test_date_filter_respects_sport_key(self, store: MarketOddsStore):
         """get_odds_for_date filters by sport_key."""
         store.log_snapshot(
-            game_id="NBA_001", game_date="2025-01-15",
-            home_team="Boston Celtics", away_team="Los Angeles Lakers",
+            game_id="NBA_001",
+            game_date="2025-01-15",
+            home_team="Boston Celtics",
+            away_team="Los Angeles Lakers",
             sport_key="basketball_nba",
         )
         store.log_snapshot(
-            game_id="WNBA_001", game_date="2025-01-15",
-            home_team="NY Liberty", away_team="Las Vegas Aces",
+            game_id="WNBA_001",
+            game_date="2025-01-15",
+            home_team="NY Liberty",
+            away_team="Las Vegas Aces",
             sport_key="basketball_wnba",
         )
 
@@ -665,8 +692,10 @@ class TestGetOddsForDate:
     def test_no_match_different_date(self, store: MarketOddsStore):
         """Querying for a date with no stored games returns empty DataFrame."""
         store.log_snapshot(
-            game_id="GAME_012", game_date="2025-01-10",
-            home_team="Boston Celtics", away_team="Los Angeles Lakers",
+            game_id="GAME_012",
+            game_date="2025-01-10",
+            home_team="Boston Celtics",
+            away_team="Los Angeles Lakers",
         )
         df = store.get_odds_for_date("2025-01-15")
         assert df.empty
@@ -702,10 +731,14 @@ class TestGetMarketProbForGame:
     ):
         """Helper: log a single game for prob lookup tests."""
         store.log_snapshot(
-            game_id=game_id, game_date=date,
-            home_team=home_team, away_team=away_team,
-            home_team_short=home_short, away_team_short=away_short,
-            home_ml=home_ml, away_ml=away_ml,
+            game_id=game_id,
+            game_date=date,
+            home_team=home_team,
+            away_team=away_team,
+            home_team_short=home_short,
+            away_team_short=away_short,
+            home_ml=home_ml,
+            away_ml=away_ml,
         )
 
     # ── Full Name Variants ───────────────────────────────────────────
@@ -713,15 +746,21 @@ class TestGetMarketProbForGame:
     def test_full_name_match(self, store: MarketOddsStore):
         """Full team name match: home='Boston Celtics', away='Los Angeles Lakers'."""
         self._seed_game(store)
-        prob = store.get_market_prob_for_game("Boston Celtics", "Los Angeles Lakers", "2025-01-15")
+        prob = store.get_market_prob_for_game(
+            "Boston Celtics", "Los Angeles Lakers", "2025-01-15"
+        )
         assert prob is not None
         assert 0.55 < prob < 0.60  # -150/+130 → ~0.58 vig-free
 
     def test_full_name_swapped_orientation(self, store: MarketOddsStore):
         """Teams are queried in swapped order — home=away_record, away=home_record.
         Should return 1 - home_prob (since home team on record is the away team in query)."""
-        self._seed_game(store, home_team="Boston Celtics", away_team="Los Angeles Lakers")
-        prob = store.get_market_prob_for_game("Los Angeles Lakers", "Boston Celtics", "2025-01-15")
+        self._seed_game(
+            store, home_team="Boston Celtics", away_team="Los Angeles Lakers"
+        )
+        prob = store.get_market_prob_for_game(
+            "Los Angeles Lakers", "Boston Celtics", "2025-01-15"
+        )
         assert prob is not None
         # Since we queried with Lakers as 'home' and Celtics as 'away', but the
         # record has Celtics as home (favored at -150), the prob should be ~0.42
@@ -746,7 +785,9 @@ class TestGetMarketProbForGame:
     def test_short_name_full_name_mix(self, store: MarketOddsStore):
         """Mix of short and full names: home='Celtics', away='Los Angeles Lakers'."""
         self._seed_game(store)
-        prob = store.get_market_prob_for_game("Celtics", "Los Angeles Lakers", "2025-01-15")
+        prob = store.get_market_prob_for_game(
+            "Celtics", "Los Angeles Lakers", "2025-01-15"
+        )
         assert prob is not None
         assert 0.55 < prob < 0.60
 
@@ -754,7 +795,9 @@ class TestGetMarketProbForGame:
 
     def test_no_match_returns_none(self, store: MarketOddsStore):
         """No stored game for this matchup returns None."""
-        prob = store.get_market_prob_for_game("Miami Heat", "New York Knicks", "2025-01-15")
+        prob = store.get_market_prob_for_game(
+            "Miami Heat", "New York Knicks", "2025-01-15"
+        )
         assert prob is None
 
     def test_no_match_wrong_date(self, store: MarketOddsStore):
@@ -765,8 +808,13 @@ class TestGetMarketProbForGame:
 
     def test_no_match_wrong_teams(self, store: MarketOddsStore):
         """Correct date but wrong teams returns None."""
-        self._seed_game(store, home_team="Miami Heat", away_team="New York Knicks",
-                        home_short="Heat", away_short="Knicks")
+        self._seed_game(
+            store,
+            home_team="Miami Heat",
+            away_team="New York Knicks",
+            home_short="Heat",
+            away_short="Knicks",
+        )
         prob = store.get_market_prob_for_game("Celtics", "Lakers", "2025-01-15")
         assert prob is None
 
@@ -787,8 +835,7 @@ class TestGetMarketProbForGame:
 
     def test_latest_snapshot_is_used(self, store: MarketOddsStore):
         """When multiple snapshots exist, the latest (closing line) is returned."""
-        self._seed_game(store, game_id="GAME_LINE",
-                         home_ml=-150.0, away_ml=+130.0)
+        self._seed_game(store, game_id="GAME_LINE", home_ml=-150.0, away_ml=+130.0)
         # Line movement: home became bigger favorite
         store.log_snapshot(
             game_id="GAME_LINE",
@@ -807,7 +854,9 @@ class TestGetMarketProbForGame:
 
     def test_unknown_team_names(self, store: MarketOddsStore):
         """Completely unrecognized team names return None."""
-        prob = store.get_market_prob_for_game("Nonexistent Team", "Also Fake", "2025-01-15")
+        prob = store.get_market_prob_for_game(
+            "Nonexistent Team", "Also Fake", "2025-01-15"
+        )
         assert prob is None
 
     def test_favorite_underdog_direction_correct(self, store: MarketOddsStore):
@@ -860,17 +909,29 @@ class TestGetMarketProbsForDateRange:
         away_ml: float = -110.0,
     ):
         store.log_snapshot(
-            game_id=game_id, game_date=date,
-            home_team=home_team, away_team=away_team,
-            home_team_short=home_short, away_team_short=away_short,
-            home_ml=home_ml, away_ml=away_ml,
+            game_id=game_id,
+            game_date=date,
+            home_team=home_team,
+            away_team=away_team,
+            home_team_short=home_short,
+            away_team_short=away_short,
+            home_ml=home_ml,
+            away_ml=away_ml,
         )
 
     def test_single_date(self, store: MarketOddsStore):
         """Games on a single date within the range returned."""
-        self._seed_game(store, "G001", "2025-01-15",
-                        "Boston Celtics", "Los Angeles Lakers", "Celtics", "Lakers",
-                        home_ml=-150.0, away_ml=+130.0)
+        self._seed_game(
+            store,
+            "G001",
+            "2025-01-15",
+            "Boston Celtics",
+            "Los Angeles Lakers",
+            "Celtics",
+            "Lakers",
+            home_ml=-150.0,
+            away_ml=+130.0,
+        )
         result = store.get_market_probs_for_date_range("2025-01-15", "2025-01-15")
         assert len(result) == 1
         key = ("Boston Celtics", "Los Angeles Lakers", "2025-01-15")
@@ -881,26 +942,31 @@ class TestGetMarketProbsForDateRange:
         """Multiple games across a date range all returned."""
         dates = ["2025-01-15", "2025-01-16", "2025-01-17"]
         for i, d in enumerate(dates):
-            self._seed_game(store, f"G00{i}", d,
-                            f"Home {i}", f"Away {i}", f"H{i}", f"A{i}")
+            self._seed_game(
+                store, f"G00{i}", d, f"Home {i}", f"Away {i}", f"H{i}", f"A{i}"
+            )
         result = store.get_market_probs_for_date_range("2025-01-15", "2025-01-17")
         assert len(result) == 3
 
     def test_empty_range(self, store: MarketOddsStore):
         """No games in date range returns empty dict."""
-        self._seed_game(store, "G001", "2025-01-15",
-                        "Boston Celtics", "Los Angeles Lakers", "Celtics", "Lakers")
+        self._seed_game(
+            store,
+            "G001",
+            "2025-01-15",
+            "Boston Celtics",
+            "Los Angeles Lakers",
+            "Celtics",
+            "Lakers",
+        )
         result = store.get_market_probs_for_date_range("2025-02-01", "2025-02-28")
         assert result == {}
 
     def test_partial_range(self, store: MarketOddsStore):
         """Only games within the date range are returned (not all stored games)."""
-        self._seed_game(store, "G001", "2025-01-10",
-                        "Team A", "Team B", "A", "B")
-        self._seed_game(store, "G002", "2025-01-15",
-                        "Team C", "Team D", "C", "D")
-        self._seed_game(store, "G003", "2025-01-20",
-                        "Team E", "Team F", "E", "F")
+        self._seed_game(store, "G001", "2025-01-10", "Team A", "Team B", "A", "B")
+        self._seed_game(store, "G002", "2025-01-15", "Team C", "Team D", "C", "D")
+        self._seed_game(store, "G003", "2025-01-20", "Team E", "Team F", "E", "F")
 
         result = store.get_market_probs_for_date_range("2025-01-12", "2025-01-18")
         assert len(result) == 1
@@ -910,17 +976,25 @@ class TestGetMarketProbsForDateRange:
         """Multiple snapshots for the same game: only the latest is included."""
         # First snapshot
         store.log_snapshot(
-            game_id="G_DUP", game_date="2025-01-15",
-            home_team="Boston Celtics", away_team="Los Angeles Lakers",
-            home_team_short="Celtics", away_team_short="Lakers",
-            home_ml=-150.0, away_ml=+130.0,
+            game_id="G_DUP",
+            game_date="2025-01-15",
+            home_team="Boston Celtics",
+            away_team="Los Angeles Lakers",
+            home_team_short="Celtics",
+            away_team_short="Lakers",
+            home_ml=-150.0,
+            away_ml=+130.0,
         )
         # Second snapshot (line moved)
         store.log_snapshot(
-            game_id="G_DUP", game_date="2025-01-15",
-            home_team="Boston Celtics", away_team="Los Angeles Lakers",
-            home_team_short="Celtics", away_team_short="Lakers",
-            home_ml=-300.0, away_ml=+250.0,
+            game_id="G_DUP",
+            game_date="2025-01-15",
+            home_team="Boston Celtics",
+            away_team="Los Angeles Lakers",
+            home_team_short="Celtics",
+            away_team_short="Lakers",
+            home_ml=-300.0,
+            away_ml=+250.0,
         )
 
         result = store.get_market_probs_for_date_range("2025-01-15", "2025-01-15")
@@ -933,17 +1007,25 @@ class TestGetMarketProbsForDateRange:
         """Games without vig_removed_home_prob are excluded from results."""
         # Game with odds (will have vig-free prob)
         store.log_snapshot(
-            game_id="G_WITH", game_date="2025-01-15",
-            home_team="Boston Celtics", away_team="Los Angeles Lakers",
-            home_team_short="Celtics", away_team_short="Lakers",
-            home_ml=-150.0, away_ml=+130.0,
+            game_id="G_WITH",
+            game_date="2025-01-15",
+            home_team="Boston Celtics",
+            away_team="Los Angeles Lakers",
+            home_team_short="Celtics",
+            away_team_short="Lakers",
+            home_ml=-150.0,
+            away_ml=+130.0,
         )
         # Game without odds (no vig-free prob)
         store.log_snapshot(
-            game_id="G_WITHOUT", game_date="2025-01-15",
-            home_team="Miami Heat", away_team="New York Knicks",
-            home_team_short="Heat", away_team_short="Knicks",
-            home_ml=None, away_ml=None,
+            game_id="G_WITHOUT",
+            game_date="2025-01-15",
+            home_team="Miami Heat",
+            away_team="New York Knicks",
+            home_team_short="Heat",
+            away_team_short="Knicks",
+            home_ml=None,
+            away_ml=None,
         )
 
         result = store.get_market_probs_for_date_range("2025-01-15", "2025-01-15")
@@ -968,8 +1050,10 @@ class TestGetStats:
     def test_single_snapshot(self, store: MarketOddsStore):
         """Single snapshot: count=1, unique=1."""
         store.log_snapshot(
-            game_id="GAME_STAT_1", game_date="2025-01-15",
-            home_team="Team A", away_team="Team B",
+            game_id="GAME_STAT_1",
+            game_date="2025-01-15",
+            home_team="Team A",
+            away_team="Team B",
         )
         stats = store.get_stats()
         assert stats["total_snapshots"] == 1
@@ -979,8 +1063,10 @@ class TestGetStats:
         """Multiple snapshots of same game: count=2, unique=1."""
         for _ in range(2):
             store.log_snapshot(
-                game_id="GAME_STAT_2", game_date="2025-01-15",
-                home_team="Team A", away_team="Team B",
+                game_id="GAME_STAT_2",
+                game_date="2025-01-15",
+                home_team="Team A",
+                away_team="Team B",
             )
         stats = store.get_stats()
         assert stats["total_snapshots"] == 2
@@ -990,8 +1076,10 @@ class TestGetStats:
         """Multiple games with unique IDs: both count and unique reflect the total."""
         for i in range(10):
             store.log_snapshot(
-                game_id=f"GAME_STAT_{i:03d}", game_date="2025-01-15",
-                home_team=f"Team {i}", away_team=f"Opp {i}",
+                game_id=f"GAME_STAT_{i:03d}",
+                game_date="2025-01-15",
+                home_team=f"Team {i}",
+                away_team=f"Opp {i}",
             )
         stats = store.get_stats()
         assert stats["total_snapshots"] == 10
@@ -1025,10 +1113,14 @@ class TestGetClosingVsOpeningProb:
     ):
         """Helper: log a single odds snapshot."""
         store.log_snapshot(
-            game_id=game_id, game_date=date,
-            home_team=home_team, away_team=away_team,
-            home_team_short=home_short, away_team_short=away_short,
-            home_ml=home_ml, away_ml=away_ml,
+            game_id=game_id,
+            game_date=date,
+            home_team=home_team,
+            away_team=away_team,
+            home_team_short=home_short,
+            away_team_short=away_short,
+            home_ml=home_ml,
+            away_ml=away_ml,
         )
 
     def test_two_snapshots_return_opening_and_closing(self, store: MarketOddsStore):
@@ -1089,11 +1181,23 @@ class TestGetClosingVsOpeningProb:
     def test_line_moved_against_home_team(self, store: MarketOddsStore):
         """Line moves against home team: closing < opening."""
         # Opening: home favored at -150
-        self._seed_game(store, game_id="GAME_CLV_4", home_ml=-150.0, away_ml=+130.0,
-                        home_team="Boston Celtics", away_team="Los Angeles Lakers")
+        self._seed_game(
+            store,
+            game_id="GAME_CLV_4",
+            home_ml=-150.0,
+            away_ml=+130.0,
+            home_team="Boston Celtics",
+            away_team="Los Angeles Lakers",
+        )
         # Closing: home became underdog
-        self._seed_game(store, game_id="GAME_CLV_4", home_ml=+120.0, away_ml=-140.0,
-                        home_team="Boston Celtics", away_team="Los Angeles Lakers")
+        self._seed_game(
+            store,
+            game_id="GAME_CLV_4",
+            home_ml=+120.0,
+            away_ml=-140.0,
+            home_team="Boston Celtics",
+            away_team="Los Angeles Lakers",
+        )
 
         opening, closing = store.get_closing_vs_opening_prob(
             "Celtics", "Lakers", "2025-01-15"
@@ -1109,10 +1213,22 @@ class TestGetClosingVsOpeningProb:
     def test_swapped_orientation(self, store: MarketOddsStore):
         """Query with teams in swapped order (home=away_record, away=home_record).
         Opening/closing should be from the QUERY's home team perspective."""
-        self._seed_game(store, game_id="GAME_CLV_5", home_ml=-150.0, away_ml=+130.0,
-                        home_team="Boston Celtics", away_team="Los Angeles Lakers")
-        self._seed_game(store, game_id="GAME_CLV_5", home_ml=-300.0, away_ml=+250.0,
-                        home_team="Boston Celtics", away_team="Los Angeles Lakers")
+        self._seed_game(
+            store,
+            game_id="GAME_CLV_5",
+            home_ml=-150.0,
+            away_ml=+130.0,
+            home_team="Boston Celtics",
+            away_team="Los Angeles Lakers",
+        )
+        self._seed_game(
+            store,
+            game_id="GAME_CLV_5",
+            home_ml=-300.0,
+            away_ml=+250.0,
+            home_team="Boston Celtics",
+            away_team="Los Angeles Lakers",
+        )
 
         # Query with Lakers as 'home' (swapped)
         opening, closing = store.get_closing_vs_opening_prob(
@@ -1150,9 +1266,14 @@ class TestGetClosingVsOpeningProb:
 
     def test_wrong_teams_returns_none(self, store: MarketOddsStore):
         """Date matches but wrong teams: returns (None, None)."""
-        self._seed_game(store, game_id="GAME_CLV_8",
-                        home_team="Miami Heat", away_team="New York Knicks",
-                        home_short="Heat", away_short="Knicks")
+        self._seed_game(
+            store,
+            game_id="GAME_CLV_8",
+            home_team="Miami Heat",
+            away_team="New York Knicks",
+            home_short="Heat",
+            away_short="Knicks",
+        )
         opening, closing = store.get_closing_vs_opening_prob(
             "Celtics", "Lakers", "2025-01-15"
         )
@@ -1162,10 +1283,14 @@ class TestGetClosingVsOpeningProb:
     def test_no_vig_free_odds(self, store: MarketOddsStore):
         """Game stored without moneyline odds: returns (None, None)."""
         store.log_snapshot(
-            game_id="GAME_CLV_9", game_date="2025-01-15",
-            home_team="Boston Celtics", away_team="Los Angeles Lakers",
-            home_team_short="Celtics", away_team_short="Lakers",
-            home_ml=None, away_ml=None,
+            game_id="GAME_CLV_9",
+            game_date="2025-01-15",
+            home_team="Boston Celtics",
+            away_team="Los Angeles Lakers",
+            home_team_short="Celtics",
+            away_team_short="Lakers",
+            home_ml=None,
+            away_ml=None,
         )
         opening, closing = store.get_closing_vs_opening_prob(
             "Celtics", "Lakers", "2025-01-15"
@@ -1177,17 +1302,25 @@ class TestGetClosingVsOpeningProb:
         """Multiple snapshots but only one has moneyline data."""
         # First snapshot: no odds (vig_removed_home_prob = None)
         store.log_snapshot(
-            game_id="GAME_CLV_10", game_date="2025-01-15",
-            home_team="Boston Celtics", away_team="Los Angeles Lakers",
-            home_team_short="Celtics", away_team_short="Lakers",
-            home_ml=None, away_ml=None,
+            game_id="GAME_CLV_10",
+            game_date="2025-01-15",
+            home_team="Boston Celtics",
+            away_team="Los Angeles Lakers",
+            home_team_short="Celtics",
+            away_team_short="Lakers",
+            home_ml=None,
+            away_ml=None,
         )
         # Second snapshot: with odds
         store.log_snapshot(
-            game_id="GAME_CLV_10", game_date="2025-01-15",
-            home_team="Boston Celtics", away_team="Los Angeles Lakers",
-            home_team_short="Celtics", away_team_short="Lakers",
-            home_ml=-150.0, away_ml=+130.0,
+            game_id="GAME_CLV_10",
+            game_date="2025-01-15",
+            home_team="Boston Celtics",
+            away_team="Los Angeles Lakers",
+            home_team_short="Celtics",
+            away_team_short="Lakers",
+            home_ml=-150.0,
+            away_ml=+130.0,
         )
 
         opening, closing = store.get_closing_vs_opening_prob(
@@ -1205,10 +1338,14 @@ class TestGetClosingVsOpeningProb:
         self._seed_game(store, game_id="GAME_CLV_M1", home_ml=-150.0, away_ml=+130.0)
         # Game 2: Heat @ Knicks
         store.log_snapshot(
-            game_id="GAME_CLV_M2", game_date="2025-01-15",
-            home_team="Miami Heat", away_team="New York Knicks",
-            home_team_short="Heat", away_team_short="Knicks",
-            home_ml=-110.0, away_ml=-110.0,
+            game_id="GAME_CLV_M2",
+            game_date="2025-01-15",
+            home_team="Miami Heat",
+            away_team="New York Knicks",
+            home_team_short="Heat",
+            away_team_short="Knicks",
+            home_ml=-110.0,
+            away_ml=-110.0,
         )
 
         celtics_opening, celtics_closing = store.get_closing_vs_opening_prob(
@@ -1257,7 +1394,9 @@ class TestEdgeCases:
         assert df.iloc[0]["home_ml"] == -150.0
 
         # Query by team (full name)
-        prob_full = store.get_market_prob_for_game("Boston Celtics", "Los Angeles Lakers", "2025-01-15")
+        prob_full = store.get_market_prob_for_game(
+            "Boston Celtics", "Los Angeles Lakers", "2025-01-15"
+        )
         assert prob_full is not None
 
         # Query by team (short name)
@@ -1274,16 +1413,24 @@ class TestEdgeCases:
     def test_multiple_games_different_dates(self, store: MarketOddsStore):
         """Games on different dates can be queried independently."""
         store.log_snapshot(
-            game_id="MD_001", game_date="2025-01-10",
-            home_team="Boston Celtics", away_team="Los Angeles Lakers",
-            home_team_short="Celtics", away_team_short="Lakers",
-            home_ml=-150.0, away_ml=+130.0,
+            game_id="MD_001",
+            game_date="2025-01-10",
+            home_team="Boston Celtics",
+            away_team="Los Angeles Lakers",
+            home_team_short="Celtics",
+            away_team_short="Lakers",
+            home_ml=-150.0,
+            away_ml=+130.0,
         )
         store.log_snapshot(
-            game_id="MD_002", game_date="2025-01-12",
-            home_team="Miami Heat", away_team="New York Knicks",
-            home_team_short="Heat", away_team_short="Knicks",
-            home_ml=-110.0, away_ml=-110.0,
+            game_id="MD_002",
+            game_date="2025-01-12",
+            home_team="Miami Heat",
+            away_team="New York Knicks",
+            home_team_short="Heat",
+            away_team_short="Knicks",
+            home_ml=-110.0,
+            away_ml=-110.0,
         )
 
         # Query date 1
@@ -1318,7 +1465,9 @@ class TestEdgeCases:
         assert prob is not None
         assert prob == pytest.approx(0.5, abs=0.01)
 
-    def test_get_market_prob_for_game_exact_via_short_name(self, store: MarketOddsStore):
+    def test_get_market_prob_for_game_exact_via_short_name(
+        self, store: MarketOddsStore
+    ):
         """Short name match via home_team_short column returns correct prob."""
         store.log_snapshot(
             game_id="SN_001",
@@ -1330,9 +1479,7 @@ class TestEdgeCases:
             home_ml=-110.0,
             away_ml=-110.0,
         )
-        prob = store.get_market_prob_for_game(
-            "Celtics", "Lakers", "2025-01-15"
-        )
+        prob = store.get_market_prob_for_game("Celtics", "Lakers", "2025-01-15")
         assert prob is not None
 
     def test_log_batch_then_get_market_prob(self, store: MarketOddsStore):

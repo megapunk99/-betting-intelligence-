@@ -33,19 +33,37 @@ logger = logging.getLogger(__name__)
 #  DATA MODELS
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class OddsSummary:
     """Human-readable summary of odds for a game at a point in time."""
+
     __slots__ = (
-        "game_id", "home_team", "away_team", "game_date",
-        "sportsbooks_available", "home_moneyline", "away_moneyline",
-        "implied_home_win_prob", "total_over_under", "home_spread",
-        "timestamp", "is_opening", "is_closing",
+        "game_id",
+        "home_team",
+        "away_team",
+        "game_date",
+        "sportsbooks_available",
+        "home_moneyline",
+        "away_moneyline",
+        "implied_home_win_prob",
+        "total_over_under",
+        "home_spread",
+        "timestamp",
+        "is_opening",
+        "is_closing",
     )
 
-    def __init__(self, game_id: str, home_team: str, away_team: str,
-                 game_date: str, sportsbooks_available: int,
-                 timestamp: str = "", is_opening: bool = False,
-                 is_closing: bool = False):
+    def __init__(
+        self,
+        game_id: str,
+        home_team: str,
+        away_team: str,
+        game_date: str,
+        sportsbooks_available: int,
+        timestamp: str = "",
+        is_opening: bool = False,
+        is_closing: bool = False,
+    ):
         self.game_id = game_id
         self.home_team = home_team
         self.away_team = away_team
@@ -64,6 +82,7 @@ class OddsSummary:
 # ═══════════════════════════════════════════════════════════════════════════
 #  ODDS INGESTION ENGINE
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class OddsIngestionEngine:
     """
@@ -178,9 +197,17 @@ class OddsIngestionEngine:
                                     sportsbook, market, odds_value, timestamp,
                                     game_date, odds_type)
                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'current')""",
-                                (game_id, game_id, home, away,
-                                 book_key, market_key, odds_value, now_iso,
-                                 game_date)
+                                (
+                                    game_id,
+                                    game_id,
+                                    home,
+                                    away,
+                                    book_key,
+                                    market_key,
+                                    odds_value,
+                                    now_iso,
+                                    game_date,
+                                ),
                             )
                             count += 1
                         except Exception as e:
@@ -190,19 +217,25 @@ class OddsIngestionEngine:
 
         return count
 
-    def _upsert_meta_conn(self, conn: sqlite3.Connection, game_id: str,
-                          home: str, away: str, commence: str, now_iso: str):
+    def _upsert_meta_conn(
+        self,
+        conn: sqlite3.Connection,
+        game_id: str,
+        home: str,
+        away: str,
+        commence: str,
+        now_iso: str,
+    ):
         """Upsert game metadata within an existing connection."""
         try:
             existing = conn.execute(
-                "SELECT first_seen FROM odds_meta WHERE game_id = ?",
-                (game_id,)
+                "SELECT first_seen FROM odds_meta WHERE game_id = ?", (game_id,)
             ).fetchone()
 
             if existing:
                 conn.execute(
                     "UPDATE odds_meta SET last_updated = ? WHERE game_id = ?",
-                    (now_iso, game_id)
+                    (now_iso, game_id),
                 )
             else:
                 conn.execute(
@@ -210,7 +243,7 @@ class OddsIngestionEngine:
                        (game_id, home_team, away_team, commence_time,
                         first_seen, last_updated, is_finished)
                        VALUES (?, ?, ?, ?, ?, ?, 0)""",
-                    (game_id, home, away, commence, now_iso, now_iso)
+                    (game_id, home, away, commence, now_iso, now_iso),
                 )
         except Exception as e:
             logger.warning(f"Failed to upsert meta: {e}")
@@ -278,40 +311,49 @@ class OddsIngestionEngine:
 
         spread_outcomes = []
         if hasattr(book, "home_spread") and book.home_spread is not None:
-            spread_outcomes.append({
-                "name": "home",
-                "point": book.home_spread,
-                "price": getattr(book, "home_spread_odds", None)
-            })
+            spread_outcomes.append(
+                {
+                    "name": "home",
+                    "point": book.home_spread,
+                    "price": getattr(book, "home_spread_odds", None),
+                }
+            )
         if hasattr(book, "away_spread") and book.away_spread is not None:
-            spread_outcomes.append({
-                "name": "away",
-                "point": book.away_spread,
-                "price": getattr(book, "away_spread_odds", None)
-            })
+            spread_outcomes.append(
+                {
+                    "name": "away",
+                    "point": book.away_spread,
+                    "price": getattr(book, "away_spread_odds", None),
+                }
+            )
         if spread_outcomes:
             markets.append({"key": "spreads", "outcomes": spread_outcomes})
 
         total_outcomes = []
         if hasattr(book, "total_over") and book.total_over is not None:
-            total_outcomes.append({
-                "name": "Over",
-                "point": book.total_over,
-                "price": getattr(book, "total_over_odds", None)
-            })
+            total_outcomes.append(
+                {
+                    "name": "Over",
+                    "point": book.total_over,
+                    "price": getattr(book, "total_over_odds", None),
+                }
+            )
         if hasattr(book, "total_under") and book.total_under is not None:
-            total_outcomes.append({
-                "name": "Under",
-                "point": book.total_under,
-                "price": getattr(book, "total_under_odds", None)
-            })
+            total_outcomes.append(
+                {
+                    "name": "Under",
+                    "point": book.total_under,
+                    "price": getattr(book, "total_under_odds", None),
+                }
+            )
         if total_outcomes:
             markets.append({"key": "totals", "outcomes": total_outcomes})
 
         return markets
 
-    def _upsert_meta(self, game_id: str, home: str, away: str,
-                     commence: str, now_iso: str):
+    def _upsert_meta(
+        self, game_id: str, home: str, away: str, commence: str, now_iso: str
+    ):
         """Upsert using its own connection (for standalone calls)."""
         with self._connect() as conn:
             self._upsert_meta_conn(conn, game_id, home, away, commence, now_iso)
@@ -333,8 +375,9 @@ class OddsIngestionEngine:
         """Get the LAST odds before game start (CLOSING line)."""
         return self._build_summary(game_id, "closing")
 
-    def _build_summary(self, game_id: str,
-                       odds_type: str = "current") -> Optional[OddsSummary]:
+    def _build_summary(
+        self, game_id: str, odds_type: str = "current"
+    ) -> Optional[OddsSummary]:
         """Build an OddsSummary by fetching records at the right timestamp."""
         meta = None
         records = []
@@ -348,12 +391,11 @@ class OddsIngestionEngine:
                 # Fallback: try api_game_id lookup
                 row = conn.execute(
                     "SELECT DISTINCT game_id FROM odds WHERE api_game_id = ? LIMIT 1",
-                    (game_id,)
+                    (game_id,),
                 ).fetchone()
                 if row:
                     meta = conn.execute(
-                        "SELECT * FROM odds_meta WHERE game_id = ?",
-                        (row["game_id"],)
+                        "SELECT * FROM odds_meta WHERE game_id = ?", (row["game_id"],)
                     ).fetchone()
 
             if not meta:
@@ -363,18 +405,18 @@ class OddsIngestionEngine:
                 target_ts = meta["first_seen"]
                 records = conn.execute(
                     "SELECT * FROM odds WHERE game_id = ? AND timestamp = ? LIMIT 50",
-                    (game_id, target_ts)
+                    (game_id, target_ts),
                 ).fetchall()
             elif odds_type == "closing":
                 target_ts = meta["last_updated"]
                 records = conn.execute(
                     "SELECT * FROM odds WHERE game_id = ? AND timestamp = ? LIMIT 50",
-                    (game_id, target_ts)
+                    (game_id, target_ts),
                 ).fetchall()
             else:  # current - just get latest
                 records = conn.execute(
                     "SELECT * FROM odds WHERE game_id = ? ORDER BY timestamp DESC LIMIT 50",
-                    (game_id,)
+                    (game_id,),
                 ).fetchall()
 
         if not records:
@@ -382,14 +424,17 @@ class OddsIngestionEngine:
 
         return self._records_to_summary(records, dict(meta), odds_type)
 
-    def _records_to_summary(self, records: list, meta: dict,
-                            odds_type: str) -> OddsSummary:
+    def _records_to_summary(
+        self, records: list, meta: dict, odds_type: str
+    ) -> OddsSummary:
         """Convert raw odds records into an OddsSummary."""
         summary = OddsSummary(
             game_id=meta["game_id"],
             home_team=meta["home_team"],
             away_team=meta["away_team"],
-            game_date=meta.get("commence_time", "")[:10] if meta.get("commence_time") else "",
+            game_date=meta.get("commence_time", "")[:10]
+            if meta.get("commence_time")
+            else "",
             sportsbooks_available=len(set(r["sportsbook"] for r in records)),
             timestamp=records[0]["timestamp"],
             is_opening=(odds_type == "opening"),
@@ -479,10 +524,13 @@ class OddsIngestionEngine:
                 results.append(summary)
         return results
 
-    def get_odds_history(self, game_id: str,
-                         market: Optional[str] = None,
-                         sportsbook: Optional[str] = None,
-                         limit: int = 100) -> List[dict]:
+    def get_odds_history(
+        self,
+        game_id: str,
+        market: Optional[str] = None,
+        sportsbook: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[dict]:
         """Get the full time-series history of odds for a game (newest first)."""
         query = "SELECT * FROM odds WHERE game_id = ?"
         params: list[Any] = [game_id]
@@ -514,7 +562,7 @@ class OddsIngestionEngine:
         with self._connect() as conn:
             conn.execute(
                 "UPDATE odds_meta SET is_finished = 1, last_updated = ? WHERE game_id = ?",
-                (now_iso, game_id)
+                (now_iso, game_id),
             )
             conn.commit()
 
@@ -568,7 +616,7 @@ class OddsIngestionEngine:
                     if now >= end_time:
                         conn.execute(
                             "UPDATE odds_meta SET is_finished = 1 WHERE game_id = ?",
-                            (row["game_id"],)
+                            (row["game_id"],),
                         )
                         count += 1
                 except (ValueError, TypeError):
@@ -582,17 +630,28 @@ class OddsIngestionEngine:
         """Get ingestion statistics."""
         with self._connect() as conn:
             return {
-                "total_odds_records": conn.execute("SELECT COUNT(*) FROM odds").fetchone()[0],
-                "total_games_tracked": conn.execute("SELECT COUNT(*) FROM odds_meta").fetchone()[0],
-                "active_games": conn.execute("SELECT COUNT(*) FROM odds_meta WHERE is_finished = 0").fetchone()[0],
-                "total_snapshots": conn.execute("SELECT COUNT(DISTINCT timestamp) FROM odds").fetchone()[0],
-                "unique_sportsbooks": conn.execute("SELECT COUNT(DISTINCT sportsbook) FROM odds").fetchone()[0],
+                "total_odds_records": conn.execute(
+                    "SELECT COUNT(*) FROM odds"
+                ).fetchone()[0],
+                "total_games_tracked": conn.execute(
+                    "SELECT COUNT(*) FROM odds_meta"
+                ).fetchone()[0],
+                "active_games": conn.execute(
+                    "SELECT COUNT(*) FROM odds_meta WHERE is_finished = 0"
+                ).fetchone()[0],
+                "total_snapshots": conn.execute(
+                    "SELECT COUNT(DISTINCT timestamp) FROM odds"
+                ).fetchone()[0],
+                "unique_sportsbooks": conn.execute(
+                    "SELECT COUNT(DISTINCT sportsbook) FROM odds"
+                ).fetchone()[0],
             }
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  UTILITY FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def _median(values: List[float]) -> float:
     sorted_vals = sorted(values)
@@ -621,15 +680,15 @@ def _implied_prob(home_ml: float, away_ml: float) -> float:
 # ═══════════════════════════════════════════════════════════════════════════
 
 SPORT_DURATIONS: Dict[str, float] = {
-    "NBA": 3.0,    # ~48 min play + halftime + clock stops
-    "NFL": 3.5,    # ~60 min play + halftime + commercials
-    "MLB": 3.0,    # ~9 innings, no clock
-    "NHL": 2.5,    # ~60 min play + intermissions
+    "NBA": 3.0,  # ~48 min play + halftime + clock stops
+    "NFL": 3.5,  # ~60 min play + halftime + commercials
+    "MLB": 3.0,  # ~9 innings, no clock
+    "NHL": 2.5,  # ~60 min play + intermissions
     "WNBA": 2.25,  # ~40 min play
-    "CFB": 3.5,    # College football, similar to NFL
-    "UFC": 2.0,    # ~3 x 5 min rounds + buffer
-    "MLS": 2.25,   # ~90 min play + halftime (Soccer)
-    "EPL": 2.25,   # Same as MLS
+    "CFB": 3.5,  # College football, similar to NFL
+    "UFC": 2.0,  # ~3 x 5 min rounds + buffer
+    "MLS": 2.25,  # ~90 min play + halftime (Soccer)
+    "EPL": 2.25,  # Same as MLS
     "LIGA": 2.25,  # La Liga
     "SERIE_A": 2.25,
     "BUNDESLIGA": 2.25,

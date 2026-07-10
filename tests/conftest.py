@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from betting_intel.config import Settings
 
 # Set a test API key so that web.auth API key middleware allows test requests.
 # This MUST be set before any module that imports web.app is loaded.
@@ -55,18 +54,32 @@ def sample_game_data() -> pd.DataFrame:
         "team_plus_minus_away": np.random.normal(-2, 8, n_games),
         "WL_home": np.random.choice(["W", "L"], n_games),
         "WL_away": np.random.choice(["W", "L"], n_games),
-        "MATCHUP_home": [f"Team_{i % 10} vs. Team_{(i + 5) % 10}" for i in range(n_games)],
-        "MATCHUP_away": [f"Team_{(i + 5) % 10} @ Team_{i % 10}" for i in range(n_games)],
+        "MATCHUP_home": [
+            f"Team_{i % 10} vs. Team_{(i + 5) % 10}" for i in range(n_games)
+        ],
+        "MATCHUP_away": [
+            f"Team_{(i + 5) % 10} @ Team_{i % 10}" for i in range(n_games)
+        ],
     }
     df = pd.DataFrame(data)
 
     # Derived columns
     df["total_points"] = df["team_pts_home"] + df["team_pts_away"]
     df["point_diff"] = df["team_pts_home"] - df["team_pts_away"]
-    df["pace"] = (df["team_fga_home"] + df["team_tov_home"] - df["team_oreb_home"] +
-                  df["team_fga_away"] + df["team_tov_away"] - df["team_oreb_away"])
-    df["eFG_home"] = (df["team_fgm_home"] + 0.5 * df["team_fg3m_home"]) / df["team_fga_home"].clip(lower=1)
-    df["eFG_away"] = (df["team_fgm_away"] + 0.5 * df["team_fg3m_away"]) / df["team_fga_away"].clip(lower=1)
+    df["pace"] = (
+        df["team_fga_home"]
+        + df["team_tov_home"]
+        - df["team_oreb_home"]
+        + df["team_fga_away"]
+        + df["team_tov_away"]
+        - df["team_oreb_away"]
+    )
+    df["eFG_home"] = (df["team_fgm_home"] + 0.5 * df["team_fg3m_home"]) / df[
+        "team_fga_home"
+    ].clip(lower=1)
+    df["eFG_away"] = (df["team_fgm_away"] + 0.5 * df["team_fg3m_away"]) / df[
+        "team_fga_away"
+    ].clip(lower=1)
 
     return df
 
@@ -80,15 +93,19 @@ def sample_bets_dataframe() -> pd.DataFrame:
     data = {
         "game_date": pd.date_range("2023-01-01", periods=n_bets, freq="D"),
         "game_id": [f"GAME_{i:04d}" for i in range(n_bets)],
-        "matchup": [f"Team_A vs Team_B" for _ in range(n_bets)],
-        "strategy": np.random.choice(["momentum", "pace_total", "spread_model"], n_bets),
+        "matchup": ["Team_A vs Team_B" for _ in range(n_bets)],
+        "strategy": np.random.choice(
+            ["momentum", "pace_total", "spread_model"], n_bets
+        ),
         "model": np.random.choice(["Ridge", "XGBoost", "Logistic"], n_bets),
         "bet_type": np.random.choice(["TOTAL_OVER", "TOTAL_UNDER", "SPREAD"], n_bets),
         "predicted_total": np.random.normal(220, 10, n_bets),
         "market_line": np.random.normal(218, 8, n_bets),
         "actual_total": np.random.normal(219, 12, n_bets),
         "edge_pct": np.random.uniform(-0.08, 0.08, n_bets),
-        "outcome": np.random.choice(["WIN", "LOSS", "PUSH"], n_bets, p=[0.55, 0.40, 0.05]),
+        "outcome": np.random.choice(
+            ["WIN", "LOSS", "PUSH"], n_bets, p=[0.55, 0.40, 0.05]
+        ),
         "profit_units": np.where(np.random.random(n_bets) > 0.55, 1.0, -1.0),
     }
     return pd.DataFrame(data)

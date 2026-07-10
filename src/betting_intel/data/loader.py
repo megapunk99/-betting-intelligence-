@@ -41,7 +41,9 @@ class NBADataLoader:
     def load_game_logs(self) -> pd.DataFrame:
         """Load raw game logs from SQLite."""
         if not self.db_path or not self.db_path.exists():
-            logger.warning(f"Database not found at {self.db_path} — returning empty DataFrame")
+            logger.warning(
+                f"Database not found at {self.db_path} — returning empty DataFrame"
+            )
             return pd.DataFrame()
 
         try:
@@ -78,9 +80,26 @@ class NBADataLoader:
         df["GAME_DATE"] = pd.to_datetime(df["GAME_DATE"], errors="coerce")
         # Parse numeric columns
         numeric_cols = [
-            "MIN", "PTS", "FGM", "FGA", "FG_PCT", "FG3M", "FG3A", "FG3_PCT",
-            "FTM", "FTA", "FT_PCT", "OREB", "DREB", "REB", "AST", "STL",
-            "BLK", "TOV", "PF", "PLUS_MINUS"
+            "MIN",
+            "PTS",
+            "FGM",
+            "FGA",
+            "FG_PCT",
+            "FG3M",
+            "FG3A",
+            "FG3_PCT",
+            "FTM",
+            "FTA",
+            "FT_PCT",
+            "OREB",
+            "DREB",
+            "REB",
+            "AST",
+            "STL",
+            "BLK",
+            "TOV",
+            "PF",
+            "PLUS_MINUS",
         ]
         for col in numeric_cols:
             if col in df.columns:
@@ -106,13 +125,25 @@ class NBADataLoader:
 
             # Rename columns for clarity
             team_cols = {
-                "PTS": "team_pts", "FGM": "team_fgm", "FGA": "team_fga",
-                "FG_PCT": "team_fg_pct", "FG3M": "team_fg3m", "FG3A": "team_fg3a",
-                "FG3_PCT": "team_fg3_pct", "FTM": "team_ftm", "FTA": "team_fta",
-                "FT_PCT": "team_ft_pct", "OREB": "team_oreb", "DREB": "team_dreb",
-                "REB": "team_reb", "AST": "team_ast", "STL": "team_stl",
-                "BLK": "team_blk", "TOV": "team_tov", "PF": "team_pf",
-                "PLUS_MINUS": "team_plus_minus"
+                "PTS": "team_pts",
+                "FGM": "team_fgm",
+                "FGA": "team_fga",
+                "FG_PCT": "team_fg_pct",
+                "FG3M": "team_fg3m",
+                "FG3A": "team_fg3a",
+                "FG3_PCT": "team_fg3_pct",
+                "FTM": "team_ftm",
+                "FTA": "team_fta",
+                "FT_PCT": "team_ft_pct",
+                "OREB": "team_oreb",
+                "DREB": "team_dreb",
+                "REB": "team_reb",
+                "AST": "team_ast",
+                "STL": "team_stl",
+                "BLK": "team_blk",
+                "TOV": "team_tov",
+                "PF": "team_pf",
+                "PLUS_MINUS": "team_plus_minus",
             }
             # Only rename columns that exist
             rename_map = {k: v for k, v in team_cols.items() if k in df.columns}
@@ -123,15 +154,14 @@ class NBADataLoader:
             away = df[df["IS_HOME"] == 0].copy()
 
             if home.empty or away.empty:
-                logger.warning(f"Missing home ({len(home)}) or away ({len(away)}) rows in game dataset")
+                logger.warning(
+                    f"Missing home ({len(home)}) or away ({len(away)}) rows in game dataset"
+                )
                 return pd.DataFrame()
 
             # Merge on GAME_ID
             games = pd.merge(
-                home, away,
-                on="GAME_ID",
-                suffixes=("_home", "_away"),
-                how="inner"
+                home, away, on="GAME_ID", suffixes=("_home", "_away"), how="inner"
             )
 
             if games.empty:
@@ -143,20 +173,30 @@ class NBADataLoader:
             games["total_points"] = games["team_pts_home"] + games["team_pts_away"]
             games["point_diff"] = games["team_pts_home"] - games["team_pts_away"]
             games["pace"] = (
-                games["team_fga_home"].fillna(0) + games["team_tov_home"].fillna(0)
-                - games["team_oreb_home"].fillna(0) +
-                games["team_fga_away"].fillna(0) + games["team_tov_away"].fillna(0)
+                games["team_fga_home"].fillna(0)
+                + games["team_tov_home"].fillna(0)
+                - games["team_oreb_home"].fillna(0)
+                + games["team_fga_away"].fillna(0)
+                + games["team_tov_away"].fillna(0)
                 - games["team_oreb_away"].fillna(0)
             )
             games["eFG_home"] = np.where(
                 games["team_fga_home"].fillna(0) > 0,
-                (games["team_fgm_home"].fillna(0) + 0.5 * games["team_fg3m_home"].fillna(0)) / games["team_fga_home"].clip(lower=1),
-                0.0
+                (
+                    games["team_fgm_home"].fillna(0)
+                    + 0.5 * games["team_fg3m_home"].fillna(0)
+                )
+                / games["team_fga_home"].clip(lower=1),
+                0.0,
             )
             games["eFG_away"] = np.where(
                 games["team_fga_away"].fillna(0) > 0,
-                (games["team_fgm_away"].fillna(0) + 0.5 * games["team_fg3m_away"].fillna(0)) / games["team_fga_away"].clip(lower=1),
-                0.0
+                (
+                    games["team_fgm_away"].fillna(0)
+                    + 0.5 * games["team_fg3m_away"].fillna(0)
+                )
+                / games["team_fga_away"].clip(lower=1),
+                0.0,
             )
 
             # Sort by date
@@ -167,6 +207,7 @@ class NBADataLoader:
         except Exception as e:
             logger.error(f"Failed to build game dataset: {e}")
             import traceback
+
             logger.debug(traceback.format_exc())
             return pd.DataFrame()
 
@@ -184,14 +225,18 @@ class NBADataLoader:
             # Determine team identifier column (TEAM_ID for NBA, TEAM_NAME for NCAAB)
             team_id_col = "TEAM_ID" if "TEAM_ID" in df.columns else "TEAM_NAME"
             if team_id_col not in df.columns:
-                logger.warning(f"No team identifier column found for rest days computation")
+                logger.warning(
+                    "No team identifier column found for rest days computation"
+                )
                 df["rest_days"] = MAX_REST_DAYS
                 df["is_back_to_back"] = 0
                 return df
 
             df = df.sort_values([team_id_col, "GAME_DATE"])
             df["rest_days"] = df.groupby(team_id_col)["GAME_DATE"].diff().dt.days
-            df["rest_days"] = df["rest_days"].fillna(MAX_REST_DAYS).clip(0, MAX_REST_DAYS)
+            df["rest_days"] = (
+                df["rest_days"].fillna(MAX_REST_DAYS).clip(0, MAX_REST_DAYS)
+            )
             df["is_back_to_back"] = (df["rest_days"] <= 1).astype(int)
             return df
         except Exception as e:
@@ -203,6 +248,7 @@ class NBADataLoader:
 
 
 # ── NCAAB Data Loader (ESPN-based) ───────────────────────────────────────
+
 
 class NCAABDataLoader:
     """
@@ -259,55 +305,87 @@ class NCAABDataLoader:
                 home_win = row.get("home_win", 1 if home_score > away_score else 0)
 
                 # Home team row
-                records.append({
-                    "GAME_ID": f"{game_id}_home",
-                    "TEAM_ID": abs(zlib.crc32(f"ncaab_{home_team}".encode())) % (2**31),
-                    "TEAM_ABBREVIATION": home_team[:3].upper(),
-                    "TEAM_NAME": home_team,
-                    "GAME_DATE": game_date,
-                    "MATCHUP": f"{home_team} vs. {away_team}",
-                    "WL": "W" if home_win else "L",
-                    "MIN": 200,  # NCAAB games are ~40 min, approximate
-                    "PTS": home_score,
-                    "FGM": 0, "FGA": 0, "FG_PCT": 0,
-                    "FG3M": 0, "FG3A": 0, "FG3_PCT": 0,
-                    "FTM": 0, "FTA": 0, "FT_PCT": 0,
-                    "OREB": 0, "DREB": 0, "REB": 0,
-                    "AST": 0, "STL": 0, "BLK": 0, "TOV": 0, "PF": 0,
-                    "PLUS_MINUS": home_score - away_score,
-                    "SEASON": season,
-                    "IS_HOME": 1,
-                    "OPPONENT": away_team,
-                    "team_pts": home_score,
-                })
+                records.append(
+                    {
+                        "GAME_ID": f"{game_id}_home",
+                        "TEAM_ID": abs(zlib.crc32(f"ncaab_{home_team}".encode()))
+                        % (2**31),
+                        "TEAM_ABBREVIATION": home_team[:3].upper(),
+                        "TEAM_NAME": home_team,
+                        "GAME_DATE": game_date,
+                        "MATCHUP": f"{home_team} vs. {away_team}",
+                        "WL": "W" if home_win else "L",
+                        "MIN": 200,  # NCAAB games are ~40 min, approximate
+                        "PTS": home_score,
+                        "FGM": 0,
+                        "FGA": 0,
+                        "FG_PCT": 0,
+                        "FG3M": 0,
+                        "FG3A": 0,
+                        "FG3_PCT": 0,
+                        "FTM": 0,
+                        "FTA": 0,
+                        "FT_PCT": 0,
+                        "OREB": 0,
+                        "DREB": 0,
+                        "REB": 0,
+                        "AST": 0,
+                        "STL": 0,
+                        "BLK": 0,
+                        "TOV": 0,
+                        "PF": 0,
+                        "PLUS_MINUS": home_score - away_score,
+                        "SEASON": season,
+                        "IS_HOME": 1,
+                        "OPPONENT": away_team,
+                        "team_pts": home_score,
+                    }
+                )
                 # Away team row
-                records.append({
-                    "GAME_ID": f"{game_id}_away",
-                    "TEAM_ID": abs(zlib.crc32(f"ncaab_{away_team}".encode())) % (2**31),
-                    "TEAM_ABBREVIATION": away_team[:3].upper(),
-                    "TEAM_NAME": away_team,
-                    "GAME_DATE": game_date,
-                    "MATCHUP": f"{away_team} @ {home_team}",
-                    "WL": "W" if not home_win else "L",
-                    "MIN": 200,
-                    "PTS": away_score,
-                    "FGM": 0, "FGA": 0, "FG_PCT": 0,
-                    "FG3M": 0, "FG3A": 0, "FG3_PCT": 0,
-                    "FTM": 0, "FTA": 0, "FT_PCT": 0,
-                    "OREB": 0, "DREB": 0, "REB": 0,
-                    "AST": 0, "STL": 0, "BLK": 0, "TOV": 0, "PF": 0,
-                    "PLUS_MINUS": away_score - home_score,
-                    "SEASON": season,
-                    "IS_HOME": 0,
-                    "OPPONENT": home_team,
-                    "team_pts": away_score,
-                })
+                records.append(
+                    {
+                        "GAME_ID": f"{game_id}_away",
+                        "TEAM_ID": abs(zlib.crc32(f"ncaab_{away_team}".encode()))
+                        % (2**31),
+                        "TEAM_ABBREVIATION": away_team[:3].upper(),
+                        "TEAM_NAME": away_team,
+                        "GAME_DATE": game_date,
+                        "MATCHUP": f"{away_team} @ {home_team}",
+                        "WL": "W" if not home_win else "L",
+                        "MIN": 200,
+                        "PTS": away_score,
+                        "FGM": 0,
+                        "FGA": 0,
+                        "FG_PCT": 0,
+                        "FG3M": 0,
+                        "FG3A": 0,
+                        "FG3_PCT": 0,
+                        "FTM": 0,
+                        "FTA": 0,
+                        "FT_PCT": 0,
+                        "OREB": 0,
+                        "DREB": 0,
+                        "REB": 0,
+                        "AST": 0,
+                        "STL": 0,
+                        "BLK": 0,
+                        "TOV": 0,
+                        "PF": 0,
+                        "PLUS_MINUS": away_score - home_score,
+                        "SEASON": season,
+                        "IS_HOME": 0,
+                        "OPPONENT": home_team,
+                        "team_pts": away_score,
+                    }
+                )
 
             result = pd.DataFrame(records)
             result["GAME_DATE"] = pd.to_datetime(result["GAME_DATE"])
 
             self._cache = result
-            logger.info(f"NCAAB: loaded {len(result)} rows ({len(result)//2} games) from ESPN")
+            logger.info(
+                f"NCAAB: loaded {len(result)} rows ({len(result) // 2} games) from ESPN"
+            )
             return result
 
         except Exception as e:
@@ -327,15 +405,20 @@ class NCAABDataLoader:
         away = df[df["IS_HOME"] == 0].copy()
 
         games = pd.merge(
-            home, away,
+            home,
+            away,
             on="GAME_ID",
             suffixes=("_home", "_away"),
             how="inner",
         )
 
         # Standardize team name columns for FeatureEngineer
-        home_team_col = "TEAM_NAME_home" if "TEAM_NAME_home" in games.columns else "home_team"
-        away_team_col = "TEAM_NAME_away" if "TEAM_NAME_away" in games.columns else "away_team"
+        home_team_col = (
+            "TEAM_NAME_home" if "TEAM_NAME_home" in games.columns else "home_team"
+        )
+        away_team_col = (
+            "TEAM_NAME_away" if "TEAM_NAME_away" in games.columns else "away_team"
+        )
 
         # Ensure these exist for ELO and other name-dependent features
         if "TEAM_NAME_home" not in games.columns and "home_team" in games.columns:
@@ -366,7 +449,9 @@ class NCAABDataLoader:
         return df
 
 
-def get_team_season_rolling(df: pd.DataFrame, team_col: str, stat_col: str, window: int) -> pd.Series:
+def get_team_season_rolling(
+    df: pd.DataFrame, team_col: str, stat_col: str, window: int
+) -> pd.Series:
     """
     Compute rolling average of a stat for a specific team.
     This is used for building features.

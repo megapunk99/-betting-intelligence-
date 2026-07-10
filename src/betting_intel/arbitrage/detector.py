@@ -13,7 +13,6 @@ No network calls — purely computational analysis of existing odds data.
 from __future__ import annotations
 
 import logging
-import math
 from typing import Optional
 
 from betting_intel.arbitrage.models import ArbLeg, ArbitrageOpportunity
@@ -106,7 +105,10 @@ def detect_arbitrage(raw_odds: list[dict]) -> list[ArbitrageOpportunity]:
         if not home_full or not away_full:
             continue
 
-        sport_key = event.get("_sport_config_key", event.get("sport_key", "basketball_nba")) or ""
+        sport_key = (
+            event.get("_sport_config_key", event.get("sport_key", "basketball_nba"))
+            or ""
+        )
         game_id = event.get("id", "") or ""
         commence_time = event.get("commence_time", "") or ""
         game_date = commence_time[:10] if commence_time else ""
@@ -198,7 +200,11 @@ def detect_arbitrage(raw_odds: list[dict]) -> list[ArbitrageOpportunity]:
                                 over_price = price_int
                             elif name == "Under":
                                 under_price = price_int
-                    if over_price is not None and under_price is not None and point is not None:
+                    if (
+                        over_price is not None
+                        and under_price is not None
+                        and point is not None
+                    ):
                         total_prices[book_key] = {
                             "over": over_price,
                             "under": under_price,
@@ -246,7 +252,9 @@ def detect_arbitrage(raw_odds: list[dict]) -> list[ArbitrageOpportunity]:
                                     point=None,
                                     price=best_home_price,
                                     decimal_odds=round(home_dec, 2),
-                                    stake_pct=round(stakes[0] / sum(stakes), 4) if sum(stakes) > 0 else 0.5,
+                                    stake_pct=round(stakes[0] / sum(stakes), 4)
+                                    if sum(stakes) > 0
+                                    else 0.5,
                                     stake_dollars=round(stakes[0], 2),
                                 ),
                                 ArbLeg(
@@ -256,27 +264,31 @@ def detect_arbitrage(raw_odds: list[dict]) -> list[ArbitrageOpportunity]:
                                     point=None,
                                     price=best_away_price,
                                     decimal_odds=round(away_dec, 2),
-                                    stake_pct=round(stakes[1] / sum(stakes), 4) if sum(stakes) > 0 else 0.5,
+                                    stake_pct=round(stakes[1] / sum(stakes), 4)
+                                    if sum(stakes) > 0
+                                    else 0.5,
                                     stake_dollars=round(stakes[1], 2),
                                 ),
                             ]
 
-                            opportunities.append(ArbitrageOpportunity(
-                                id=arb_id,
-                                game_id=game_id,
-                                matchup=matchup,
-                                sport_key=sport_key,
-                                league=league,
-                                commence_time=commence_time,
-                                game_date=game_date,
-                                arb_type="standard_2way",
-                                legs=legs,
-                                total_implied_prob=round(total_imp, 4),
-                                profit_pct=round(profit_pct, 4),
-                                profit_per_1k=round(profit_pct * 1000, 2),
-                                n_books=2,
-                                depth=2,
-                            ))
+                            opportunities.append(
+                                ArbitrageOpportunity(
+                                    id=arb_id,
+                                    game_id=game_id,
+                                    matchup=matchup,
+                                    sport_key=sport_key,
+                                    league=league,
+                                    commence_time=commence_time,
+                                    game_date=game_date,
+                                    arb_type="standard_2way",
+                                    legs=legs,
+                                    total_implied_prob=round(total_imp, 4),
+                                    profit_pct=round(profit_pct, 4),
+                                    profit_per_1k=round(profit_pct * 1000, 2),
+                                    n_books=2,
+                                    depth=2,
+                                )
+                            )
 
         # ── 2. Three-way arbitrage (soccer) ──────────────────────────
         if len(draw_prices) >= 1 and len(h2h_prices) >= 2:
@@ -305,7 +317,9 @@ def detect_arbitrage(raw_odds: list[dict]) -> list[ArbitrageOpportunity]:
 
             # 3-way arb requires at least 2 distinct books
             distinct_books = len({best_home_book, best_away_book, best_draw_book})
-            if distinct_books >= 2 and all([best_home_price, best_away_price, best_draw_price]):
+            if distinct_books >= 2 and all(
+                [best_home_price, best_away_price, best_draw_price]
+            ):
                 home_dec = american_to_decimal(best_home_price)
                 away_dec = american_to_decimal(best_away_price)
                 draw_dec = american_to_decimal(best_draw_price)
@@ -356,22 +370,24 @@ def detect_arbitrage(raw_odds: list[dict]) -> list[ArbitrageOpportunity]:
                                 ),
                             ]
 
-                            opportunities.append(ArbitrageOpportunity(
-                                id=arb_id,
-                                game_id=game_id,
-                                matchup=matchup,
-                                sport_key=sport_key,
-                                league=league,
-                                commence_time=commence_time,
-                                game_date=game_date,
-                                arb_type="three_way",
-                                legs=legs,
-                                total_implied_prob=round(total_imp, 4),
-                                profit_pct=round(profit_pct, 4),
-                                profit_per_1k=round(profit_pct * 1000, 2),
-                                n_books=distinct_books,
-                                depth=3,
-                            ))
+                            opportunities.append(
+                                ArbitrageOpportunity(
+                                    id=arb_id,
+                                    game_id=game_id,
+                                    matchup=matchup,
+                                    sport_key=sport_key,
+                                    league=league,
+                                    commence_time=commence_time,
+                                    game_date=game_date,
+                                    arb_type="three_way",
+                                    legs=legs,
+                                    total_implied_prob=round(total_imp, 4),
+                                    profit_pct=round(profit_pct, 4),
+                                    profit_per_1k=round(profit_pct * 1000, 2),
+                                    n_books=distinct_books,
+                                    depth=3,
+                                )
+                            )
 
         # ── 3. Totals arbitrage (Over/Under) ─────────────────────────
         if len(total_prices) >= 2:
@@ -403,7 +419,11 @@ def detect_arbitrage(raw_odds: list[dict]) -> list[ArbitrageOpportunity]:
                         best_under_price = un
                         best_under_book = bk
 
-                if best_over_book and best_under_book and best_over_book != best_under_book:
+                if (
+                    best_over_book
+                    and best_under_book
+                    and best_over_book != best_under_book
+                ):
                     over_dec = american_to_decimal(best_over_price)
                     under_dec = american_to_decimal(best_under_price)
                     over_imp = 1.0 / over_dec
@@ -442,32 +462,37 @@ def detect_arbitrage(raw_odds: list[dict]) -> list[ArbitrageOpportunity]:
                                     ),
                                 ]
 
-                                opportunities.append(ArbitrageOpportunity(
-                                    id=arb_id,
-                                    game_id=game_id,
-                                    matchup=matchup,
-                                    sport_key=sport_key,
-                                    league=league,
-                                    commence_time=commence_time,
-                                    game_date=game_date,
-                                    arb_type="totals",
-                                    legs=legs,
-                                    total_implied_prob=round(total_imp, 4),
-                                    profit_pct=round(profit_pct, 4),
-                                    profit_per_1k=round(profit_pct * 1000, 2),
-                                    n_books=2,
-                                    depth=2,
-                                ))
+                                opportunities.append(
+                                    ArbitrageOpportunity(
+                                        id=arb_id,
+                                        game_id=game_id,
+                                        matchup=matchup,
+                                        sport_key=sport_key,
+                                        league=league,
+                                        commence_time=commence_time,
+                                        game_date=game_date,
+                                        arb_type="totals",
+                                        legs=legs,
+                                        total_implied_prob=round(total_imp, 4),
+                                        profit_pct=round(profit_pct, 4),
+                                        profit_per_1k=round(profit_pct * 1000, 2),
+                                        n_books=2,
+                                        depth=2,
+                                    )
+                                )
 
     # Sort by profit descending
     opportunities.sort(key=lambda o: o.profit_pct, reverse=True)
-    logger.info(f"Arbitrage detection: {len(opportunities)} opportunities found across {len(raw_odds)} events")
+    logger.info(
+        f"Arbitrage detection: {len(opportunities)} opportunities found across {len(raw_odds)} events"
+    )
     return opportunities
 
 
 def _league_from_sport_key(sport_key: str) -> str:
     """Convert sport key to league display name."""
     from betting_intel.live.sport_configs import SPORT_KEY_TO_CONFIG
+
     config = SPORT_KEY_TO_CONFIG.get(sport_key)
     if config:
         return config.display_name

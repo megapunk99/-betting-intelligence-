@@ -17,10 +17,14 @@ from __future__ import annotations
 import json
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    as_completed,
+    TimeoutError as FuturesTimeoutError,
+)
 from datetime import datetime
 from threading import Lock
-from typing import Any, Optional
+from typing import Optional
 
 from betting_intel.live.models import ODDS_CACHE_TTL_SECONDS
 
@@ -29,7 +33,9 @@ logger = logging.getLogger(__name__)
 
 # ── Invalid key sentinels ────────────────────────────────────────────────
 
-_INVALID_KEYS = frozenset({"your-api-key-here", "", "REPLACE_ME_WITH_YOUR_ODDS_API_KEY"})
+_INVALID_KEYS = frozenset(
+    {"your-api-key-here", "", "REPLACE_ME_WITH_YOUR_ODDS_API_KEY"}
+)
 
 
 # ── Quota warning thresholds ────────────────────────────────────────────
@@ -52,17 +58,22 @@ class OddsFetcher:
         self._odds_api_key_fallback = odds_api_key_fallback
         self._scraper_timeout = scraper_timeout
         self._last_theoddsapi_fetch: float = 0.0  # When TheOddsAPI was last called
-        self._last_quota_remaining: Optional[str] = None  # x-requests-remaining from last call
-        self._last_quota_used: Optional[str] = None       # x-requests-used from last call
-        self._last_quota_credits_cost: Optional[int] = None  # Estimated credits spent on last call
-        self._quota_has_warned: set[int] = set()  # Track which threshold levels we've warned at
+        self._last_quota_remaining: Optional[str] = (
+            None  # x-requests-remaining from last call
+        )
+        self._last_quota_used: Optional[str] = None  # x-requests-used from last call
+        self._last_quota_credits_cost: Optional[int] = (
+            None  # Estimated credits spent on last call
+        )
+        self._quota_has_warned: set[int] = (
+            set()
+        )  # Track which threshold levels we've warned at
 
     # ── Public API ────────────────────────────────────────────────────────
 
     def has_valid_api_key(self) -> bool:
         primary_valid = (
-            bool(self._odds_api_key)
-            and self._odds_api_key not in _INVALID_KEYS
+            bool(self._odds_api_key) and self._odds_api_key not in _INVALID_KEYS
         )
         fallback_valid = (
             bool(self._odds_api_key_fallback)
@@ -132,9 +143,12 @@ class OddsFetcher:
         any time after 6:00 AM as "today's fetch window".
         """
         from betting_intel.config import DAILY_FETCH_HOUR
+
         now = datetime.now()
         # Scheduled time: today at DAILY_FETCH_HOUR:00
-        scheduled = now.replace(hour=DAILY_FETCH_HOUR, minute=0, second=0, microsecond=0)
+        scheduled = now.replace(
+            hour=DAILY_FETCH_HOUR, minute=0, second=0, microsecond=0
+        )
         return scheduled.timestamp()
 
     @staticmethod
@@ -185,16 +199,17 @@ class OddsFetcher:
         """
         from betting_intel.config import DAILY_FETCH_HOUR, DAILY_FETCH_ENABLED
 
-        today_scheduled = datetime.fromtimestamp(
-            OddsFetcher._get_daily_fetch_today()
-        )
+        today_scheduled = datetime.fromtimestamp(OddsFetcher._get_daily_fetch_today())
         now = datetime.now()
 
         # If already past today's schedule, next is tomorrow
         if now >= today_scheduled:
             from datetime import timedelta
+
             tomorrow = now + timedelta(days=1)
-            next_fetch = tomorrow.replace(hour=DAILY_FETCH_HOUR, minute=0, second=0, microsecond=0)
+            next_fetch = tomorrow.replace(
+                hour=DAILY_FETCH_HOUR, minute=0, second=0, microsecond=0
+            )
         else:
             next_fetch = today_scheduled
 
@@ -213,7 +228,11 @@ class OddsFetcher:
                 days = int(hours_ago / 24)
                 last_display = f"{days}d ago on {last_dt.strftime('%m/%d')}"
 
-        next_display = next_fetch.strftime("today at %H:%M") if next_fetch.date() == now.date() else next_fetch.strftime("tomorrow at %H:%M")
+        next_display = (
+            next_fetch.strftime("today at %H:%M")
+            if next_fetch.date() == now.date()
+            else next_fetch.strftime("tomorrow at %H:%M")
+        )
         seconds_until = (next_fetch - now).total_seconds()
 
         return {
@@ -235,12 +254,17 @@ class OddsFetcher:
         now_time = datetime.now()
 
         # Determine if we SHOULD fetch right now
-        should_fetch = s["daily_fetch_enabled"] and (
-            last_fetch == 0.0
-            or last_fetch < datetime.now().replace(
-                hour=s["daily_fetch_hour"], minute=0, second=0, microsecond=0
-            ).timestamp()
-        ) and now_time.hour >= s["daily_fetch_hour"]
+        should_fetch = (
+            s["daily_fetch_enabled"]
+            and (
+                last_fetch == 0.0
+                or last_fetch
+                < datetime.now()
+                .replace(hour=s["daily_fetch_hour"], minute=0, second=0, microsecond=0)
+                .timestamp()
+            )
+            and now_time.hour >= s["daily_fetch_hour"]
+        )
 
         return {
             "enabled": s["daily_fetch_enabled"],
@@ -282,14 +306,18 @@ class OddsFetcher:
         """
         # Fast-path: return cached odds if still fresh
         with cache_lock:
-            if cached_odds_raw is not None and (now - last_odds_fetch) < ODDS_CACHE_TTL_SECONDS:
+            if (
+                cached_odds_raw is not None
+                and (now - last_odds_fetch) < ODDS_CACHE_TTL_SECONDS
+            ):
                 return cached_odds_raw
 
         # Call TheOddsAPI if:
         #   a) force_theoddsapi is True (manual refresh / force_refresh), OR
         #   b) it's time for the daily morning fetch
         should_call_api = self.has_valid_api_key() and (
-            force_theoddsapi or self._is_time_for_daily_fetch(self._last_theoddsapi_fetch)
+            force_theoddsapi
+            or self._is_time_for_daily_fetch(self._last_theoddsapi_fetch)
         )
 
         if should_call_api:
@@ -335,13 +363,19 @@ class OddsFetcher:
         if not self.has_valid_api_key():
             return []
 
-        from betting_intel.live.sport_configs import get_active_sports, ALL_SPORTS, SportConfig
+        from betting_intel.live.sport_configs import (
+            get_active_sports,
+            ALL_SPORTS,
+            SportConfig,
+        )
 
         active_sports: list[SportConfig] = get_active_sports()
         # When no sports are in-season, try ALL supported sports anyway
         # (TheOddsAPI may still return data for offseason leagues)
         if not active_sports:
-            logger.info("No in-season sports — trying all supported sports on TheOddsAPI")
+            logger.info(
+                "No in-season sports — trying all supported sports on TheOddsAPI"
+            )
             active_sports = list(ALL_SPORTS)
 
         # Primary key
@@ -349,14 +383,20 @@ class OddsFetcher:
 
         # Fallback key if primary returned nothing
         if not result and self._odds_api_key_fallback:
-            logger.warning("Primary ODDS_API_KEY returned no data — trying fallback key")
+            logger.warning(
+                "Primary ODDS_API_KEY returned no data — trying fallback key"
+            )
             key_label = self._odds_api_key_fallback[:8] + "..."
             logger.info(f"Using fallback key: {key_label}")
-            result = self._fetch_via_theoddsapi_with_key(self._odds_api_key_fallback, active_sports)
+            result = self._fetch_via_theoddsapi_with_key(
+                self._odds_api_key_fallback, active_sports
+            )
 
         return result
 
-    def _fetch_via_theoddsapi_with_key(self, api_key: str, active_sports: list) -> list[dict]:
+    def _fetch_via_theoddsapi_with_key(
+        self, api_key: str, active_sports: list
+    ) -> list[dict]:
         """Fetch odds from TheOddsAPI using a specific API key."""
         import urllib.request
         import urllib.error
@@ -377,7 +417,9 @@ class OddsFetcher:
                     f"&oddsFormat=american"
                     f"&dateFormat=iso"
                 )
-                req = urllib.request.Request(url, headers={"User-Agent": "betting-intel-live/3.0"})
+                req = urllib.request.Request(
+                    url, headers={"User-Agent": "betting-intel-live/3.0"}
+                )
                 with urllib.request.urlopen(req, timeout=8) as resp:
                     raw = resp.read().decode("utf-8")
                     data = json.loads(raw)
@@ -391,14 +433,20 @@ class OddsFetcher:
                     all_games.extend(data)
                     if remaining != "?":
                         total_quota = remaining
-                    logger.info(f"{sport.display_name}: {len(data)} games (quota: {remaining}, key: {key_label})")
+                    logger.info(
+                        f"{sport.display_name}: {len(data)} games (quota: {remaining}, key: {key_label})"
+                    )
                 else:
                     logger.info(f"{sport.display_name}: no games available")
 
                 # Track quota after each sport call
                 if used is not None and used != "?":
                     total_used = used
-                self._last_quota_remaining = total_quota if total_quota and total_quota != "?" else self._last_quota_remaining
+                self._last_quota_remaining = (
+                    total_quota
+                    if total_quota and total_quota != "?"
+                    else self._last_quota_remaining
+                )
                 if remaining is not None and remaining != "?":
                     try:
                         remaining_int = int(remaining)
@@ -408,10 +456,14 @@ class OddsFetcher:
 
             except urllib.error.HTTPError as e:
                 if e.code == 401:
-                    logger.warning(f"ODDS_API_KEY ({key_label}) returned 401 — invalid key")
+                    logger.warning(
+                        f"ODDS_API_KEY ({key_label}) returned 401 — invalid key"
+                    )
                     return []
                 if e.code == 429:
-                    logger.warning(f"TheOddsAPI quota exceeded (429) — key: {key_label}")
+                    logger.warning(
+                        f"TheOddsAPI quota exceeded (429) — key: {key_label}"
+                    )
                     break
                 logger.debug(f"{sport.display_name}: HTTP {e.code} (skipping)")
                 continue
@@ -430,12 +482,20 @@ class OddsFetcher:
         # regions=1 (us), markets=3 (h2h,spreads,totals) = 3 credits/sport
         n_sports_called = len(active_sports)
         # Get markets_str from last sport or default to 3
-        first_sport_markets = ",".join(active_sports[0].markets_to_fetch) if active_sports else "h2h,spreads,totals"
-        credits_per_sport = 1 * len(first_sport_markets.split(",")) if first_sport_markets else 3
+        first_sport_markets = (
+            ",".join(active_sports[0].markets_to_fetch)
+            if active_sports
+            else "h2h,spreads,totals"
+        )
+        credits_per_sport = (
+            1 * len(first_sport_markets.split(",")) if first_sport_markets else 3
+        )
         self._last_quota_credits_cost = n_sports_called * credits_per_sport
 
-        logger.info(f"TheOddsAPI ({key_label}) total: {len(all_games)} games across {len(active_sports)} sports "
-                    f"(~{self._last_quota_credits_cost} credits consumed, ~{total_quota} remaining)")
+        logger.info(
+            f"TheOddsAPI ({key_label}) total: {len(all_games)} games across {len(active_sports)} sports "
+            f"(~{self._last_quota_credits_cost} credits consumed, ~{total_quota} remaining)"
+        )
         return all_games
 
     # ── Free Scrapers ─────────────────────────────────────────────────────
@@ -457,7 +517,9 @@ class OddsFetcher:
             processed: set[str] = set()
 
             try:
-                for future in as_completed([espn_future, dk_future], timeout=scraper_timeout):
+                for future in as_completed(
+                    [espn_future, dk_future], timeout=scraper_timeout
+                ):
                     try:
                         data = future.result()
                     except Exception as e:
@@ -466,9 +528,13 @@ class OddsFetcher:
                     key = "espn" if future == espn_future else "dk"
                     scraper_results[key] = data if data else []
                     processed.add(key)
-                    logger.info(f"{'ESPN' if key == 'espn' else 'DraftKings'} scraper: {len(data) if data else 0} games")
+                    logger.info(
+                        f"{'ESPN' if key == 'espn' else 'DraftKings'} scraper: {len(data) if data else 0} games"
+                    )
             except FuturesTimeoutError:
-                logger.warning(f"Scrapers timed out after {scraper_timeout}s — using partial results")
+                logger.warning(
+                    f"Scrapers timed out after {scraper_timeout}s — using partial results"
+                )
 
             # Collect late-finishing futures
             for future, key, name in [
@@ -481,7 +547,9 @@ class OddsFetcher:
                     try:
                         data = future.result()
                         scraper_results[key] = data if data else []
-                        logger.info(f"{name} scraper (late): {len(data) if data else 0} games")
+                        logger.info(
+                            f"{name} scraper (late): {len(data) if data else 0} games"
+                        )
                     except Exception as e:
                         logger.debug(f"{name} scraper late result error: {e}")
                         scraper_results.setdefault(key, [])
@@ -501,6 +569,7 @@ class OddsFetcher:
         logger.info("Attempting ESPN stealth scraper...")
         try:
             from betting_intel.data.stealth_scraper import StealthBrowser
+
             scraped = StealthBrowser.sync_scrape_live_odds(
                 odds_api_key=self._odds_api_key,
                 timeout=12,
@@ -523,6 +592,7 @@ class OddsFetcher:
         logger.info("Attempting DraftKings scraper...")
         try:
             from betting_intel.data.draftkings_scraper import DraftKingsScraper
+
             scraped = DraftKingsScraper.scrape(timeout=12)
             if scraped:
                 logger.info(f"DraftKings scraper: {len(scraped)} games")

@@ -184,8 +184,12 @@ class MarketInefficiencyComputer:
         source_col = []
 
         # Determine team name columns
-        home_name_col = "TEAM_NAME_home" if "TEAM_NAME_home" in df.columns else "home_team"
-        away_name_col = "TEAM_NAME_away" if "TEAM_NAME_away" in df.columns else "away_team"
+        home_name_col = (
+            "TEAM_NAME_home" if "TEAM_NAME_home" in df.columns else "home_team"
+        )
+        away_name_col = (
+            "TEAM_NAME_away" if "TEAM_NAME_away" in df.columns else "away_team"
+        )
         date_col = "GAME_DATE" if "GAME_DATE" in df.columns else "game_date"
 
         market_implied = []
@@ -223,7 +227,9 @@ class MarketInefficiencyComputer:
             if self.use_spread_proxy and "point_diff" in df.columns:
                 pd_val = row.get("point_diff", 0)
                 if pd.notna(pd_val):
-                    market_implied.append(margin_to_implied_prob(float(pd_val), home=True))
+                    market_implied.append(
+                        margin_to_implied_prob(float(pd_val), home=True)
+                    )
                     source_col.append("spread_proxy")
                     continue
 
@@ -251,23 +257,19 @@ class MarketInefficiencyComputer:
         # This tells us if the market's favorite or underdog won
         df["market_error_binary"] = (
             (df["home_win"] == 1) & (df["market_implied_home_prob"] < 0.5)
-        ) | (
-            (df["home_win"] == 0) & (df["market_implied_home_prob"] > 0.5)
-        ).astype(int)
+        ) | ((df["home_win"] == 0) & (df["market_implied_home_prob"] > 0.5)).astype(int)
 
         # ── 3. ELO-specific error (how much did ELO itself miss?) ────────
         if "elo_home_prob" in df.columns:
-            df["elo_error"] = (
-                df["home_win"].astype(float) - df["elo_home_prob"].clip(0.01, 0.99)
+            df["elo_error"] = df["home_win"].astype(float) - df["elo_home_prob"].clip(
+                0.01, 0.99
             )
         else:
             df["elo_error"] = df["market_error"]
 
         # ── 4. Total market error (for totals prediction) ────────────────
         if "total_points" in df.columns and "market_line_baseline" in df.columns:
-            df["total_market_error"] = (
-                df["total_points"] - df["market_line_baseline"]
-            )
+            df["total_market_error"] = df["total_points"] - df["market_line_baseline"]
         else:
             df["total_market_error"] = 0.0
 
@@ -276,8 +278,7 @@ class MarketInefficiencyComputer:
         # Normalize total_market_error to ~0-1 scale (NBA games range -40 to +40)
         total_error_norm = df["total_market_error"].clip(-40, 40) / 40.0
         df["weighted_market_error"] = (
-            0.70 * df["market_error_clipped"]
-            + 0.30 * total_error_norm
+            0.70 * df["market_error_clipped"] + 0.30 * total_error_norm
         )
 
         return df
@@ -306,33 +307,28 @@ class MarketInefficiencyComputer:
 
         # Rolling averages of market error (positive = beating expectations)
         for window in [5, 10]:
-            df[f"market_error_ma_{window}g"] = (
-                df.groupby(team_id_col)["market_error"]
-                .transform(
-                    lambda x: x.rolling(window, min_periods=1).mean().shift(1)
-                )
-            )
+            df[f"market_error_ma_{window}g"] = df.groupby(team_id_col)[
+                "market_error"
+            ].transform(lambda x: x.rolling(window, min_periods=1).mean().shift(1))
 
         # Market error trend (are they increasingly beating/failing expectations?)
         if "market_error" in df.columns:
-            df["market_error_trend_home"] = (
-                df.groupby(team_id_col)["market_error"]
-                .transform(lambda x: self._compute_slope(x, window=5))
-            )
+            df["market_error_trend_home"] = df.groupby(team_id_col)[
+                "market_error"
+            ].transform(lambda x: self._compute_slope(x, window=5))
 
         # Recent edge streak: how many of last 5 games had |market_error| > 0.05
         # i.e., games where the market was meaningfully wrong
         if "abs_market_error" in df.columns:
-            df["recent_edge_streak"] = (
-                df.groupby(team_id_col)["abs_market_error"]
-                .transform(
-                    lambda x: (
-                        (x.rolling(5, min_periods=1).apply(
-                            lambda s: int((s > 0.05).sum()),
-                            raw=True,
-                        )).shift(1)
+            df["recent_edge_streak"] = df.groupby(team_id_col)[
+                "abs_market_error"
+            ].transform(
+                lambda x: (
+                    x.rolling(5, min_periods=1).apply(
+                        lambda s: int((s > 0.05).sum()),
+                        raw=True,
                     )
-                )
+                ).shift(1)
             )
 
         return df
@@ -346,7 +342,7 @@ class MarketInefficiencyComputer:
         for i in range(n):
             if i < window:
                 continue
-            window_vals = values.iloc[max(0, i - window):i].values
+            window_vals = values.iloc[max(0, i - window) : i].values
             if len(window_vals) < 2:
                 continue
             x = np.arange(len(window_vals))

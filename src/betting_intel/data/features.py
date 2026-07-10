@@ -15,150 +15,334 @@ v5.1 — ULTIMATE FEATURE SET:
 import pandas as pd
 import numpy as np
 from typing import List, Optional, Tuple, Dict
-from dataclasses import dataclass
 
-from betting_intel.config import ROLLING_WINDOWS, MAX_REST_DAYS    # ── Constants for Advanced Features ───────────────────────────────────────
+from betting_intel.config import (
+    ROLLING_WINDOWS,
+)  # ── Constants for Advanced Features ───────────────────────────────────────
 
 # NBA team arena coordinates (lat, lon) for travel distance calculation
 NBA_TEAM_CENTERS: Dict[str, Tuple[float, float]] = {
-    "Hawks": (33.755, -84.396), "Celtics": (42.366, -71.062),
-    "Nets": (40.683, -73.975), "Hornets": (35.225, -80.839),
-    "Bulls": (41.881, -87.674), "Cavaliers": (41.496, -81.688),
-    "Mavericks": (32.790, -96.810), "Nuggets": (39.748, -105.007),
-    "Pistons": (42.340, -83.056), "Warriors": (37.750, -122.203),
-    "Rockets": (29.751, -95.362), "Pacers": (39.764, -86.156),
-    "Clippers": (34.043, -118.267), "Lakers": (34.043, -118.267),
-    "Grizzlies": (35.138, -90.051), "Heat": (25.781, -80.187),
-    "Bucks": (43.043, -87.917), "Timberwolves": (44.979, -93.276),
-    "Pelicans": (29.949, -90.082), "Knicks": (40.750, -73.993),
-    "Thunder": (35.463, -97.515), "Magic": (28.539, -81.384),
-    "76ers": (39.901, -75.172), "Suns": (33.445, -112.071),
-    "Trail Blazers": (45.532, -122.667), "Kings": (38.580, -121.500),
-    "Spurs": (29.427, -98.437), "Raptors": (43.643, -79.379),
-    "Jazz": (40.768, -111.901), "Wizards": (38.898, -77.021),
+    "Hawks": (33.755, -84.396),
+    "Celtics": (42.366, -71.062),
+    "Nets": (40.683, -73.975),
+    "Hornets": (35.225, -80.839),
+    "Bulls": (41.881, -87.674),
+    "Cavaliers": (41.496, -81.688),
+    "Mavericks": (32.790, -96.810),
+    "Nuggets": (39.748, -105.007),
+    "Pistons": (42.340, -83.056),
+    "Warriors": (37.750, -122.203),
+    "Rockets": (29.751, -95.362),
+    "Pacers": (39.764, -86.156),
+    "Clippers": (34.043, -118.267),
+    "Lakers": (34.043, -118.267),
+    "Grizzlies": (35.138, -90.051),
+    "Heat": (25.781, -80.187),
+    "Bucks": (43.043, -87.917),
+    "Timberwolves": (44.979, -93.276),
+    "Pelicans": (29.949, -90.082),
+    "Knicks": (40.750, -73.993),
+    "Thunder": (35.463, -97.515),
+    "Magic": (28.539, -81.384),
+    "76ers": (39.901, -75.172),
+    "Suns": (33.445, -112.071),
+    "Trail Blazers": (45.532, -122.667),
+    "Kings": (38.580, -121.500),
+    "Spurs": (29.427, -98.437),
+    "Raptors": (43.643, -79.379),
+    "Jazz": (40.768, -111.901),
+    "Wizards": (38.898, -77.021),
     # NCAAB — ACC (approximate campus locations)
-    "Duke": (36.001, -78.938), "UNC": (35.904, -79.047),
-    "Virginia": (38.032, -78.511), "NC State": (35.785, -78.682),
-    "Clemson": (34.679, -82.839), "Miami": (25.713, -80.276),
-    "Florida State": (30.442, -84.299), "Virginia Tech": (37.229, -80.426),
-    "Louisville": (38.215, -85.741), "Syracuse": (43.037, -76.134),
-    "Notre Dame": (41.699, -86.237), "Pittsburgh": (40.444, -79.962),
+    "Duke": (36.001, -78.938),
+    "UNC": (35.904, -79.047),
+    "Virginia": (38.032, -78.511),
+    "NC State": (35.785, -78.682),
+    "Clemson": (34.679, -82.839),
+    "Miami": (25.713, -80.276),
+    "Florida State": (30.442, -84.299),
+    "Virginia Tech": (37.229, -80.426),
+    "Louisville": (38.215, -85.741),
+    "Syracuse": (43.037, -76.134),
+    "Notre Dame": (41.699, -86.237),
+    "Pittsburgh": (40.444, -79.962),
     # NCAAB — Big Ten
-    "Michigan State": (42.701, -84.482), "Michigan": (42.278, -83.738),
-    "Purdue": (40.424, -86.921), "Indiana": (39.173, -86.514),
-    "Illinois": (40.102, -88.227), "Ohio State": (40.002, -83.026),
-    "Wisconsin": (43.074, -89.393), "Iowa": (41.660, -91.536),
-    "Maryland": (38.989, -76.947), "Rutgers": (40.501, -74.447),
-    "Penn State": (40.793, -77.861), "Minnesota": (44.977, -93.228),
-    "Northwestern": (42.058, -87.674), "UCLA": (34.071, -118.410),
-    "USC": (34.021, -118.288), "Washington": (47.651, -122.305),
-    "Oregon": (44.058, -123.073), "Oregon State": (44.565, -123.279),
+    "Michigan State": (42.701, -84.482),
+    "Michigan": (42.278, -83.738),
+    "Purdue": (40.424, -86.921),
+    "Indiana": (39.173, -86.514),
+    "Illinois": (40.102, -88.227),
+    "Ohio State": (40.002, -83.026),
+    "Wisconsin": (43.074, -89.393),
+    "Iowa": (41.660, -91.536),
+    "Maryland": (38.989, -76.947),
+    "Rutgers": (40.501, -74.447),
+    "Penn State": (40.793, -77.861),
+    "Minnesota": (44.977, -93.228),
+    "Northwestern": (42.058, -87.674),
+    "UCLA": (34.071, -118.410),
+    "USC": (34.021, -118.288),
+    "Washington": (47.651, -122.305),
+    "Oregon": (44.058, -123.073),
+    "Oregon State": (44.565, -123.279),
     # NCAAB — SEC
-    "Kentucky": (38.030, -84.508), "Tennessee": (35.951, -83.930),
-    "Alabama": (33.214, -87.542), "Auburn": (32.607, -85.491),
-    "Florida": (29.647, -82.345), "Arkansas": (36.071, -94.176),
-    "LSU": (30.413, -91.184), "Texas A&M": (30.616, -96.335),
-    "Mississippi State": (33.456, -88.791), "South Carolina": (33.996, -81.029),
-    "Ole Miss": (34.366, -89.537), "Georgia": (33.946, -83.377),
-    "Oklahoma": (35.206, -97.443), "Texas": (30.283, -97.733),
+    "Kentucky": (38.030, -84.508),
+    "Tennessee": (35.951, -83.930),
+    "Alabama": (33.214, -87.542),
+    "Auburn": (32.607, -85.491),
+    "Florida": (29.647, -82.345),
+    "Arkansas": (36.071, -94.176),
+    "LSU": (30.413, -91.184),
+    "Texas A&M": (30.616, -96.335),
+    "Mississippi State": (33.456, -88.791),
+    "South Carolina": (33.996, -81.029),
+    "Ole Miss": (34.366, -89.537),
+    "Georgia": (33.946, -83.377),
+    "Oklahoma": (35.206, -97.443),
+    "Texas": (30.283, -97.733),
     # NCAAB — Big 12
-    "Kansas": (38.955, -95.247), "Baylor": (31.549, -97.116),
-    "Houston": (29.722, -95.350), "Texas Tech": (33.580, -101.876),
-    "Iowa State": (42.026, -93.650), "TCU": (32.722, -97.340),
-    "West Virginia": (39.651, -79.986), "Kansas State": (39.193, -96.583),
-    "BYU": (40.249, -111.649), "Cincinnati": (39.131, -84.514),
-    "UCF": (28.600, -81.200), "Arizona": (32.229, -110.949),
-    "Arizona State": (33.423, -111.932), "Colorado": (40.008, -105.267),
+    "Kansas": (38.955, -95.247),
+    "Baylor": (31.549, -97.116),
+    "Houston": (29.722, -95.350),
+    "Texas Tech": (33.580, -101.876),
+    "Iowa State": (42.026, -93.650),
+    "TCU": (32.722, -97.340),
+    "West Virginia": (39.651, -79.986),
+    "Kansas State": (39.193, -96.583),
+    "BYU": (40.249, -111.649),
+    "Cincinnati": (39.131, -84.514),
+    "UCF": (28.600, -81.200),
+    "Arizona": (32.229, -110.949),
+    "Arizona State": (33.423, -111.932),
+    "Colorado": (40.008, -105.267),
     "Utah": (40.765, -111.848),
     # NCAAB — Big East
-    "UConn": (41.807, -72.254), "Marquette": (43.038, -87.930),
-    "Villanova": (40.038, -75.337), "Creighton": (41.256, -95.985),
-    "Xavier": (39.149, -84.475), "Providence": (41.845, -71.440),
-    "St. John's": (40.728, -73.794), "Butler": (39.840, -86.173),
-    "Seton Hall": (40.742, -74.175), "Georgetown": (38.907, -77.072),
+    "UConn": (41.807, -72.254),
+    "Marquette": (43.038, -87.930),
+    "Villanova": (40.038, -75.337),
+    "Creighton": (41.256, -95.985),
+    "Xavier": (39.149, -84.475),
+    "Providence": (41.845, -71.440),
+    "St. John's": (40.728, -73.794),
+    "Butler": (39.840, -86.173),
+    "Seton Hall": (40.742, -74.175),
+    "Georgetown": (38.907, -77.072),
     # NCAAB — Others
-    "Gonzaga": (47.669, -117.405), "Saint Mary's": (37.929, -122.050),
-    "San Diego State": (32.775, -117.073), "Memphis": (35.118, -89.937),
-    "VCU": (37.542, -77.455), "Dayton": (39.735, -84.179),
-    "Grand Canyon": (33.513, -112.133), "Princeton": (40.345, -74.659),
-    "Liberty": (37.348, -79.178), "James Madison": (38.437, -78.873),
-    "San Francisco": (37.780, -122.452), "Santa Clara": (37.350, -121.937),
-    "Loyola Chicago": (41.998, -87.658), "Saint Louis": (38.636, -90.220),
-    "Drake": (41.599, -93.652), "Indiana State": (39.471, -87.408),
+    "Gonzaga": (47.669, -117.405),
+    "Saint Mary's": (37.929, -122.050),
+    "San Diego State": (32.775, -117.073),
+    "Memphis": (35.118, -89.937),
+    "VCU": (37.542, -77.455),
+    "Dayton": (39.735, -84.179),
+    "Grand Canyon": (33.513, -112.133),
+    "Princeton": (40.345, -74.659),
+    "Liberty": (37.348, -79.178),
+    "James Madison": (38.437, -78.873),
+    "San Francisco": (37.780, -122.452),
+    "Santa Clara": (37.350, -121.937),
+    "Loyola Chicago": (41.998, -87.658),
+    "Saint Louis": (38.636, -90.220),
+    "Drake": (41.599, -93.652),
+    "Indiana State": (39.471, -87.408),
     # Default for un-mapped NCAAB teams (central US)
     # Euroleague teams — arenas across Europe
-    "Real Madrid": (40.453, -3.688), "Barcelona": (41.383, 2.117),
-    "Olympiacos": (37.935, 23.683), "Panathinaikos": (38.055, 23.783),
-    "Fenerbahçe": (41.017, 28.997), "Anadolu Efes": (40.983, 28.850),
-    "Crvena Zvezda": (44.817, 20.467), "Žalgiris": (54.900, 23.917),
-    "Maccabi Tel Aviv": (32.083, 34.800), "Paris": (48.867, 2.333),
-    "Monaco": (43.700, 7.417), "Bayern Munich": (48.117, 11.500),
-    "Milan": (45.417, 9.050), "ASVEL": (45.717, 4.967),
-    "Baskonia": (42.850, -2.683), "Valencia": (39.467, -0.367),
-    "Partizan": (44.817, 20.467), "Virtus Bologna": (44.500, 11.317),
-    "Hapoel Tel Aviv": (32.083, 34.800), "Dubai": (25.217, 55.283),
+    "Real Madrid": (40.453, -3.688),
+    "Barcelona": (41.383, 2.117),
+    "Olympiacos": (37.935, 23.683),
+    "Panathinaikos": (38.055, 23.783),
+    "Fenerbahçe": (41.017, 28.997),
+    "Anadolu Efes": (40.983, 28.850),
+    "Crvena Zvezda": (44.817, 20.467),
+    "Žalgiris": (54.900, 23.917),
+    "Maccabi Tel Aviv": (32.083, 34.800),
+    "Paris": (48.867, 2.333),
+    "Monaco": (43.700, 7.417),
+    "Bayern Munich": (48.117, 11.500),
+    "Milan": (45.417, 9.050),
+    "ASVEL": (45.717, 4.967),
+    "Baskonia": (42.850, -2.683),
+    "Valencia": (39.467, -0.367),
+    "Partizan": (44.817, 20.467),
+    "Virtus Bologna": (44.500, 11.317),
+    "Hapoel Tel Aviv": (32.083, 34.800),
+    "Dubai": (25.217, 55.283),
     # NFL teams — stadiums across the US
-    "Bills": (42.767, -78.733), "Dolphins": (25.958, -80.239),
-    "Patriots": (42.087, -71.267), "Jets": (40.813, -74.074),
-    "Ravens": (39.278, -76.622), "Bengals": (39.083, -84.517),
-    "Browns": (41.517, -81.683), "Steelers": (40.450, -80.017),
-    "Texans": (29.683, -95.417), "Colts": (39.750, -86.167),
-    "Jaguars": (30.317, -81.633), "Titans": (36.167, -86.783),
-    "Broncos": (39.733, -105.017), "Chiefs": (39.050, -94.483),
-    "Raiders": (36.083, -115.183), "Chargers": (33.950, -118.333),
-    "Cowboys": (32.750, -97.083), "Giants": (40.813, -74.074),
-    "Eagles": (39.900, -75.167), "Commanders": (38.900, -76.867),
-    "Bears": (41.867, -87.617), "Lions": (42.317, -83.050),
-    "Packers": (44.500, -88.017), "Vikings": (44.967, -93.267),
-    "Falcons": (33.750, -84.400), "Panthers": (35.217, -80.850),
-    "Saints": (29.950, -90.083), "Buccaneers": (27.967, -82.517),
-    "Cardinals": (33.533, -112.267), "Rams": (33.950, -118.333),
-    "49ers": (37.400, -121.967), "Seahawks": (47.600, -122.333),
+    "Bills": (42.767, -78.733),
+    "Dolphins": (25.958, -80.239),
+    "Patriots": (42.087, -71.267),
+    "Jets": (40.813, -74.074),
+    "Ravens": (39.278, -76.622),
+    "Bengals": (39.083, -84.517),
+    "Browns": (41.517, -81.683),
+    "Steelers": (40.450, -80.017),
+    "Texans": (29.683, -95.417),
+    "Colts": (39.750, -86.167),
+    "Jaguars": (30.317, -81.633),
+    "Titans": (36.167, -86.783),
+    "Broncos": (39.733, -105.017),
+    "Chiefs": (39.050, -94.483),
+    "Raiders": (36.083, -115.183),
+    "Chargers": (33.950, -118.333),
+    "Cowboys": (32.750, -97.083),
+    "Giants": (40.813, -74.074),
+    "Eagles": (39.900, -75.167),
+    "Commanders": (38.900, -76.867),
+    "Bears": (41.867, -87.617),
+    "Lions": (42.317, -83.050),
+    "Packers": (44.500, -88.017),
+    "Vikings": (44.967, -93.267),
+    "Falcons": (33.750, -84.400),
+    "Panthers": (35.217, -80.850),
+    "Saints": (29.950, -90.083),
+    "Buccaneers": (27.967, -82.517),
+    "Cardinals": (33.533, -112.267),
+    "Rams": (33.950, -118.333),
+    "49ers": (37.400, -121.967),
+    "Seahawks": (47.600, -122.333),
 }
 
 # NBA team time zones (EST = -5, CST = -6, MST = -7, PST = -8)
 NBA_TEAM_TZ: Dict[str, int] = {
-    "Celtics": -5, "Nets": -5, "Knicks": -5, "76ers": -5, "Wizards": -5,
-    "Hawks": -5, "Heat": -5, "Hornets": -5, "Magic": -5, "Raptors": -5,
-    "Pistons": -5, "Pacers": -5, "Cavaliers": -5, "Bulls": -6,
-    "Bucks": -6, "Timberwolves": -6, "Pelicans": -6, "Thunder": -6,
-    "Mavericks": -6, "Rockets": -6, "Grizzlies": -6, "Spurs": -6,
-    "Jazz": -7, "Nuggets": -7, "Suns": -7, "Trail Blazers": -8,
-    "Kings": -8, "Warriors": -8, "Lakers": -8, "Clippers": -8,
+    "Celtics": -5,
+    "Nets": -5,
+    "Knicks": -5,
+    "76ers": -5,
+    "Wizards": -5,
+    "Hawks": -5,
+    "Heat": -5,
+    "Hornets": -5,
+    "Magic": -5,
+    "Raptors": -5,
+    "Pistons": -5,
+    "Pacers": -5,
+    "Cavaliers": -5,
+    "Bulls": -6,
+    "Bucks": -6,
+    "Timberwolves": -6,
+    "Pelicans": -6,
+    "Thunder": -6,
+    "Mavericks": -6,
+    "Rockets": -6,
+    "Grizzlies": -6,
+    "Spurs": -6,
+    "Jazz": -7,
+    "Nuggets": -7,
+    "Suns": -7,
+    "Trail Blazers": -8,
+    "Kings": -8,
+    "Warriors": -8,
+    "Lakers": -8,
+    "Clippers": -8,
     # NCAAB — approximate
-    "Duke": -5, "UNC": -5, "Virginia": -5, "NC State": -5,
-    "Clemson": -5, "Miami": -5, "Florida State": -5, "Virginia Tech": -5,
-    "Louisville": -5, "Syracuse": -5, "Notre Dame": -5, "Pittsburgh": -5,
-    "Michigan State": -5, "Michigan": -5, "Purdue": -5, "Indiana": -5,
-    "Illinois": -6, "Ohio State": -5, "Wisconsin": -6, "Iowa": -6,
-    "Maryland": -5, "Rutgers": -5, "Penn State": -5, "Minnesota": -6,
-    "Northwestern": -6, "UCLA": -8, "USC": -8, "Washington": -8,
-    "Oregon": -8, "Kentucky": -5, "Tennessee": -5, "Alabama": -6,
-    "Auburn": -6, "Florida": -5, "Arkansas": -6, "LSU": -6,
-    "Texas A&M": -6, "Oklahoma": -6, "Texas": -6, "Kansas": -6,
-    "Baylor": -6, "Houston": -6, "Texas Tech": -6, "Iowa State": -6,
-    "Arizona": -7, "Arizona State": -7, "Colorado": -7, "Utah": -7,
-    "BYU": -7, "UConn": -5, "Gonzaga": -8, "San Diego State": -8,
-    "Saint Mary's": -8, "Memphis": -6, "VCU": -5, "Dayton": -5,
+    "Duke": -5,
+    "UNC": -5,
+    "Virginia": -5,
+    "NC State": -5,
+    "Clemson": -5,
+    "Miami": -5,
+    "Florida State": -5,
+    "Virginia Tech": -5,
+    "Louisville": -5,
+    "Syracuse": -5,
+    "Notre Dame": -5,
+    "Pittsburgh": -5,
+    "Michigan State": -5,
+    "Michigan": -5,
+    "Purdue": -5,
+    "Indiana": -5,
+    "Illinois": -6,
+    "Ohio State": -5,
+    "Wisconsin": -6,
+    "Iowa": -6,
+    "Maryland": -5,
+    "Rutgers": -5,
+    "Penn State": -5,
+    "Minnesota": -6,
+    "Northwestern": -6,
+    "UCLA": -8,
+    "USC": -8,
+    "Washington": -8,
+    "Oregon": -8,
+    "Kentucky": -5,
+    "Tennessee": -5,
+    "Alabama": -6,
+    "Auburn": -6,
+    "Florida": -5,
+    "Arkansas": -6,
+    "LSU": -6,
+    "Texas A&M": -6,
+    "Oklahoma": -6,
+    "Texas": -6,
+    "Kansas": -6,
+    "Baylor": -6,
+    "Houston": -6,
+    "Texas Tech": -6,
+    "Iowa State": -6,
+    "Arizona": -7,
+    "Arizona State": -7,
+    "Colorado": -7,
+    "Utah": -7,
+    "BYU": -7,
+    "UConn": -5,
+    "Gonzaga": -8,
+    "San Diego State": -8,
+    "Saint Mary's": -8,
+    "Memphis": -6,
+    "VCU": -5,
+    "Dayton": -5,
     # Euroleague — CET (+1) and EET (+2)
-    "Real Madrid": 1, "Barcelona": 1, "Paris": 1,  "Monaco": 1,
-    "Bayern Munich": 1, "Milan": 1, "ASVEL": 1,
-    "Baskonia": 1, "Valencia": 1, "Virtus Bologna": 1,
-    "Olympiacos": 2, "Panathinaikos": 2, "Fenerbahçe": 2,
-    "Anadolu Efes": 2, "Crvena Zvezda": 2, "Partizan": 2,
-    "Žalgiris": 2, "Maccabi Tel Aviv": 2, "Hapoel Tel Aviv": 2,
+    "Real Madrid": 1,
+    "Barcelona": 1,
+    "Paris": 1,
+    "Monaco": 1,
+    "Bayern Munich": 1,
+    "Milan": 1,
+    "ASVEL": 1,
+    "Baskonia": 1,
+    "Valencia": 1,
+    "Virtus Bologna": 1,
+    "Olympiacos": 2,
+    "Panathinaikos": 2,
+    "Fenerbahçe": 2,
+    "Anadolu Efes": 2,
+    "Crvena Zvezda": 2,
+    "Partizan": 2,
+    "Žalgiris": 2,
+    "Maccabi Tel Aviv": 2,
+    "Hapoel Tel Aviv": 2,
     "Dubai": 4,
     # NFL — EST (-5), CST (-6), MST (-7), PST (-8)
-    "Bills": -5, "Dolphins": -5, "Patriots": -5, "Jets": -5,
-    "Ravens": -5, "Bengals": -5, "Browns": -5, "Steelers": -5,
-    "Colts": -5, "Jaguars": -5, "Giants": -5, "Eagles": -5,
-    "Commanders": -5, "Falcons": -5, "Panthers": -5,
-    "Buccaneers": -5, "Lions": -5,
-    "Texans": -6, "Titans": -6, "Chiefs": -6, "Bears": -6,
-    "Packers": -6, "Vikings": -6, "Saints": -6,
-    "Cowboys": -6, "Broncos": -7, "Cardinals": -7,
-    "Raiders": -8, "Chargers": -8, "Rams": -8,
-    "49ers": -8, "Seahawks": -8,
+    "Bills": -5,
+    "Dolphins": -5,
+    "Patriots": -5,
+    "Jets": -5,
+    "Ravens": -5,
+    "Bengals": -5,
+    "Browns": -5,
+    "Steelers": -5,
+    "Colts": -5,
+    "Jaguars": -5,
+    "Giants": -5,
+    "Eagles": -5,
+    "Commanders": -5,
+    "Falcons": -5,
+    "Panthers": -5,
+    "Buccaneers": -5,
+    "Lions": -5,
+    "Texans": -6,
+    "Titans": -6,
+    "Chiefs": -6,
+    "Bears": -6,
+    "Packers": -6,
+    "Vikings": -6,
+    "Saints": -6,
+    "Cowboys": -6,
+    "Broncos": -7,
+    "Cardinals": -7,
+    "Raiders": -8,
+    "Chargers": -8,
+    "Rams": -8,
+    "49ers": -8,
+    "Seahawks": -8,
 }
 
 
@@ -791,8 +975,9 @@ class FeatureEngineer:
     def __init__(self, rolling_windows: Optional[List[int]] = None):
         self.rolling_windows = rolling_windows or ROLLING_WINDOWS
 
-    def build_all_features(self, games_df: pd.DataFrame, raw_df: pd.DataFrame,
-                           league: str = "NBA") -> pd.DataFrame:
+    def build_all_features(
+        self, games_df: pd.DataFrame, raw_df: pd.DataFrame, league: str = "NBA"
+    ) -> pd.DataFrame:
         """
         Build the full feature set from game-level data.
 
@@ -819,17 +1004,17 @@ class FeatureEngineer:
 
             # Rolling points scored
             for w in self.rolling_windows:
-                df[f"avg_pts_{w}g_{suffix}"] = (
-                    df.groupby(team_id_col)[pts_col]
-                    .transform(lambda x, win=w: x.rolling(win, min_periods=1).mean().shift(1))
+                df[f"avg_pts_{w}g_{suffix}"] = df.groupby(team_id_col)[
+                    pts_col
+                ].transform(
+                    lambda x, win=w: x.rolling(win, min_periods=1).mean().shift(1)
                 )
 
             # Rolling points allowed (opponent's points in the same game)
             opp_pts_col = f"team_pts_{'away' if team_prefix == 'home' else 'home'}"
-            df[f"avg_pts_allowed_{suffix}"] = (
-                df.groupby(team_id_col)[opp_pts_col]
-                .transform(lambda x: x.rolling(5, min_periods=1).mean().shift(1))
-            )
+            df[f"avg_pts_allowed_{suffix}"] = df.groupby(team_id_col)[
+                opp_pts_col
+            ].transform(lambda x: x.rolling(5, min_periods=1).mean().shift(1))
 
             # Pace (FGA + TOV - OREB)
             pace_stat = (
@@ -840,32 +1025,32 @@ class FeatureEngineer:
             df[f"pace_{suffix}"] = pace_stat
 
             for w in [5, 10]:
-                df[f"avg_pace_{w}g_{suffix}"] = (
-                    df.groupby(team_id_col)[f"pace_{suffix}"]
-                    .transform(lambda x, win=w: x.rolling(win, min_periods=1).mean().shift(1))
+                df[f"avg_pace_{w}g_{suffix}"] = df.groupby(team_id_col)[
+                    f"pace_{suffix}"
+                ].transform(
+                    lambda x, win=w: x.rolling(win, min_periods=1).mean().shift(1)
                 )
 
             # eFG% rolling
             efg_col = f"eFG_{team_prefix}"
             for w in [5, 10]:
-                df[f"avg_efg_{w}g_{suffix}"] = (
-                    df.groupby(team_id_col)[efg_col]
-                    .transform(lambda x, win=w: x.rolling(win, min_periods=1).mean().shift(1))
+                df[f"avg_efg_{w}g_{suffix}"] = df.groupby(team_id_col)[
+                    efg_col
+                ].transform(
+                    lambda x, win=w: x.rolling(win, min_periods=1).mean().shift(1)
                 )
 
             # Plus/minus (margin) rolling
             pm_col = f"team_plus_minus_{team_prefix}"
             for w in [5, 10]:
-                df[f"avg_pm_{w}g_{suffix}"] = (
-                    df.groupby(team_id_col)[pm_col]
-                    .transform(lambda x, win=w: x.rolling(win, min_periods=1).mean().shift(1))
+                df[f"avg_pm_{w}g_{suffix}"] = df.groupby(team_id_col)[pm_col].transform(
+                    lambda x, win=w: x.rolling(win, min_periods=1).mean().shift(1)
                 )
 
             # Win rate (using numeric WL column)
-            df[f"win_pct_10g_{suffix}"] = (
-                df.groupby(team_id_col)[f"WL_num_{team_prefix}"]
-                .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
-            )
+            df[f"win_pct_10g_{suffix}"] = df.groupby(team_id_col)[
+                f"WL_num_{team_prefix}"
+            ].transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
 
             # ══════════════════════════════════════════════════════════════
             #  v3.0 — Rolling 5g/10g for ALL boxscore stats (NBA_AI 43-feature style)
@@ -873,42 +1058,58 @@ class FeatureEngineer:
             #  has full team statistical profile — not just pts/pm.
             # ══════════════════════════════════════════════════════════════
             _BOX_SCORE_STATS = [
-                "fgm", "fga", "fg3m", "fg3a", "ftm", "fta",
-                "oreb", "dreb", "reb", "ast", "stl", "blk", "tov", "pf",
+                "fgm",
+                "fga",
+                "fg3m",
+                "fg3a",
+                "ftm",
+                "fta",
+                "oreb",
+                "dreb",
+                "reb",
+                "ast",
+                "stl",
+                "blk",
+                "tov",
+                "pf",
             ]
             for box_stat in _BOX_SCORE_STATS:
                 src_col = f"team_{box_stat}_{team_prefix}"
                 if src_col not in df.columns:
                     continue
                 for w in [5, 10]:
-                    df[f"avg_{box_stat}_{w}g_{suffix}"] = (
-                        df.groupby(team_id_col)[src_col]
-                        .transform(lambda x, win=w: x.rolling(win, min_periods=1).mean().shift(1))
+                    df[f"avg_{box_stat}_{w}g_{suffix}"] = df.groupby(team_id_col)[
+                        src_col
+                    ].transform(
+                        lambda x, win=w: x.rolling(win, min_periods=1).mean().shift(1)
                     )
                 # Also add EMA (exponential moving average) for key stats
                 if box_stat in ("fgm", "fga", "reb", "ast", "stl", "blk", "tov", "pf"):
                     span_10 = max(10, 2)
-                    df[f"ema_{box_stat}_10g_{suffix}"] = (
-                        df.groupby(team_id_col)[src_col]
-                        .transform(lambda x, sp=span_10: (
+                    df[f"ema_{box_stat}_10g_{suffix}"] = df.groupby(team_id_col)[
+                        src_col
+                    ].transform(
+                        lambda x, sp=span_10: (
                             x.ewm(span=sp, min_periods=1, adjust=False).mean().shift(1)
-                        ))
+                        )
                     )
 
             # ── 3-point & free throw percentage rolling ────────────────
             fg3_pct_col = f"team_fg3_pct_{team_prefix}"
             if fg3_pct_col in df.columns:
                 for w in [5, 10]:
-                    df[f"avg_fg3_pct_{w}g_{suffix}"] = (
-                        df.groupby(team_id_col)[fg3_pct_col]
-                        .transform(lambda x, win=w: x.rolling(win, min_periods=1).mean().shift(1))
+                    df[f"avg_fg3_pct_{w}g_{suffix}"] = df.groupby(team_id_col)[
+                        fg3_pct_col
+                    ].transform(
+                        lambda x, win=w: x.rolling(win, min_periods=1).mean().shift(1)
                     )
             ft_pct_col = f"team_ft_pct_{team_prefix}"
             if ft_pct_col in df.columns:
                 for w in [5, 10]:
-                    df[f"avg_ft_pct_{w}g_{suffix}"] = (
-                        df.groupby(team_id_col)[ft_pct_col]
-                        .transform(lambda x, win=w: x.rolling(win, min_periods=1).mean().shift(1))
+                    df[f"avg_ft_pct_{w}g_{suffix}"] = df.groupby(team_id_col)[
+                        ft_pct_col
+                    ].transform(
+                        lambda x, win=w: x.rolling(win, min_periods=1).mean().shift(1)
                     )
 
             # ── Opponent-allowed rolling averages ─────────────────────
@@ -920,9 +1121,10 @@ class FeatureEngineer:
                 if opp_col not in df.columns:
                     continue
                 for w in [5, 10]:
-                    df[f"avg_{box_stat}_allowed_{w}g_{suffix}"] = (
-                        df.groupby(team_id_col)[opp_col]
-                        .transform(lambda x, win=w: x.rolling(win, min_periods=1).mean().shift(1))
+                    df[f"avg_{box_stat}_allowed_{w}g_{suffix}"] = df.groupby(
+                        team_id_col
+                    )[opp_col].transform(
+                        lambda x, win=w: x.rolling(win, min_periods=1).mean().shift(1)
                     )
 
             # ── Trend slopes for key stats (momentum signals) ──────────
@@ -931,21 +1133,44 @@ class FeatureEngineer:
                 if src_col not in df.columns:
                     continue
                 for w in [5, 10]:
-                    df[f"trend_{box_stat}_{w}g_{suffix}"] = (
-                        df.groupby(team_id_col)[src_col]
-                        .transform(lambda x, win=w: self._compute_trend_slope(x, window=win))
+                    df[f"trend_{box_stat}_{w}g_{suffix}"] = df.groupby(team_id_col)[
+                        src_col
+                    ].transform(
+                        lambda x, win=w: self._compute_trend_slope(x, window=win)
                     )
 
         # ── Rest Days ─────────────────────────────────────────────────
         # Map rest days from raw data into the merged game dataframe
-        home_rest = raw_df[raw_df["IS_HOME"] == 1][["GAME_ID", "TEAM_ID", "rest_days"]].copy()
-        away_rest = raw_df[raw_df["IS_HOME"] == 0][["GAME_ID", "TEAM_ID", "rest_days"]].copy()
+        home_rest = raw_df[raw_df["IS_HOME"] == 1][
+            ["GAME_ID", "TEAM_ID", "rest_days"]
+        ].copy()
+        away_rest = raw_df[raw_df["IS_HOME"] == 0][
+            ["GAME_ID", "TEAM_ID", "rest_days"]
+        ].copy()
 
-        df["rest_home_key"] = df["GAME_ID"].astype(str) + "_" + df["TEAM_ID_home"].astype(str)
-        df["rest_away_key"] = df["GAME_ID"].astype(str) + "_" + df["TEAM_ID_away"].astype(str)
+        df["rest_home_key"] = (
+            df["GAME_ID"].astype(str) + "_" + df["TEAM_ID_home"].astype(str)
+        )
+        df["rest_away_key"] = (
+            df["GAME_ID"].astype(str) + "_" + df["TEAM_ID_away"].astype(str)
+        )
 
-        home_rest_map = dict(zip(home_rest["GAME_ID"].astype(str) + "_" + home_rest["TEAM_ID"].astype(str), home_rest["rest_days"]))
-        away_rest_map = dict(zip(away_rest["GAME_ID"].astype(str) + "_" + away_rest["TEAM_ID"].astype(str), away_rest["rest_days"]))
+        home_rest_map = dict(
+            zip(
+                home_rest["GAME_ID"].astype(str)
+                + "_"
+                + home_rest["TEAM_ID"].astype(str),
+                home_rest["rest_days"],
+            )
+        )
+        away_rest_map = dict(
+            zip(
+                away_rest["GAME_ID"].astype(str)
+                + "_"
+                + away_rest["TEAM_ID"].astype(str),
+                away_rest["rest_days"],
+            )
+        )
 
         df["rest_home_days"] = df["rest_home_key"].map(home_rest_map).fillna(3)
         df["rest_away_days"] = df["rest_away_key"].map(away_rest_map).fillna(3)
@@ -966,22 +1191,19 @@ class FeatureEngineer:
             wl_num_col = f"WL_num_{team_prefix}"
 
             # Win streak (using numeric WL)
-            df[f"win_streak_{suffix}"] = (
-                df.groupby(team_id_col)[wl_num_col]
-                .transform(lambda x: self._compute_streak(x))
+            df[f"win_streak_{suffix}"] = df.groupby(team_id_col)[wl_num_col].transform(
+                lambda x: self._compute_streak(x)
             )
 
             # Margin in last 3 games
-            df[f"last_3_margin_{suffix}"] = (
-                df.groupby(team_id_col)[pm_col]
-                .transform(lambda x: x.rolling(3, min_periods=1).mean().shift(1))
+            df[f"last_3_margin_{suffix}"] = df.groupby(team_id_col)[pm_col].transform(
+                lambda x: x.rolling(3, min_periods=1).mean().shift(1)
             )
 
             # Standard deviation of margin (consistency)
-            df[f"margin_volatility_{suffix}"] = (
-                df.groupby(team_id_col)[pm_col]
-                .transform(lambda x: x.rolling(10, min_periods=1).std().shift(1))
-            )
+            df[f"margin_volatility_{suffix}"] = df.groupby(team_id_col)[
+                pm_col
+            ].transform(lambda x: x.rolling(10, min_periods=1).std().shift(1))
 
             # ══════════════════════════════════════════════════════════
             #  v2.2 ENHANCED FEATURES
@@ -991,53 +1213,48 @@ class FeatureEngineer:
             # Exponential Moving Average — more weight to recent games
             for w in self.rolling_windows:
                 span = max(w, 2)  # span must be >= 2 for ewm
-                df[f"ema_pts_{w}g_{suffix}"] = (
-                    df.groupby(team_id_col)[pts_col]
-                    .transform(lambda x, sp=span: (
+                df[f"ema_pts_{w}g_{suffix}"] = df.groupby(team_id_col)[
+                    pts_col
+                ].transform(
+                    lambda x, sp=span: (
                         x.ewm(span=sp, min_periods=1, adjust=False).mean().shift(1)
-                    ))
+                    )
                 )
             for w in [5, 10]:
                 span = max(w, 2)
-                df[f"ema_pm_{w}g_{suffix}"] = (
-                    df.groupby(team_id_col)[pm_col]
-                    .transform(lambda x, sp=span: (
+                df[f"ema_pm_{w}g_{suffix}"] = df.groupby(team_id_col)[pm_col].transform(
+                    lambda x, sp=span: (
                         x.ewm(span=sp, min_periods=1, adjust=False).mean().shift(1)
-                    ))
+                    )
                 )
                 df[f"ema_margin_{w}g_{suffix}"] = df[f"ema_pm_{w}g_{suffix}"]
 
             # ── Trend Slope Features ─────────────────────────────────
             # Linear trend over recent games: positive = improving, negative = declining
             for w in [5, 10]:
-                df[f"trend_pts_{w}g_{suffix}"] = (
-                    df.groupby(team_id_col)[pts_col]
-                    .transform(lambda x, win=w: self._compute_trend_slope(x, window=win))
-                )
-                df[f"trend_pm_{w}g_{suffix}"] = (
-                    df.groupby(team_id_col)[pm_col]
-                    .transform(lambda x, win=w: self._compute_trend_slope(x, window=win))
-                )
+                df[f"trend_pts_{w}g_{suffix}"] = df.groupby(team_id_col)[
+                    pts_col
+                ].transform(lambda x, win=w: self._compute_trend_slope(x, window=win))
+                df[f"trend_pm_{w}g_{suffix}"] = df.groupby(team_id_col)[
+                    pm_col
+                ].transform(lambda x, win=w: self._compute_trend_slope(x, window=win))
 
             # ── Weighted/Decay Momentum (v2.2) ───────────────────────
-            df[f"weighted_momentum_{suffix}"] = (
-                df.groupby(team_id_col)[wl_num_col]
-                .transform(lambda x: self._weighted_momentum(x, window=10))
-            )
+            df[f"weighted_momentum_{suffix}"] = df.groupby(team_id_col)[
+                wl_num_col
+            ].transform(lambda x: self._weighted_momentum(x, window=10))
 
             # ── Scoring Volatility (pts_zscore) ──────────────────────
-            df[f"pts_zscore_{suffix}"] = (
-                df.groupby(team_id_col)[pts_col]
-                .transform(lambda x: (
+            df[f"pts_zscore_{suffix}"] = df.groupby(team_id_col)[pts_col].transform(
+                lambda x: (
                     (x - x.rolling(10, min_periods=1).mean())
                     / x.rolling(10, min_periods=1).std().replace(0, 1)
-                ).shift(1))
+                ).shift(1)
             )
 
             # ── Recent form composite: weighted win% + margin ────────
-            weighted_wins = (
-                df.groupby(team_id_col)[wl_num_col]
-                .transform(lambda x: self._weighted_momentum(x, window=5))
+            weighted_wins = df.groupby(team_id_col)[wl_num_col].transform(
+                lambda x: self._weighted_momentum(x, window=5)
             )
             margin_5g = df.get(f"avg_pm_5g_{suffix}", 0).fillna(0)
             df[f"form_score_{suffix}"] = weighted_wins + 0.02 * margin_5g
@@ -1050,54 +1267,100 @@ class FeatureEngineer:
         #  like "home shoots better AND defends better = strong edge".
         # ══════════════════════════════════════════════════════════════════
         _ROLLING_STAT_KEYS = [
-            "pts", "fgm", "fga", "fg3m", "fg3a", "ftm", "fta",
-            "oreb", "dreb", "reb", "ast", "stl", "blk", "tov", "pf",
-            "efg", "pace", "pm", "fg3_pct", "ft_pct",
+            "pts",
+            "fgm",
+            "fga",
+            "fg3m",
+            "fg3a",
+            "ftm",
+            "fta",
+            "oreb",
+            "dreb",
+            "reb",
+            "ast",
+            "stl",
+            "blk",
+            "tov",
+            "pf",
+            "efg",
+            "pace",
+            "pm",
+            "fg3_pct",
+            "ft_pct",
         ]
         for w in [5, 10]:
             for stat_key in _ROLLING_STAT_KEYS:
                 col_home = f"avg_{stat_key}_{w}g_home"
                 col_away = f"avg_{stat_key}_{w}g_away"
                 if col_home in df.columns and col_away in df.columns:
-                    df[f"{stat_key}_diff_{w}g"] = (
-                        df[col_home].fillna(0) - df[col_away].fillna(0)
-                    )
+                    df[f"{stat_key}_diff_{w}g"] = df[col_home].fillna(0) - df[
+                        col_away
+                    ].fillna(0)
 
             # Also compute allowed stat differentials
-            for stat_key in ["pts", "fgm", "fga", "fg3m", "fg3a", "ftm", "fta",
-                             "oreb", "dreb", "reb", "ast", "stl", "blk", "tov", "pf"]:
+            for stat_key in [
+                "pts",
+                "fgm",
+                "fga",
+                "fg3m",
+                "fg3a",
+                "ftm",
+                "fta",
+                "oreb",
+                "dreb",
+                "reb",
+                "ast",
+                "stl",
+                "blk",
+                "tov",
+                "pf",
+            ]:
                 col_home = f"avg_{stat_key}_allowed_{w}g_home"
                 col_away = f"avg_{stat_key}_allowed_{w}g_away"
                 if col_home in df.columns and col_away in df.columns:
-                    df[f"{stat_key}_allowed_diff_{w}g"] = (
-                        df[col_home].fillna(0) - df[col_away].fillna(0)
-                    )
+                    df[f"{stat_key}_allowed_diff_{w}g"] = df[col_home].fillna(0) - df[
+                        col_away
+                    ].fillna(0)
 
         # ── Market Line Baseline (for backtesting — NOT used as a feature) ─
         # This is a simple trailing average used as a proxy for the sportsbook's line.
         # It is deliberately excluded from select_features() to prevent data leakage.
         # Blend trailing averages with league mean (224) for more realistic proxy
         # Regression to mean prevents extreme team averages from inflating win rates
-        avg_home = df["avg_pts_10g_home"].fillna(112) if "avg_pts_10g_home" in df.columns else 112
-        avg_away = df["avg_pts_10g_away"].fillna(112) if "avg_pts_10g_away" in df.columns else 112
+        avg_home = (
+            df["avg_pts_10g_home"].fillna(112)
+            if "avg_pts_10g_home" in df.columns
+            else 112
+        )
+        avg_away = (
+            df["avg_pts_10g_away"].fillna(112)
+            if "avg_pts_10g_away" in df.columns
+            else 112
+        )
         df["market_line_baseline"] = 0.80 * (avg_home + avg_away) + 0.20 * 224.0
 
         # Also compute a pace-adjusted baseline for comparison
-        pace_home = df["avg_pace_5g_home"].fillna(100) if "avg_pace_5g_home" in df.columns else pd.Series(100, index=df.index)
-        pace_away = df["avg_pace_5g_away"].fillna(100) if "avg_pace_5g_away" in df.columns else pd.Series(100, index=df.index)
+        pace_home = (
+            df["avg_pace_5g_home"].fillna(100)
+            if "avg_pace_5g_home" in df.columns
+            else pd.Series(100, index=df.index)
+        )
+        pace_away = (
+            df["avg_pace_5g_away"].fillna(100)
+            if "avg_pace_5g_away" in df.columns
+            else pd.Series(100, index=df.index)
+        )
         df["market_line_pace_adj"] = (pace_home + pace_away) / 2.0 * 2.1
 
         # Pre-compute a simple trailing average of total points for the last 3 games each team played
         # This serves as a simple baseline that's independent of the model features
-        df["trailing_avg_total_10g"] = (
-            df.groupby("TEAM_ID_home")["team_pts_home"]
-            .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
-            .fillna(105)
-            +
-            df.groupby("TEAM_ID_away")["team_pts_away"]
-            .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
-            .fillna(105)
-        )
+        df["trailing_avg_total_10g"] = df.groupby("TEAM_ID_home")[
+            "team_pts_home"
+        ].transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1)).fillna(
+            105
+        ) + df.groupby("TEAM_ID_away")["team_pts_away"].transform(
+            lambda x: x.rolling(10, min_periods=1).mean().shift(1)
+        ).fillna(105)
 
         # ── v2.1 Advanced Features ──────────────────────────────────────
         # Opponent-adjusted stats
@@ -1198,43 +1461,42 @@ class FeatureEngineer:
             opp_pm_col = f"team_plus_minus_{'away' if suffix == 'home' else 'home'}"
 
             # Opponent's average points scored (their offensive strength)
-            df[f"opp_avg_pts_scored_{suffix}"] = (
-                df.groupby(opp_id_col)[opp_pts_col]
-                .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
-            )
+            df[f"opp_avg_pts_scored_{suffix}"] = df.groupby(opp_id_col)[
+                opp_pts_col
+            ].transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
 
             # Opponent's average points allowed (their defensive strength)
-            df[f"opp_avg_pts_allowed_{suffix}"] = (
-                df.groupby(opp_id_col)[opp_pts_allowed_col]
-                .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
-            )
+            df[f"opp_avg_pts_allowed_{suffix}"] = df.groupby(opp_id_col)[
+                opp_pts_allowed_col
+            ].transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
 
             # Opponent's average plus/minus (overall strength)
-            df[f"opp_avg_pm_{suffix}"] = (
-                df.groupby(opp_id_col)[opp_pm_col]
-                .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
+            df[f"opp_avg_pm_{suffix}"] = df.groupby(opp_id_col)[opp_pm_col].transform(
+                lambda x: x.rolling(10, min_periods=1).mean().shift(1)
             )
 
             # This team's scoring relative to opponent's defense
             # If team scores X and opponent usually allows Y, then X/Y > 1 means above-expectation
             team_pts_col = f"avg_pts_10g_{suffix}"
             if team_pts_col in df.columns:
-                df[f"offense_vs_defense_{suffix}"] = (
-                    df[team_pts_col] / df[f"opp_avg_pts_allowed_{suffix}"].clip(lower=1)
-                )
+                df[f"offense_vs_defense_{suffix}"] = df[team_pts_col] / df[
+                    f"opp_avg_pts_allowed_{suffix}"
+                ].clip(lower=1)
 
             # Opponent's offense vs this team's defense
             opp_off_col = f"opp_avg_pts_scored_{suffix}"
             team_def_col = f"avg_pts_allowed_{suffix}"
             if team_def_col in df.columns:
-                df[f"defense_vs_offense_{suffix}"] = (
-                    df[opp_off_col] / df[team_def_col].clip(lower=1)
-                )
+                df[f"defense_vs_offense_{suffix}"] = df[opp_off_col] / df[
+                    team_def_col
+                ].clip(lower=1)
 
         # Opponent quality differential (how much better is opponent than average)
         for col in ["opp_avg_pm_home", "opp_avg_pm_away"]:
             if col in df.columns:
-                df[f"adj_{col}"] = df[col]  # Already shifted, no further adjustment needed
+                df[f"adj_{col}"] = df[
+                    col
+                ]  # Already shifted, no further adjustment needed
 
         return df
 
@@ -1253,23 +1515,20 @@ class FeatureEngineer:
             opp_pm_col = f"team_plus_minus_{'away' if suffix == 'home' else 'home'}"
 
             # Get opponent's trailing margin (shifted so we don't leak)
-            opp_trailing_margin = (
-                df.groupby(opp_id_col)[opp_pm_col]
-                .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
+            opp_trailing_margin = df.groupby(opp_id_col)[opp_pm_col].transform(
+                lambda x: x.rolling(10, min_periods=1).mean().shift(1)
             )
             df[f"opp_trailing_margin_{suffix}"] = opp_trailing_margin
 
             # For each team, average the quality of their recent opponents
             # This creates a rolling average of opponent strength
-            df[f"sos_{suffix}"] = (
-                df.groupby(team_id_col)[f"opp_trailing_margin_{suffix}"]
-                .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
-            )
+            df[f"sos_{suffix}"] = df.groupby(team_id_col)[
+                f"opp_trailing_margin_{suffix}"
+            ].transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
 
             # Recent SOS trend (last 5 vs last 10)
-            sos_5 = (
-                df.groupby(team_id_col)[f"opp_trailing_margin_{suffix}"]
-                .transform(lambda x: x.rolling(5, min_periods=1).mean().shift(1))
+            sos_5 = df.groupby(team_id_col)[f"opp_trailing_margin_{suffix}"].transform(
+                lambda x: x.rolling(5, min_periods=1).mean().shift(1)
             )
             sos_10 = df.get(f"sos_{suffix}", 0)
             df[f"sos_trend_{suffix}"] = sos_5 - sos_10.fillna(0)
@@ -1308,54 +1567,45 @@ class FeatureEngineer:
 
             # ── 3-point attempt rate ────────────────────────────────
             if fg3a_col in df.columns and fga_col in df.columns:
-                df[f"three_pt_rate_{suffix}"] = (
-                    df[fg3a_col] / df[fga_col].clip(lower=1)
-                )
-                df[f"three_pt_rate_10g_{suffix}"] = (
-                    df.groupby(team_id_col)[f"three_pt_rate_{suffix}"]
-                    .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
-                )
+                df[f"three_pt_rate_{suffix}"] = df[fg3a_col] / df[fga_col].clip(lower=1)
+                df[f"three_pt_rate_10g_{suffix}"] = df.groupby(team_id_col)[
+                    f"three_pt_rate_{suffix}"
+                ].transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
 
             # ── Free throw rate ─────────────────────────────────────
             if fta_col in df.columns and fga_col in df.columns:
-                df[f"ft_rate_{suffix}"] = (
-                    df[fta_col] / df[fga_col].clip(lower=1)
-                )
-                df[f"ft_rate_10g_{suffix}"] = (
-                    df.groupby(team_id_col)[f"ft_rate_{suffix}"]
-                    .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
-                )
+                df[f"ft_rate_{suffix}"] = df[fta_col] / df[fga_col].clip(lower=1)
+                df[f"ft_rate_10g_{suffix}"] = df.groupby(team_id_col)[
+                    f"ft_rate_{suffix}"
+                ].transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
 
             # ── Assist ratio ────────────────────────────────────────
             if all(c in df.columns for c in [ast_col, fga_col, fta_col, tov_col]):
-                df[f"ast_ratio_{suffix}"] = (
-                    df[ast_col] / (df[fga_col] + df[fta_col] + df[tov_col]).clip(lower=1)
-                )
-                df[f"ast_ratio_10g_{suffix}"] = (
-                    df.groupby(team_id_col)[f"ast_ratio_{suffix}"]
-                    .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
-                )
+                df[f"ast_ratio_{suffix}"] = df[ast_col] / (
+                    df[fga_col] + df[fta_col] + df[tov_col]
+                ).clip(lower=1)
+                df[f"ast_ratio_10g_{suffix}"] = df.groupby(team_id_col)[
+                    f"ast_ratio_{suffix}"
+                ].transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
 
             # ── True shooting percentage ────────────────────────────
             if all(c in df.columns for c in [pts_col, fga_col, fta_col]):
-                df[f"ts_pct_{suffix}"] = (
-                    df[pts_col] / (2 * (df[fga_col] + 0.44 * df[fta_col])).clip(lower=1)
-                )
-                df[f"ts_pct_10g_{suffix}"] = (
-                    df.groupby(team_id_col)[f"ts_pct_{suffix}"]
-                    .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
-                )
+                df[f"ts_pct_{suffix}"] = df[pts_col] / (
+                    2 * (df[fga_col] + 0.44 * df[fta_col])
+                ).clip(lower=1)
+                df[f"ts_pct_10g_{suffix}"] = df.groupby(team_id_col)[
+                    f"ts_pct_{suffix}"
+                ].transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
 
             # ── Rebound rate ────────────────────────────────────────
             opp_reb_col = f"team_reb_{'away' if team_prefix == 'home' else 'home'}"
             if reb_col in df.columns and opp_reb_col in df.columns:
-                df[f"reb_pct_{suffix}"] = (
-                    df[reb_col] / (df[reb_col] + df[opp_reb_col]).clip(lower=1)
-                )
-                df[f"reb_pct_10g_{suffix}"] = (
-                    df.groupby(team_id_col)[f"reb_pct_{suffix}"]
-                    .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
-                )
+                df[f"reb_pct_{suffix}"] = df[reb_col] / (
+                    df[reb_col] + df[opp_reb_col]
+                ).clip(lower=1)
+                df[f"reb_pct_10g_{suffix}"] = df.groupby(team_id_col)[
+                    f"reb_pct_{suffix}"
+                ].transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
 
         return df
 
@@ -1388,7 +1638,7 @@ class FeatureEngineer:
                 result[i] = 0.0
                 continue
 
-            window_vals = values.iloc[max(0, i - window):i].values
+            window_vals = values.iloc[max(0, i - window) : i].values
             if len(window_vals) < 2:
                 result[i] = 0.0
                 continue
@@ -1469,15 +1719,15 @@ class FeatureEngineer:
         df["tz_diff"] = abs(df["home_tz"] - df["away_tz"])
 
         # Cumulative travel fatigue over last 3 games for each team
-        df["cum_travel_home"] = (
-            df.groupby("TEAM_ID_home")["travel_distance"]
-            .transform(lambda x: x.rolling(3, min_periods=1).sum().shift(1))
+        df["cum_travel_home"] = df.groupby("TEAM_ID_home")["travel_distance"].transform(
+            lambda x: x.rolling(3, min_periods=1).sum().shift(1)
         )
-        df["cum_travel_away"] = (
-            df.groupby("TEAM_ID_away")["travel_distance"]
-            .transform(lambda x: x.rolling(3, min_periods=1).sum().shift(1))
+        df["cum_travel_away"] = df.groupby("TEAM_ID_away")["travel_distance"].transform(
+            lambda x: x.rolling(3, min_periods=1).sum().shift(1)
         )
-        df["cum_travel_diff"] = df["cum_travel_home"].fillna(0) - df["cum_travel_away"].fillna(0)
+        df["cum_travel_diff"] = df["cum_travel_home"].fillna(0) - df[
+            "cum_travel_away"
+        ].fillna(0)
 
         return df
 
@@ -1499,10 +1749,9 @@ class FeatureEngineer:
             # the groupby transform already ensures no lookahead.
             # Applying an EXTRA shift(1) here skips the first row entirely
             # and creates an off-by-one error in the count.
-            df[f"consec_road_{suffix}"] = (
-                df.groupby(team_id_col)[f"WL_num_{suffix}"]
-                .transform(lambda x: self._compute_consecutive_road(x))
-            )
+            df[f"consec_road_{suffix}"] = df.groupby(team_id_col)[
+                f"WL_num_{suffix}"
+            ].transform(lambda x: self._compute_consecutive_road(x))
 
         df["road_trip_length"] = df["consec_road_away"].fillna(0).astype(int)
         df["long_road_trip"] = (df["road_trip_length"] >= 4).astype(int)
@@ -1514,7 +1763,7 @@ class FeatureEngineer:
         result = np.zeros(len(wl_numeric))
         count = 0
         for i in range(len(wl_numeric)):
-            val = wl_numeric.iloc[i] if hasattr(wl_numeric, 'iloc') else wl_numeric[i]
+            val = wl_numeric.iloc[i] if hasattr(wl_numeric, "iloc") else wl_numeric[i]
             if not pd.isna(val):
                 count += 1
             else:
@@ -1592,13 +1841,11 @@ class FeatureEngineer:
 
         # ELO class: hot/cold indicator based on ELO trend
         # Hot = gained 30+ ELO in last 5 games, Cold = lost 30+ ELO
-        df["elo_slope_home"] = (
-            df.groupby("TEAM_ID_home")["elo_home"]
-            .transform(lambda x: x.diff().rolling(5, min_periods=1).mean())
+        df["elo_slope_home"] = df.groupby("TEAM_ID_home")["elo_home"].transform(
+            lambda x: x.diff().rolling(5, min_periods=1).mean()
         )
-        df["elo_slope_away"] = (
-            df.groupby("TEAM_ID_away")["elo_away"]
-            .transform(lambda x: x.diff().rolling(5, min_periods=1).mean())
+        df["elo_slope_away"] = df.groupby("TEAM_ID_away")["elo_away"].transform(
+            lambda x: x.diff().rolling(5, min_periods=1).mean()
         )
 
         return df
@@ -1672,19 +1919,19 @@ class FeatureEngineer:
 
             # Rolling win rate (already exists as win_pct_10g, but add
             # a direct team-quality signal using ALL history, not just 10g)
-            df[f"target_win_rate_{suffix}"] = (
-                df.groupby(team_id_col)[wl_num_col]
-                .transform(lambda x: x.expanding(min_periods=1).mean().shift(1))
-            )
+            df[f"target_win_rate_{suffix}"] = df.groupby(team_id_col)[
+                wl_num_col
+            ].transform(lambda x: x.expanding(min_periods=1).mean().shift(1))
 
             # Rolling average margin (expanding = all available history)
-            df[f"target_margin_{suffix}"] = (
-                df.groupby(team_id_col)[pm_col]
-                .transform(lambda x: x.expanding(min_periods=1).mean().shift(1))
+            df[f"target_margin_{suffix}"] = df.groupby(team_id_col)[pm_col].transform(
+                lambda x: x.expanding(min_periods=1).mean().shift(1)
             )
 
         # Differential features
-        df["target_win_rate_diff"] = df["target_win_rate_home"] - df["target_win_rate_away"]
+        df["target_win_rate_diff"] = (
+            df["target_win_rate_home"] - df["target_win_rate_away"]
+        )
         df["target_margin_diff"] = df["target_margin_home"] - df["target_margin_away"]
 
         return df
@@ -1752,7 +1999,9 @@ class FeatureEngineer:
 
         # Days into season (from Oct 1)
         season_start = pd.to_datetime(year.astype(str) + "-10-01")
-        df["days_into_season"] = ((df["GAME_DATE"] - season_start).dt.days).clip(0, 365).fillna(0)
+        df["days_into_season"] = (
+            ((df["GAME_DATE"] - season_start).dt.days).clip(0, 365).fillna(0)
+        )
 
         return df
 
@@ -1792,27 +2041,34 @@ class FeatureEngineer:
                 # Binary: was each game within `window_days` of the previous?
                 within_window = (day_gaps <= window_days).astype(float)
                 # Rolling count of games in window (vectorized)
-                temp_df = pd.DataFrame({
-                    "team_id": df[team_id_col],
-                    "within": within_window,
-                })
-                result = (
-                    temp_df.groupby("team_id")["within"]
-                    .transform(
-                        lambda x: x.rolling(window_days, min_periods=1).sum().shift(1)
-                    )
+                temp_df = pd.DataFrame(
+                    {
+                        "team_id": df[team_id_col],
+                        "within": within_window,
+                    }
+                )
+                result = temp_df.groupby("team_id")["within"].transform(
+                    lambda x: x.rolling(window_days, min_periods=1).sum().shift(1)
                 )
                 df[f"games_{col_name}_{suffix}"] = result.fillna(0).astype(int)
 
         # Fatigue index = weighted combination of signals
-        rest_quality_home = 1.0 - np.clip(df.get("rest_home_days", 3).fillna(3) / 7.0, 0, 1)
-        rest_quality_away = 1.0 - np.clip(df.get("rest_away_days", 3).fillna(3) / 7.0, 0, 1)
+        rest_quality_home = 1.0 - np.clip(
+            df.get("rest_home_days", 3).fillna(3) / 7.0, 0, 1
+        )
+        rest_quality_away = 1.0 - np.clip(
+            df.get("rest_away_days", 3).fillna(3) / 7.0, 0, 1
+        )
 
         games_5d_home = df.get("games_5d_home", 0).fillna(0)
         games_5d_away = df.get("games_5d_away", 0).fillna(0)
 
-        travel_penalty_home = np.clip(df.get("cum_travel_home", 0).fillna(0) / 3000.0, 0, 1)
-        travel_penalty_away = np.clip(df.get("cum_travel_away", 0).fillna(0) / 3000.0, 0, 1)
+        travel_penalty_home = np.clip(
+            df.get("cum_travel_home", 0).fillna(0) / 3000.0, 0, 1
+        )
+        travel_penalty_away = np.clip(
+            df.get("cum_travel_away", 0).fillna(0) / 3000.0, 0, 1
+        )
 
         b2b_home = df.get("is_b2b_home", 0).fillna(0)
         b2b_away = df.get("is_b2b_away", 0).fillna(0)
@@ -1852,23 +2108,20 @@ class FeatureEngineer:
 
         # For the home team: how often do they win AT HOME?
         home_id_col = "TEAM_ID_home"
-        df["home_win_rate_at_home"] = (
-            df.groupby(home_id_col)["WL_num_home"]
-            .transform(lambda x: x.expanding(min_periods=1).mean().shift(1))
+        df["home_win_rate_at_home"] = df.groupby(home_id_col)["WL_num_home"].transform(
+            lambda x: x.expanding(min_periods=1).mean().shift(1)
         )
 
         # For the away team: how often do they win ON THE ROAD?
         away_id_col = "TEAM_ID_away"
-        df["away_win_rate_on_road"] = (
-            df.groupby(away_id_col)["WL_num_away"]
-            .transform(lambda x: x.expanding(min_periods=1).mean().shift(1))
+        df["away_win_rate_on_road"] = df.groupby(away_id_col)["WL_num_away"].transform(
+            lambda x: x.expanding(min_periods=1).mean().shift(1)
         )
 
         # This game's expected home advantage = home's home win rate
         # vs away's road loss rate (1 - away_road_win_rate)
-        df["home_advantage_edge"] = (
-            df["home_win_rate_at_home"].fillna(0.5)
-            - (1.0 - df["away_win_rate_on_road"].fillna(0.5))
+        df["home_advantage_edge"] = df["home_win_rate_at_home"].fillna(0.5) - (
+            1.0 - df["away_win_rate_on_road"].fillna(0.5)
         )
 
         # ── D2: Coach Change Proxy Detection (v5.1) ───────────────────────
@@ -1909,19 +2162,16 @@ class FeatureEngineer:
 
             # Use pre-z-scored perf_vs_expected (already normalized)
             # Compute rolling mean and std for anomaly detection
-            rolling_mean = (
-                df.groupby(team_id_col)[perf_col]
-                .transform(lambda x: x.rolling(15, min_periods=5).mean().shift(1))
+            rolling_mean = df.groupby(team_id_col)[perf_col].transform(
+                lambda x: x.rolling(15, min_periods=5).mean().shift(1)
             )
-            rolling_std = (
-                df.groupby(team_id_col)[perf_col]
-                .transform(lambda x: x.rolling(15, min_periods=5).std().shift(1))
+            rolling_std = df.groupby(team_id_col)[perf_col].transform(
+                lambda x: x.rolling(15, min_periods=5).std().shift(1)
             )
 
             # Recent 3-game average vs rolling 15-game norm
-            recent_3g = (
-                df.groupby(team_id_col)[perf_col]
-                .transform(lambda x: x.rolling(3, min_periods=2).mean().shift(1))
+            recent_3g = df.groupby(team_id_col)[perf_col].transform(
+                lambda x: x.rolling(3, min_periods=2).mean().shift(1)
             )
 
             # Z-score of recent performance vs historical norm
@@ -1937,17 +2187,15 @@ class FeatureEngineer:
             ).astype(int)
 
             # Rolling count of system changes in last 10 games
-            df[f"system_changes_10g_{suffix}"] = (
-                df.groupby(team_id_col)[f"system_change_flag_{suffix}"]
-                .transform(lambda x: x.rolling(10, min_periods=1).sum().shift(1))
-            )
+            df[f"system_changes_10g_{suffix}"] = df.groupby(team_id_col)[
+                f"system_change_flag_{suffix}"
+            ].transform(lambda x: x.rolling(10, min_periods=1).sum().shift(1))
 
         # Differential features
         if "system_changes_10g_home" in df.columns:
-            df["system_changes_diff"] = (
-                df["system_changes_10g_home"].fillna(0)
-                - df["system_changes_10g_away"].fillna(0)
-            )
+            df["system_changes_diff"] = df["system_changes_10g_home"].fillna(0) - df[
+                "system_changes_10g_away"
+            ].fillna(0)
 
         return df
 
@@ -2004,7 +2252,7 @@ class FeatureEngineer:
             # ── Performance vs Expectation ─────────────────────────────
             # Rolling difference between actual margin and ELO-expected margin
             # Positive = team is outperforming what ELO predicts = hot
-            elo_prob_col = f"elo_home_prob"
+            elo_prob_col = "elo_home_prob"
             if suffix == "away":
                 elo_prob_val = 1.0 - df.get("elo_home_prob", 0.5)
             else:
@@ -2025,13 +2273,12 @@ class FeatureEngineer:
                 return float((arr[-1] - mu) / s) if s > 0 else 0.0
 
             df[f"perf_vs_expected_raw_{suffix}"] = perf_vs_exp
-            df[f"perf_vs_expected_{suffix}"] = (
-                df.groupby(team_id_col)[f"perf_vs_expected_raw_{suffix}"]
-                .transform(
-                    lambda x: x.rolling(10, min_periods=1).apply(
-                        lambda s: _zscore_last(s) if len(s) >= 3 else 0.0,
-                        raw=True,
-                    )
+            df[f"perf_vs_expected_{suffix}"] = df.groupby(team_id_col)[
+                f"perf_vs_expected_raw_{suffix}"
+            ].transform(
+                lambda x: x.rolling(10, min_periods=1).apply(
+                    lambda s: _zscore_last(s) if len(s) >= 3 else 0.0,
+                    raw=True,
                 )
             )
 
@@ -2048,37 +2295,31 @@ class FeatureEngineer:
             # Note: this is the team's OVERALL win rate, not filtered by
             # home/away venue (the per-game data doesn't separate that).
             if suffix == "home":
-                df["recent_win_pct_home"] = (
-                    df.groupby(team_id_col)[wl_num_col]
-                    .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
-                )
+                df["recent_win_pct_home"] = df.groupby(team_id_col)[
+                    wl_num_col
+                ].transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
             else:
-                df["recent_win_pct_away"] = (
-                    df.groupby(team_id_col)[wl_num_col]
-                    .transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
-                )
+                df["recent_win_pct_away"] = df.groupby(team_id_col)[
+                    wl_num_col
+                ].transform(lambda x: x.rolling(10, min_periods=1).mean().shift(1))
 
         # ── Differential Features ───────────────────────────────────────
         # These capture the NET advantage of home over away
 
         df["power_diff"] = df["composite_power_home"] - df["composite_power_away"]
 
-        df["form_diff"] = (
-            df.get("weighted_momentum_home", 0.5)
-            - df.get("weighted_momentum_away", 0.5)
+        df["form_diff"] = df.get("weighted_momentum_home", 0.5) - df.get(
+            "weighted_momentum_away", 0.5
         )
 
         df["perf_vs_expected_diff"] = (
             df["perf_vs_expected_home"] - df["perf_vs_expected_away"]
         )
 
-        df["consistency_diff"] = (
-            df["consistency_home"] - df["consistency_away"]
-        )
+        df["consistency_diff"] = df["consistency_home"] - df["consistency_away"]
 
-        df["home_away_split_diff"] = (
-            df.get("recent_win_pct_home", 0.5)
-            - df.get("recent_win_pct_away", 0.5)
+        df["home_away_split_diff"] = df.get("recent_win_pct_home", 0.5) - df.get(
+            "recent_win_pct_away", 0.5
         )
 
         # ── Head-to-Head Features ───────────────────────────────────────
@@ -2086,14 +2327,20 @@ class FeatureEngineer:
         # Uses a team-pair key (sorted) to track H2H history.
         # Stores which team won by name, so the current home team's
         # historical record vs the away team can be computed correctly.
-        h2h_store: dict[str, list[tuple[str, int, float]]] = {}  # key -> [(winner_team, idx, margin)]
+        h2h_store: dict[
+            str, list[tuple[str, int, float]]
+        ] = {}  # key -> [(winner_team, idx, margin)]
 
         h2h_win_rate_list = []  # current home team's win rate vs away team
-        h2h_margin_list = []    # current home team's avg margin vs away team
+        h2h_margin_list = []  # current home team's avg margin vs away team
 
         for idx, row in df.iterrows():
-            home_team = str(row.get("TEAM_NAME_home", row.get("home_team_name", ""))).strip()
-            away_team = str(row.get("TEAM_NAME_away", row.get("away_team_name", ""))).strip()
+            home_team = str(
+                row.get("TEAM_NAME_home", row.get("home_team_name", ""))
+            ).strip()
+            away_team = str(
+                row.get("TEAM_NAME_away", row.get("away_team_name", ""))
+            ).strip()
 
             if not home_team or not away_team or home_team == away_team:
                 h2h_win_rate_list.append(0.5)
@@ -2109,11 +2356,12 @@ class FeatureEngineer:
             if recent:
                 home_wins = sum(1 for winner, _, _ in recent if winner == home_team)
                 home_margins = [
-                    m if winner == home_team else -m
-                    for winner, _, m in recent
+                    m if winner == home_team else -m for winner, _, m in recent
                 ]
                 h2h_win_rate_list.append(home_wins / len(recent))
-                h2h_margin_list.append(sum(home_margins) / len(home_margins) if home_margins else 0.0)
+                h2h_margin_list.append(
+                    sum(home_margins) / len(home_margins) if home_margins else 0.0
+                )
             else:
                 h2h_win_rate_list.append(0.5)
                 h2h_margin_list.append(0.0)
@@ -2153,9 +2401,9 @@ class FeatureEngineer:
 
         # Fatigue × Home Advantage
         if all(c in df.columns for c in ["fatigue_index_diff", "home_advantage_edge"]):
-            df["interact_fatigue_x_home"] = (
-                df["fatigue_index_diff"].fillna(0) * df["home_advantage_edge"].fillna(0)
-            )
+            df["interact_fatigue_x_home"] = df["fatigue_index_diff"].fillna(0) * df[
+                "home_advantage_edge"
+            ].fillna(0)
 
         # ELO × Rest Advantage (both normalized)
         if all(c in df.columns for c in ["elo_diff", "rest_advantage"]):
@@ -2165,15 +2413,15 @@ class FeatureEngineer:
 
         # Composite Power × Fatigue
         if all(c in df.columns for c in ["power_diff", "fatigue_index_diff"]):
-            df["interact_power_x_fatigue"] = (
-                df["power_diff"].fillna(0) * df["fatigue_index_diff"].fillna(0)
-            )
+            df["interact_power_x_fatigue"] = df["power_diff"].fillna(0) * df[
+                "fatigue_index_diff"
+            ].fillna(0)
 
         # Consistency × Home Advantage
         if all(c in df.columns for c in ["consistency_diff", "home_advantage_edge"]):
-            df["interact_consistency_x_home"] = (
-                df["consistency_diff"].fillna(0) * df["home_advantage_edge"].fillna(0)
-            )
+            df["interact_consistency_x_home"] = df["consistency_diff"].fillna(0) * df[
+                "home_advantage_edge"
+            ].fillna(0)
 
         # Travel × Rest (cumulative travel penalty × rest disadvantage)
         if all(c in df.columns for c in ["cum_travel_diff", "rest_advantage"]):
@@ -2182,10 +2430,12 @@ class FeatureEngineer:
             df["interact_travel_x_rest"] = travel_norm * rest_norm
 
         # Performance vs Expectation × Fatigue
-        if all(c in df.columns for c in ["perf_vs_expected_diff", "fatigue_index_diff"]):
-            df["interact_perf_x_fatigue"] = (
-                df["perf_vs_expected_diff"].fillna(0) * df["fatigue_index_diff"].fillna(0)
-            )
+        if all(
+            c in df.columns for c in ["perf_vs_expected_diff", "fatigue_index_diff"]
+        ):
+            df["interact_perf_x_fatigue"] = df["perf_vs_expected_diff"].fillna(0) * df[
+                "fatigue_index_diff"
+            ].fillna(0)
 
         # ELO × Pace Differential
         if all(c in df.columns for c in ["elo_diff", "pace_diff_5g"]):
@@ -2195,9 +2445,9 @@ class FeatureEngineer:
 
         # 3PT Rate × Rebound Rate Differential
         if all(c in df.columns for c in ["fg3a_diff_5g", "reb_diff_5g"]):
-            df["interact_3pt_x_reb"] = (
-                df["fg3a_diff_5g"].fillna(0) * df["reb_diff_5g"].fillna(0)
-            )
+            df["interact_3pt_x_reb"] = df["fg3a_diff_5g"].fillna(0) * df[
+                "reb_diff_5g"
+            ].fillna(0)
 
         # Form × Opponent Quality
         if all(c in df.columns for c in ["form_diff", "opp_avg_pm_home"]):
@@ -2244,34 +2494,36 @@ class FeatureEngineer:
 
             if pts_col in df.columns:
                 for w in [5, 10]:
-                    df[f"volatility_pts_{w}g_{suffix}"] = (
-                        df.groupby(team_id_col)[pts_col]
-                        .transform(lambda x, win=w: x.rolling(win, min_periods=2).std().shift(1))
+                    df[f"volatility_pts_{w}g_{suffix}"] = df.groupby(team_id_col)[
+                        pts_col
+                    ].transform(
+                        lambda x, win=w: x.rolling(win, min_periods=2).std().shift(1)
                     )
 
             if pm_col in df.columns:
                 for w in [5, 10]:
-                    df[f"volatility_pm_{w}g_{suffix}"] = (
-                        df.groupby(team_id_col)[pm_col]
-                        .transform(lambda x, win=w: x.rolling(win, min_periods=2).std().shift(1))
+                    df[f"volatility_pm_{w}g_{suffix}"] = df.groupby(team_id_col)[
+                        pm_col
+                    ].transform(
+                        lambda x, win=w: x.rolling(win, min_periods=2).std().shift(1)
                     )
 
             # Volatility of opponent points allowed
             opp_pts_col = f"team_pts_{'away' if team_prefix == 'home' else 'home'}"
             if opp_pts_col in df.columns:
                 for w in [5, 10]:
-                    df[f"volatility_allowed_{w}g_{suffix}"] = (
-                        df.groupby(team_id_col)[opp_pts_col]
-                        .transform(lambda x, win=w: x.rolling(win, min_periods=2).std().shift(1))
+                    df[f"volatility_allowed_{w}g_{suffix}"] = df.groupby(team_id_col)[
+                        opp_pts_col
+                    ].transform(
+                        lambda x, win=w: x.rolling(win, min_periods=2).std().shift(1)
                     )
 
             # Pace volatility
             pace_col = f"pace_{suffix}"
             if pace_col in df.columns:
-                df[f"volatility_pace_5g_{suffix}"] = (
-                    df.groupby(team_id_col)[pace_col]
-                    .transform(lambda x: x.rolling(5, min_periods=2).std().shift(1))
-                )
+                df[f"volatility_pace_5g_{suffix}"] = df.groupby(team_id_col)[
+                    pace_col
+                ].transform(lambda x: x.rolling(5, min_periods=2).std().shift(1))
 
         return df
 
@@ -2305,41 +2557,39 @@ class FeatureEngineer:
             # Win streak (already exists, but add streak strength)
             # Average margin during the current streak
             if pm_col in df.columns:
-                df[f"streak_margin_{suffix}"] = (
-                    df.groupby(team_id_col)[pm_col]
-                    .transform(lambda x: self._compute_streak_margin(x))
-                )
+                df[f"streak_margin_{suffix}"] = df.groupby(team_id_col)[
+                    pm_col
+                ].transform(lambda x: self._compute_streak_margin(x))
 
             # Streak quality = streak_length × avg_margin_in_streak
             streak_col = f"win_streak_{suffix}"
             streak_margin_col = f"streak_margin_{suffix}"
             if streak_col in df.columns and streak_margin_col in df.columns:
-                df[f"streak_quality_{suffix}"] = (
-                    np.abs(df[streak_col].fillna(0)) * df[streak_margin_col].fillna(0)
-                )
+                df[f"streak_quality_{suffix}"] = np.abs(df[streak_col].fillna(0)) * df[
+                    streak_margin_col
+                ].fillna(0)
 
             # Bounce back: how team performs the game after a loss
             # 1 if previous game was a loss, 0 if previous was a win
             if wl_num_col in df.columns:
                 df[f"prev_loss_{suffix}"] = (
-                    df.groupby(team_id_col)[wl_num_col]
-                    .transform(lambda x: (1.0 - x).shift(1))
+                    df.groupby(team_id_col)[wl_num_col].transform(
+                        lambda x: (1.0 - x).shift(1)
+                    )
                 ).fillna(0)
 
             # Recent form acceleration: is the team getting better or worse?
             # Compares last 3 games' margin to the 10-game rolling average
             if all(c in df.columns for c in [pm_col]):
-                rolling_10 = (
-                    df.groupby(team_id_col)[pm_col]
-                    .transform(lambda x: x.rolling(10, min_periods=3).mean().shift(1))
+                rolling_10 = df.groupby(team_id_col)[pm_col].transform(
+                    lambda x: x.rolling(10, min_periods=3).mean().shift(1)
                 )
-                rolling_3 = (
-                    df.groupby(team_id_col)[pm_col]
-                    .transform(lambda x: x.rolling(3, min_periods=2).mean().shift(1))
+                rolling_3 = df.groupby(team_id_col)[pm_col].transform(
+                    lambda x: x.rolling(3, min_periods=2).mean().shift(1)
                 )
-                df[f"form_acceleration_{suffix}"] = (
-                    rolling_3.fillna(0) - rolling_10.fillna(0)
-                )
+                df[f"form_acceleration_{suffix}"] = rolling_3.fillna(
+                    0
+                ) - rolling_10.fillna(0)
 
         return df
 
@@ -2351,7 +2601,7 @@ class FeatureEngineer:
         streak_values = []
 
         for i in range(n):
-            val = pm_series.iloc[i] if hasattr(pm_series, 'iloc') else pm_series[i]
+            val = pm_series.iloc[i] if hasattr(pm_series, "iloc") else pm_series[i]
 
             # Determine streak direction from this game's margin
             if val > 0:
@@ -2398,14 +2648,18 @@ class FeatureEngineer:
             if pts_col in df.columns and pace_col in df.columns:
                 # Offensive rating: points per 100 possessions
                 df[f"pace_adj_off_{suffix}"] = (
-                    df[pts_col].fillna(110) / df[pace_col].fillna(100).clip(lower=50) * 100.0
+                    df[pts_col].fillna(110)
+                    / df[pace_col].fillna(100).clip(lower=50)
+                    * 100.0
                 )
 
             # Defensive rating
             pts_allowed_col = f"avg_pts_allowed_{suffix}"
             if pts_allowed_col in df.columns and pace_col in df.columns:
                 df[f"pace_adj_def_{suffix}"] = (
-                    df[pts_allowed_col].fillna(110) / df[pace_col].fillna(100).clip(lower=50) * 100.0
+                    df[pts_allowed_col].fillna(110)
+                    / df[pace_col].fillna(100).clip(lower=50)
+                    * 100.0
                 )
 
             # Net rating
@@ -2420,7 +2674,9 @@ class FeatureEngineer:
             oreb_col = f"avg_oreb_10g_{suffix}"
             if all(c in df.columns for c in [fga_col, tov_col, oreb_col]):
                 df[f"pace_100_{suffix}"] = (
-                    df[fga_col].fillna(85) - df[oreb_col].fillna(10) + df[tov_col].fillna(13)
+                    df[fga_col].fillna(85)
+                    - df[oreb_col].fillna(10)
+                    + df[tov_col].fillna(13)
                 )
 
         return df
@@ -2433,7 +2689,7 @@ class FeatureEngineer:
         because that leaks future information into the training data.
         When walk-forward validation splits chronologically, the training
         fold's features would have been backfilled with medians computed
-        from the FULL dataset (including future games) — 
+        from the FULL dataset (including future games) —
         that is DATA LEAKAGE and inflates validation metrics.
 
         Rolling features (avg_pts_*, avg_pm_*, ema_*, etc.) are NaN for
@@ -2487,17 +2743,30 @@ class FeatureEngineer:
         it's being evaluated against).
         """
         exclude = {
-            "GAME_ID", "SEASON_ID", "TEAM_ID_home", "TEAM_ID_away",
-            "TEAM_ABBREVIATION_home", "TEAM_ABBREVIATION_away",
-            "TEAM_NAME_home", "TEAM_NAME_away", "GAME_DATE",
-            "MATCHUP_home", "MATCHUP_away",
-            "WL_home", "WL_away",
-            "SEASON_home", "SEASON_away",
-            "total_points", "point_diff",
-            "rest_home_key", "rest_away_key",
-            "home_team_name", "away_team_name",
+            "GAME_ID",
+            "SEASON_ID",
+            "TEAM_ID_home",
+            "TEAM_ID_away",
+            "TEAM_ABBREVIATION_home",
+            "TEAM_ABBREVIATION_away",
+            "TEAM_NAME_home",
+            "TEAM_NAME_away",
+            "GAME_DATE",
+            "MATCHUP_home",
+            "MATCHUP_away",
+            "WL_home",
+            "WL_away",
+            "SEASON_home",
+            "SEASON_away",
+            "total_points",
+            "point_diff",
+            "rest_home_key",
+            "rest_away_key",
+            "home_team_name",
+            "away_team_name",
             # Post-game stats not available pre-game:
-            "MIN_home", "MIN_away",
+            "MIN_home",
+            "MIN_away",
             # ═══════════════════════════════════════════════════════════
             # RAW PER-GAME TEAM STATS — leak the target!
             # These are the actual points/stats the team scored that game.
@@ -2506,52 +2775,91 @@ class FeatureEngineer:
             # Only their LAGGED rolling averages (avg_pts_*, avg_pm_*, etc.)
             # should be available to the model (already computed above).
             # ═══════════════════════════════════════════════════════════
-            "team_pts_home", "team_pts_away",
-            "team_fgm_home", "team_fgm_away",
-            "team_fga_home", "team_fga_away",
-            "team_fg_pct_home", "team_fg_pct_away",
-            "team_fg3m_home", "team_fg3m_away",
-            "team_fg3a_home", "team_fg3a_away",
-            "team_fg3_pct_home", "team_fg3_pct_away",
-            "team_ftm_home", "team_ftm_away",
-            "team_fta_home", "team_fta_away",
-            "team_ft_pct_home", "team_ft_pct_away",
-            "team_oreb_home", "team_oreb_away",
-            "team_dreb_home", "team_dreb_away",
-            "team_reb_home", "team_reb_away",
-            "team_ast_home", "team_ast_away",
-            "team_stl_home", "team_stl_away",
-            "team_blk_home", "team_blk_away",
-            "team_tov_home", "team_tov_away",
-            "team_pf_home", "team_pf_away",
-            "team_plus_minus_home", "team_plus_minus_away",
+            "team_pts_home",
+            "team_pts_away",
+            "team_fgm_home",
+            "team_fgm_away",
+            "team_fga_home",
+            "team_fga_away",
+            "team_fg_pct_home",
+            "team_fg_pct_away",
+            "team_fg3m_home",
+            "team_fg3m_away",
+            "team_fg3a_home",
+            "team_fg3a_away",
+            "team_fg3_pct_home",
+            "team_fg3_pct_away",
+            "team_ftm_home",
+            "team_ftm_away",
+            "team_fta_home",
+            "team_fta_away",
+            "team_ft_pct_home",
+            "team_ft_pct_away",
+            "team_oreb_home",
+            "team_oreb_away",
+            "team_dreb_home",
+            "team_dreb_away",
+            "team_reb_home",
+            "team_reb_away",
+            "team_ast_home",
+            "team_ast_away",
+            "team_stl_home",
+            "team_stl_away",
+            "team_blk_home",
+            "team_blk_away",
+            "team_tov_home",
+            "team_tov_away",
+            "team_pf_home",
+            "team_pf_away",
+            "team_plus_minus_home",
+            "team_plus_minus_away",
             # Home/away indicators from game dataset — not predictive
-            "IS_HOME_home", "IS_HOME_away",
-            "OPPONENT_home", "OPPONENT_away",
+            "IS_HOME_home",
+            "IS_HOME_away",
+            "OPPONENT_home",
+            "OPPONENT_away",
             # Market-line proxy columns — NOT features (prevent leakage):
             "market_line_baseline",
             "market_line_pace_adj",
             "trailing_avg_total_10g",
             # Intermediate calculation columns (not features themselves):
-            "three_pt_rate_home", "three_pt_rate_away",
-            "ft_rate_home", "ft_rate_away",
-            "ast_ratio_home", "ast_ratio_away",
-            "ts_pct_home", "ts_pct_away",
-            "reb_pct_home", "reb_pct_away",
-            "home_tz", "away_tz",  # Intermediate: use tz_diff instead
+            "three_pt_rate_home",
+            "three_pt_rate_away",
+            "ft_rate_home",
+            "ft_rate_away",
+            "ast_ratio_home",
+            "ast_ratio_away",
+            "ts_pct_home",
+            "ts_pct_away",
+            "reb_pct_home",
+            "reb_pct_away",
+            "home_tz",
+            "away_tz",  # Intermediate: use tz_diff instead
             # v5.1: intermediate date columns
-            "dow", "month",  # Use sin/cos encoded versions instead
+            "dow",
+            "month",  # Use sin/cos encoded versions instead
             # v5.1: coach change intermediate columns
-            "perf_shift_z_home", "perf_shift_z_away",
-            "system_change_flag_home", "system_change_flag_away",
+            "perf_shift_z_home",
+            "perf_shift_z_away",
+            "system_change_flag_home",
+            "system_change_flag_away",
             # v6.5: interaction intermediate columns
-            "three_pt_rate_home", "three_pt_rate_away",
-            "ft_rate_home", "ft_rate_away",
+            "three_pt_rate_home",
+            "three_pt_rate_away",
+            "ft_rate_home",
+            "ft_rate_away",
             # v6.5: momentum intermediate columns
-            "streak_margin_home", "streak_margin_away",
-            "streak_quality_home", "streak_quality_away",
-            "prev_loss_home", "prev_loss_away",
-            "form_acceleration_home", "form_acceleration_away",
+            "streak_margin_home",
+            "streak_margin_away",
+            "streak_quality_home",
+            "streak_quality_away",
+            "prev_loss_home",
+            "prev_loss_away",
+            "form_acceleration_home",
+            "form_acceleration_away",
         }
-        return [c for c in df.columns if c not in exclude and pd.api.types.is_numeric_dtype(df[c].dtype)]
-
+        return [
+            c
+            for c in df.columns
+            if c not in exclude and pd.api.types.is_numeric_dtype(df[c].dtype)
+        ]

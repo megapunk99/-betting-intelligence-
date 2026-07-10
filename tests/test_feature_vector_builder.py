@@ -40,56 +40,58 @@ def _make_features_df(n_teams: int = 4, n_games_per_team: int = 5) -> pd.DataFra
             if home_team == away_team:
                 continue
 
-            rows.append({
-                "GAME_ID": f"G{game_id:04d}",
-                "GAME_DATE": pd.Timestamp(f"2025-01-{10 + g:02d}"),
-                "TEAM_ID_home": h_idx,
-                "TEAM_ID_away": a_idx,
-                "TEAM_NAME_home": home_team,
-                "TEAM_NAME_away": away_team,
-                # _home features
-                "avg_pts_5g_home": float(np.random.normal(112, 8)),
-                "avg_pm_5g_home": float(np.random.normal(2, 5)),
-                "avg_reb_5g_home": float(np.random.normal(43, 3)),
-                "avg_ast_5g_home": float(np.random.normal(25, 3)),
-                "ema_pts_10g_home": float(np.random.normal(113, 6)),
-                "composite_power_home": float(np.random.uniform(0.3, 0.7)),
-                "elo_home": float(np.random.normal(1500, 50)),
-                "win_pct_10g_home": float(np.random.uniform(0.3, 0.7)),
-                "weighted_momentum_home": float(np.random.uniform(0.3, 0.7)),
-                "fatigue_index_home": float(np.random.uniform(0.1, 0.6)),
-                # _away features
-                "avg_pts_5g_away": float(np.random.normal(110, 8)),
-                "avg_pm_5g_away": float(np.random.normal(-1, 5)),
-                "avg_reb_5g_away": float(np.random.normal(42, 3)),
-                "avg_ast_5g_away": float(np.random.normal(24, 3)),
-                "ema_pts_10g_away": float(np.random.normal(111, 6)),
-                "composite_power_away": float(np.random.uniform(0.3, 0.7)),
-                "elo_away": float(np.random.normal(1480, 50)),
-                "win_pct_10g_away": float(np.random.uniform(0.3, 0.7)),
-                "weighted_momentum_away": float(np.random.uniform(0.3, 0.7)),
-                "fatigue_index_away": float(np.random.uniform(0.1, 0.6)),
-                # _diff features
-                "pts_diff_5g": float(np.random.normal(2, 5)),
-                "pm_diff_5g": float(np.random.normal(3, 4)),
-                "power_diff": float(np.random.uniform(-0.2, 0.2)),
-                # Rest & fatigue (game-specific, not averaged)
-                "rest_home_days": float(np.random.randint(0, 5)),
-                "rest_away_days": float(np.random.randint(0, 5)),
-                "rest_advantage": float(np.random.randint(-2, 3)),
-                "is_b2b_home": float(np.random.randint(0, 2)),
-                "is_b2b_away": float(np.random.randint(0, 2)),
-                "fatigue_home": float(np.random.uniform(0.2, 1.5)),
-                "fatigue_away": float(np.random.uniform(0.2, 1.5)),
-                # Travel
-                "travel_distance": float(np.random.uniform(100, 2500)),
-                "travel_distance_norm": float(np.random.uniform(0.03, 0.8)),
-                "tz_diff": float(np.random.randint(0, 4)),
-                "cum_travel_diff": float(np.random.uniform(-1000, 1000)),
-                # H2H
-                "h2h_win_rate": float(np.random.uniform(0.3, 0.7)),
-                "h2h_avg_margin": float(np.random.uniform(-5, 5)),
-            })
+            rows.append(
+                {
+                    "GAME_ID": f"G{game_id:04d}",
+                    "GAME_DATE": pd.Timestamp(f"2025-01-{10 + g:02d}"),
+                    "TEAM_ID_home": h_idx,
+                    "TEAM_ID_away": a_idx,
+                    "TEAM_NAME_home": home_team,
+                    "TEAM_NAME_away": away_team,
+                    # _home features
+                    "avg_pts_5g_home": float(np.random.normal(112, 8)),
+                    "avg_pm_5g_home": float(np.random.normal(2, 5)),
+                    "avg_reb_5g_home": float(np.random.normal(43, 3)),
+                    "avg_ast_5g_home": float(np.random.normal(25, 3)),
+                    "ema_pts_10g_home": float(np.random.normal(113, 6)),
+                    "composite_power_home": float(np.random.uniform(0.3, 0.7)),
+                    "elo_home": float(np.random.normal(1500, 50)),
+                    "win_pct_10g_home": float(np.random.uniform(0.3, 0.7)),
+                    "weighted_momentum_home": float(np.random.uniform(0.3, 0.7)),
+                    "fatigue_index_home": float(np.random.uniform(0.1, 0.6)),
+                    # _away features
+                    "avg_pts_5g_away": float(np.random.normal(110, 8)),
+                    "avg_pm_5g_away": float(np.random.normal(-1, 5)),
+                    "avg_reb_5g_away": float(np.random.normal(42, 3)),
+                    "avg_ast_5g_away": float(np.random.normal(24, 3)),
+                    "ema_pts_10g_away": float(np.random.normal(111, 6)),
+                    "composite_power_away": float(np.random.uniform(0.3, 0.7)),
+                    "elo_away": float(np.random.normal(1480, 50)),
+                    "win_pct_10g_away": float(np.random.uniform(0.3, 0.7)),
+                    "weighted_momentum_away": float(np.random.uniform(0.3, 0.7)),
+                    "fatigue_index_away": float(np.random.uniform(0.1, 0.6)),
+                    # _diff features
+                    "pts_diff_5g": float(np.random.normal(2, 5)),
+                    "pm_diff_5g": float(np.random.normal(3, 4)),
+                    "power_diff": float(np.random.uniform(-0.2, 0.2)),
+                    # Rest & fatigue (game-specific, not averaged)
+                    "rest_home_days": float(np.random.randint(0, 5)),
+                    "rest_away_days": float(np.random.randint(0, 5)),
+                    "rest_advantage": float(np.random.randint(-2, 3)),
+                    "is_b2b_home": float(np.random.randint(0, 2)),
+                    "is_b2b_away": float(np.random.randint(0, 2)),
+                    "fatigue_home": float(np.random.uniform(0.2, 1.5)),
+                    "fatigue_away": float(np.random.uniform(0.2, 1.5)),
+                    # Travel
+                    "travel_distance": float(np.random.uniform(100, 2500)),
+                    "travel_distance_norm": float(np.random.uniform(0.03, 0.8)),
+                    "tz_diff": float(np.random.randint(0, 4)),
+                    "cum_travel_diff": float(np.random.uniform(-1000, 1000)),
+                    # H2H
+                    "h2h_win_rate": float(np.random.uniform(0.3, 0.7)),
+                    "h2h_avg_margin": float(np.random.uniform(-5, 5)),
+                }
+            )
             game_id += 1
 
     df = pd.DataFrame(rows)
@@ -106,6 +108,7 @@ def features_df() -> pd.DataFrame:
 def predictor():
     """Create a GamePredictor with mocked dependencies for testing _build_feature_vector."""
     from betting_intel.live.predictor import GamePredictor
+
     kelly = MagicMock()
     odds_store = MagicMock()
     return GamePredictor(kelly_staker=kelly, market_odds_store=odds_store)
@@ -120,7 +123,9 @@ class TestFeatureVectorBuilder:
     def test_returns_series(self, predictor, features_df):
         """Basic: returns a pd.Series with correct length."""
         result = predictor._build_feature_vector(
-            "Team_A", "Team_B", features_df,
+            "Team_A",
+            "Team_B",
+            features_df,
         )
         assert result is not None
         assert isinstance(result, pd.Series)
@@ -128,10 +133,19 @@ class TestFeatureVectorBuilder:
 
     def test_feature_count_matches(self, predictor, features_df):
         """When feature_cols is specified, output has the exact same columns."""
-        cols = ["avg_pts_5g_home", "avg_pts_5g_away", "pts_diff_5g",
-                "rest_home_days", "travel_distance", "h2h_win_rate"]
+        cols = [
+            "avg_pts_5g_home",
+            "avg_pts_5g_away",
+            "pts_diff_5g",
+            "rest_home_days",
+            "travel_distance",
+            "h2h_win_rate",
+        ]
         result = predictor._build_feature_vector(
-            "Team_A", "Team_B", features_df, feature_cols=cols,
+            "Team_A",
+            "Team_B",
+            features_df,
+            feature_cols=cols,
         )
         assert result is not None
         assert list(result.index) == cols
@@ -140,29 +154,39 @@ class TestFeatureVectorBuilder:
     def test_all_feature_values_are_finite(self, predictor, features_df):
         """No NaN, inf, or -inf in the result."""
         result = predictor._build_feature_vector(
-            "Team_A", "Team_B", features_df,
+            "Team_A",
+            "Team_B",
+            features_df,
         )
         assert result is not None
-        assert np.isfinite(result.values).all(), f"Non-finite values: {result[~np.isfinite(result.values)]}"
+        assert np.isfinite(result.values).all(), (
+            f"Non-finite values: {result[~np.isfinite(result.values)]}"
+        )
 
     def test_returns_none_for_empty_df(self, predictor):
         """Empty DataFrame returns None."""
         result = predictor._build_feature_vector(
-            "Team_A", "Team_B", pd.DataFrame(),
+            "Team_A",
+            "Team_B",
+            pd.DataFrame(),
         )
         assert result is None
 
     def test_returns_none_for_none_df(self, predictor):
         """None DataFrame returns None."""
         result = predictor._build_feature_vector(
-            "Team_A", "Team_B", None,
+            "Team_A",
+            "Team_B",
+            None,
         )
         assert result is None
 
     def test_missing_team_returns_features(self, predictor, features_df):
         """Missing team should still return a result (uses fallbacks)."""
         result = predictor._build_feature_vector(
-            "Team_ZZZ", "Team_YYY", features_df,
+            "Team_ZZZ",
+            "Team_YYY",
+            features_df,
         )
         assert result is not None
         assert len(result) > 0
@@ -175,7 +199,10 @@ class TestWeightedAverage:
         """_home features should equal weighted average of last 3 home games."""
         cols = ["avg_pts_5g_home", "avg_pm_5g_home", "avg_reb_5g_home"]
         result = predictor._build_feature_vector(
-            "Team_A", "Team_B", features_df, feature_cols=cols,
+            "Team_A",
+            "Team_B",
+            features_df,
+            feature_cols=cols,
         )
         assert result is not None
 
@@ -202,7 +229,10 @@ class TestWeightedAverage:
         """_away features should equal weighted average of last 3 away games."""
         cols = ["avg_pts_5g_away", "avg_pm_5g_away"]
         result = predictor._build_feature_vector(
-            "Team_A", "Team_B", features_df, feature_cols=cols,
+            "Team_A",
+            "Team_B",
+            features_df,
+            feature_cols=cols,
         )
         assert result is not None
 
@@ -223,20 +253,32 @@ class TestWeightedAverage:
     def test_single_game_falls_back_to_single_row(self, predictor, features_df):
         """When a team has only 1 game, the single row's value is used directly."""
         # Build a tiny DF with just 1 home game for Team_X
-        rows = [{
-            "GAME_ID": "G0001", "GAME_DATE": pd.Timestamp("2025-01-10"),
-            "TEAM_ID_home": 99, "TEAM_ID_away": 98,
-            "TEAM_NAME_home": "Team_X", "TEAM_NAME_away": "Team_Y",
-            "avg_pts_5g_home": 115.0, "avg_pts_5g_away": 108.0,
-            "pts_diff_5g": 7.0,
-            "rest_home_days": 2.0, "rest_away_days": 3.0,
-            "travel_distance": 500.0, "h2h_win_rate": 0.5, "h2h_avg_margin": 2.0,
-        }]
+        rows = [
+            {
+                "GAME_ID": "G0001",
+                "GAME_DATE": pd.Timestamp("2025-01-10"),
+                "TEAM_ID_home": 99,
+                "TEAM_ID_away": 98,
+                "TEAM_NAME_home": "Team_X",
+                "TEAM_NAME_away": "Team_Y",
+                "avg_pts_5g_home": 115.0,
+                "avg_pts_5g_away": 108.0,
+                "pts_diff_5g": 7.0,
+                "rest_home_days": 2.0,
+                "rest_away_days": 3.0,
+                "travel_distance": 500.0,
+                "h2h_win_rate": 0.5,
+                "h2h_avg_margin": 2.0,
+            }
+        ]
         tiny_df = pd.DataFrame(rows)
 
         cols = ["avg_pts_5g_home", "avg_pts_5g_away", "pts_diff_5g"]
         result = predictor._build_feature_vector(
-            "Team_X", "Team_Y", tiny_df, feature_cols=cols,
+            "Team_X",
+            "Team_Y",
+            tiny_df,
+            feature_cols=cols,
         )
         assert result is not None
         assert result["avg_pts_5g_home"] == 115.0  # Single row, unchanged
@@ -248,20 +290,32 @@ class TestWeightedAverage:
         # Build a DF with exactly 2 home games for Team_X
         rows = []
         for g in range(2):
-            rows.append({
-                "GAME_ID": f"G{g:04d}", "GAME_DATE": pd.Timestamp(f"2025-01-{10 + g:02d}"),
-                "TEAM_ID_home": 99, "TEAM_ID_away": 98,
-                "TEAM_NAME_home": "Team_X", "TEAM_NAME_away": "Team_Y",
-                "avg_pts_5g_home": float(110 + g * 5), "avg_pts_5g_away": 108.0,
-                "pts_diff_5g": float(2 + g * 5),
-                "rest_home_days": 2.0, "rest_away_days": 3.0,
-                "travel_distance": 500.0, "h2h_win_rate": 0.5, "h2h_avg_margin": 2.0,
-            })
+            rows.append(
+                {
+                    "GAME_ID": f"G{g:04d}",
+                    "GAME_DATE": pd.Timestamp(f"2025-01-{10 + g:02d}"),
+                    "TEAM_ID_home": 99,
+                    "TEAM_ID_away": 98,
+                    "TEAM_NAME_home": "Team_X",
+                    "TEAM_NAME_away": "Team_Y",
+                    "avg_pts_5g_home": float(110 + g * 5),
+                    "avg_pts_5g_away": 108.0,
+                    "pts_diff_5g": float(2 + g * 5),
+                    "rest_home_days": 2.0,
+                    "rest_away_days": 3.0,
+                    "travel_distance": 500.0,
+                    "h2h_win_rate": 0.5,
+                    "h2h_avg_margin": 2.0,
+                }
+            )
         tiny_df = pd.DataFrame(rows)
 
         cols = ["avg_pts_5g_home"]
         result = predictor._build_feature_vector(
-            "Team_X", "Team_Y", tiny_df, feature_cols=cols,
+            "Team_X",
+            "Team_Y",
+            tiny_df,
+            feature_cols=cols,
         )
         assert result is not None
         # Most recent (index 1, value 115) gets 0.5/0.8 = 0.625
@@ -277,15 +331,17 @@ class TestDiffColumns:
         """Columns ending in _5g (not _diff) fall through to direct row."""
         cols = ["avg_pts_5g_home", "avg_pts_5g_away", "pts_diff_5g"]
         result = predictor._build_feature_vector(
-            "Team_A", "Team_B", features_df, feature_cols=cols,
+            "Team_A",
+            "Team_B",
+            features_df,
+            feature_cols=cols,
         )
         assert result is not None
         # pts_diff_5g does NOT end with "_diff" — it ends with "_5g".
         # The _diff branch only triggers for columns literally ending in "_diff".
         # Reverts to direct row value (from the DataFrame), not home - away.
-        direct_mask = (
-            (features_df["TEAM_NAME_home"] == "Team_A")
-            & (features_df["TEAM_NAME_away"] == "Team_B")
+        direct_mask = (features_df["TEAM_NAME_home"] == "Team_A") & (
+            features_df["TEAM_NAME_away"] == "Team_B"
         )
         if direct_mask.any():
             latest = features_df[direct_mask].iloc[-1]
@@ -295,15 +351,17 @@ class TestDiffColumns:
         """power_diff ends with _diff but base='power' doesn't match any columns."""
         cols = ["composite_power_home", "composite_power_away", "power_diff"]
         result = predictor._build_feature_vector(
-            "Team_A", "Team_B", features_df, feature_cols=cols,
+            "Team_A",
+            "Team_B",
+            features_df,
+            feature_cols=cols,
         )
         assert result is not None
         # power_diff -> base='power' -> looks for 'power_home'/'power_away'
         # Columns are 'composite_power_home'/'composite_power_away' — no match
         # Falls through to the direct row value from the DataFrame.
-        direct_mask = (
-            (features_df["TEAM_NAME_home"] == "Team_A")
-            & (features_df["TEAM_NAME_away"] == "Team_B")
+        direct_mask = (features_df["TEAM_NAME_home"] == "Team_A") & (
+            features_df["TEAM_NAME_away"] == "Team_B"
         )
         if direct_mask.any():
             latest = features_df[direct_mask].iloc[-1]
@@ -313,20 +371,34 @@ class TestDiffColumns:
         """_diff columns with matching _home/_away base names compute home - away."""
         rows = [
             {
-                "GAME_ID": "G0001", "GAME_DATE": pd.Timestamp("2025-01-10"),
-                "TEAM_ID_home": 0, "TEAM_ID_away": 1,
-                "TEAM_NAME_home": "Team_X", "TEAM_NAME_away": "Team_Y",
-                "feature_home": 115.0, "feature_away": 108.0,
+                "GAME_ID": "G0001",
+                "GAME_DATE": pd.Timestamp("2025-01-10"),
+                "TEAM_ID_home": 0,
+                "TEAM_ID_away": 1,
+                "TEAM_NAME_home": "Team_X",
+                "TEAM_NAME_away": "Team_Y",
+                "feature_home": 115.0,
+                "feature_away": 108.0,
                 "feature_diff": 999.0,  # Intentionally wrong — must be computed as 115-108=7
-                "other_home": 50.0, "other_away": 48.0,
-                "other_diff": 777.0,    # Intentionally wrong — must be computed as 50-48=2
+                "other_home": 50.0,
+                "other_away": 48.0,
+                "other_diff": 777.0,  # Intentionally wrong — must be computed as 50-48=2
             },
         ]
         df = pd.DataFrame(rows)
-        cols = ["feature_home", "feature_away", "feature_diff",
-                "other_home", "other_away", "other_diff"]
+        cols = [
+            "feature_home",
+            "feature_away",
+            "feature_diff",
+            "other_home",
+            "other_away",
+            "other_diff",
+        ]
         result = predictor._build_feature_vector(
-            "Team_X", "Team_Y", df, feature_cols=cols,
+            "Team_X",
+            "Team_Y",
+            df,
+            feature_cols=cols,
         )
         assert result is not None
         # feature_diff -> base="feature" -> looks for "feature_home" and
@@ -347,14 +419,16 @@ class TestGlobalFeatures:
         """Global features like rest_home_days should match the most recent direct matchup."""
         cols = ["rest_home_days", "rest_away_days", "travel_distance", "h2h_win_rate"]
         result = predictor._build_feature_vector(
-            "Team_A", "Team_B", features_df, feature_cols=cols,
+            "Team_A",
+            "Team_B",
+            features_df,
+            feature_cols=cols,
         )
         assert result is not None
 
         # Find the most recent direct matchup (Team_A home vs Team_B away)
-        direct_mask = (
-            (features_df["TEAM_NAME_home"] == "Team_A")
-            & (features_df["TEAM_NAME_away"] == "Team_B")
+        direct_mask = (features_df["TEAM_NAME_home"] == "Team_A") & (
+            features_df["TEAM_NAME_away"] == "Team_B"
         )
         if direct_mask.any():
             latest_game = features_df[direct_mask].iloc[-1]
@@ -367,13 +441,15 @@ class TestGlobalFeatures:
         """H2H columns like h2h_win_rate should use direct matchup row."""
         cols = ["h2h_win_rate", "h2h_avg_margin"]
         result = predictor._build_feature_vector(
-            "Team_A", "Team_B", features_df, feature_cols=cols,
+            "Team_A",
+            "Team_B",
+            features_df,
+            feature_cols=cols,
         )
         assert result is not None
 
-        direct_mask = (
-            (features_df["TEAM_NAME_home"] == "Team_A")
-            & (features_df["TEAM_NAME_away"] == "Team_B")
+        direct_mask = (features_df["TEAM_NAME_home"] == "Team_A") & (
+            features_df["TEAM_NAME_away"] == "Team_B"
         )
         if direct_mask.any():
             latest = features_df[direct_mask].iloc[-1]
@@ -384,20 +460,25 @@ class TestGlobalFeatures:
 class TestWeightingAcrossPeriods:
     """Tests that the weighted average correctly handles different period scenarios."""
 
-    def _make_controlled_df(self, values: list[float], col_suffix: str = "home") -> pd.DataFrame:
+    def _make_controlled_df(
+        self, values: list[float], col_suffix: str = "home"
+    ) -> pd.DataFrame:
         """Create a minimal DF where a team's feature values are exactly controlled."""
         rows = []
         for i, val in enumerate(values):
             team = "Team_X" if col_suffix == "home" else "Team_Y"
             other = "Team_Y" if col_suffix == "home" else "Team_X"
-            rows.append({
-                "GAME_ID": f"G{i:04d}",
-                "GAME_DATE": pd.Timestamp(f"2025-01-{10 + i:02d}"),
-                "TEAM_ID_home": 0, "TEAM_ID_away": 1,
-                "TEAM_NAME_home": team,
-                "TEAM_NAME_away": other,
-                f"avg_test_{col_suffix}": float(val),
-            })
+            rows.append(
+                {
+                    "GAME_ID": f"G{i:04d}",
+                    "GAME_DATE": pd.Timestamp(f"2025-01-{10 + i:02d}"),
+                    "TEAM_ID_home": 0,
+                    "TEAM_ID_away": 1,
+                    "TEAM_NAME_home": team,
+                    "TEAM_NAME_away": other,
+                    f"avg_test_{col_suffix}": float(val),
+                }
+            )
         return pd.DataFrame(rows)
 
     def test_three_games_correct_weights(self, predictor):
@@ -405,7 +486,10 @@ class TestWeightingAcrossPeriods:
         df = self._make_controlled_df([100, 120, 140])
         cols = ["avg_test_home"]
         result = predictor._build_feature_vector(
-            "Team_X", "Team_Y", df, feature_cols=cols,
+            "Team_X",
+            "Team_Y",
+            df,
+            feature_cols=cols,
         )
         assert result is not None
         # 140*0.5 + 120*0.3 + 100*0.2 = 70 + 36 + 20 = 126
@@ -416,7 +500,10 @@ class TestWeightingAcrossPeriods:
         df = self._make_controlled_df([150])
         cols = ["avg_test_home"]
         result = predictor._build_feature_vector(
-            "Team_X", "Team_Y", df, feature_cols=cols,
+            "Team_X",
+            "Team_Y",
+            df,
+            feature_cols=cols,
         )
         assert result is not None
         assert result["avg_test_home"] == 150.0
@@ -432,7 +519,10 @@ class TestWeightingAcrossPeriods:
         df = self._make_controlled_df([80, 110, 112])
         cols = ["avg_test_home"]
         result = predictor._build_feature_vector(
-            "Team_X", "Team_Y", df, feature_cols=cols,
+            "Team_X",
+            "Team_Y",
+            df,
+            feature_cols=cols,
         )
         assert result is not None
         # 112*0.5 + 110*0.3 + 80*0.2 = 56 + 33 + 16 = 105
@@ -446,17 +536,32 @@ class TestEdgeCases:
         """Team name matching should be case-insensitive."""
         cols = ["avg_pts_5g_home"]
         result_upper = predictor._build_feature_vector(
-            "TEAM_A", "TEAM_B", features_df, feature_cols=cols,
+            "TEAM_A",
+            "TEAM_B",
+            features_df,
+            feature_cols=cols,
         )
         result_lower = predictor._build_feature_vector(
-            "team_a", "team_b", features_df, feature_cols=cols,
+            "team_a",
+            "team_b",
+            features_df,
+            feature_cols=cols,
         )
         result_mixed = predictor._build_feature_vector(
-            "Team_A", "Team_B", features_df, feature_cols=cols,
+            "Team_A",
+            "Team_B",
+            features_df,
+            feature_cols=cols,
         )
         assert result_upper is not None
-        assert abs(result_upper["avg_pts_5g_home"] - result_lower["avg_pts_5g_home"]) < 0.001
-        assert abs(result_upper["avg_pts_5g_home"] - result_mixed["avg_pts_5g_home"]) < 0.001
+        assert (
+            abs(result_upper["avg_pts_5g_home"] - result_lower["avg_pts_5g_home"])
+            < 0.001
+        )
+        assert (
+            abs(result_upper["avg_pts_5g_home"] - result_mixed["avg_pts_5g_home"])
+            < 0.001
+        )
 
     def test_team_with_spaces(self, predictor, features_df):
         """Team names with leading/trailing spaces should be trimmed."""
@@ -468,7 +573,10 @@ class TestEdgeCases:
 
         cols = ["avg_pts_5g_home"]
         result = predictor._build_feature_vector(
-            "Team_A", "Team_B", df, feature_cols=cols,
+            "Team_A",
+            "Team_B",
+            df,
+            feature_cols=cols,
         )
         assert result is not None
         assert np.isfinite(result["avg_pts_5g_home"])
@@ -477,7 +585,10 @@ class TestEdgeCases:
         """Direct matchup should work when Team_A is away and Team_B is home."""
         cols = ["rest_home_days"]
         result = predictor._build_feature_vector(
-            "Team_C", "Team_A", features_df, feature_cols=cols,
+            "Team_C",
+            "Team_A",
+            features_df,
+            feature_cols=cols,
         )
         assert result is not None
         # Should find a direct matchup even though Team_C is away and Team_A is home
@@ -486,38 +597,62 @@ class TestEdgeCases:
     def test_all_requested_cols_exist(self, predictor, features_df):
         """Auto-detected feature columns should all exist in the result."""
         result = predictor._build_feature_vector(
-            "Team_A", "Team_B", features_df,
+            "Team_A",
+            "Team_B",
+            features_df,
         )
         assert result is not None
         # Every column in the result should have a finite value
-        assert all(pd.api.types.is_float_dtype(result) for _ in [0]), "All values should be float"
+        assert all(pd.api.types.is_float_dtype(result) for _ in [0]), (
+            "All values should be float"
+        )
 
     def test_many_columns_consistency(self, predictor, features_df):
         """With many columns, all should be computed and finite."""
         # Use all available feature columns from the DF that end with _home, _away, or _diff
-        cols = [c for c in features_df.columns if (
-            c.endswith("_home") or c.endswith("_away") or c.endswith("_diff")
-        ) and c not in ("TEAM_NAME_home", "TEAM_NAME_away", "TEAM_ID_home", "TEAM_ID_away")]
+        cols = [
+            c
+            for c in features_df.columns
+            if (c.endswith("_home") or c.endswith("_away") or c.endswith("_diff"))
+            and c
+            not in ("TEAM_NAME_home", "TEAM_NAME_away", "TEAM_ID_home", "TEAM_ID_away")
+        ]
         # Add rest, travel, H2H columns
-        extra = ["rest_home_days", "rest_away_days", "travel_distance",
-                 "h2h_win_rate", "h2h_avg_margin"]
+        extra = [
+            "rest_home_days",
+            "rest_away_days",
+            "travel_distance",
+            "h2h_win_rate",
+            "h2h_avg_margin",
+        ]
         cols = [c for c in cols if c in features_df.columns] + extra
 
         result = predictor._build_feature_vector(
-            "Team_A", "Team_B", features_df, feature_cols=cols,
+            "Team_A",
+            "Team_B",
+            features_df,
+            feature_cols=cols,
         )
         assert result is not None
         assert len(result) == len(cols)
-        assert np.isfinite(result.values).all(), f"Non-finite values found in {len(cols)} cols"
+        assert np.isfinite(result.values).all(), (
+            f"Non-finite values found in {len(cols)} cols"
+        )
 
     def test_consecutive_calls_same_teams_consistent(self, predictor, features_df):
         """Calling twice for the same matchup should give the same result."""
         cols = ["avg_pts_5g_home", "avg_pts_5g_away", "pts_diff_5g"]
         r1 = predictor._build_feature_vector(
-            "Team_A", "Team_B", features_df, feature_cols=cols,
+            "Team_A",
+            "Team_B",
+            features_df,
+            feature_cols=cols,
         )
         r2 = predictor._build_feature_vector(
-            "Team_A", "Team_B", features_df, feature_cols=cols,
+            "Team_A",
+            "Team_B",
+            features_df,
+            feature_cols=cols,
         )
         assert r1 is not None and r2 is not None
         for col in cols:
@@ -530,15 +665,25 @@ class TestTotalsSpecific:
     def test_totals_feature_cols_work(self, predictor, features_df):
         """Feature columns commonly used by the TotalsRegressor should produce valid vectors."""
         cols = [
-            "avg_pts_5g_home", "avg_pts_5g_away", "pts_diff_5g",
-            "avg_reb_5g_home", "avg_reb_5g_away",
-            "avg_ast_5g_home", "avg_ast_5g_away",
-            "ema_pts_10g_home", "ema_pts_10g_away",
-            "rest_home_days", "rest_away_days",
-            "travel_distance", "h2h_win_rate",
+            "avg_pts_5g_home",
+            "avg_pts_5g_away",
+            "pts_diff_5g",
+            "avg_reb_5g_home",
+            "avg_reb_5g_away",
+            "avg_ast_5g_home",
+            "avg_ast_5g_away",
+            "ema_pts_10g_home",
+            "ema_pts_10g_away",
+            "rest_home_days",
+            "rest_away_days",
+            "travel_distance",
+            "h2h_win_rate",
         ]
         result = predictor._build_feature_vector(
-            "Team_A", "Team_B", features_df, feature_cols=cols,
+            "Team_A",
+            "Team_B",
+            features_df,
+            feature_cols=cols,
         )
         assert result is not None
         assert len(result) == len(cols)

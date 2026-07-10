@@ -34,7 +34,7 @@ Inference
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional
 
@@ -45,12 +45,14 @@ logger = logging.getLogger(__name__)
 
 # ── Data ──────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class TotalsPrediction:
     """Result of a totals prediction for a single game (v6.5)."""
+
     predicted_total: float = 0.0
     edge_pct: float = 0.0
-    direction: str = "neutral"   # "over", "under", or "neutral"
+    direction: str = "neutral"  # "over", "under", or "neutral"
     confidence: str = "low"
     market_total: Optional[float] = None
     n_models: int = 0
@@ -62,6 +64,7 @@ class TotalsPrediction:
 
 
 # ── Model ─────────────────────────────────────────────────────────────────
+
 
 class TotalsRegressor:
     """
@@ -96,7 +99,9 @@ class TotalsRegressor:
         self._use_quantile = use_quantile
 
         # Model diagnostics (v6.6)
-        self._model_diagnostics: dict[str, dict] = {}  # {name: {mae, r2, n_train, status}}
+        self._model_diagnostics: dict[
+            str, dict
+        ] = {}  # {name: {mae, r2, n_train, status}}
 
         # Quantile models (v6.5)
         self._quantile_lower: Any = None  # 10th percentile
@@ -131,12 +136,28 @@ class TotalsRegressor:
             self (fitted)
         """
         n = len(X)
+        n_features = X.shape[1]
         self._target_mean = float(np.mean(y_total))
 
         if feature_names and len(feature_names) == X.shape[1]:
             self._feature_names = feature_names
         else:
-            self._feature_names = [f"f{i}" for i in range(X.shape[1])]
+            self._feature_names = [f"f{i}" for i in range(n_features)]
+
+        # Adaptive model complexity based on dataset size
+        # With small datasets (<500 games), reduce tree depth and estimators
+        # to prevent overfitting. With larger datasets, use full capacity.
+        _small_data = n < 500
+        _n_est = 300 if _small_data else 600
+        _max_depth = 4 if _small_data else 6
+        _lr = 0.05 if _small_data else 0.03  # Higher LR for small data = faster convergence
+        _leaf_ratio = 0.5 if _small_data else 1.0
+
+        if verbose:
+            logger.info(
+                f"TotalsRegressor: {n} samples, {n_features} features "
+                f"({'small' if _small_data else 'standard'} dataset config)"
+            )
 
         models: dict[str, Any] = {}
         model_diagnostics: dict[str, dict] = {}
@@ -144,10 +165,11 @@ class TotalsRegressor:
         # ── 1. XGBoost Regressor ─────────────────────────────────────
         try:
             from xgboost import XGBRegressor
+
             xgb = XGBRegressor(
-                n_estimators=600,
-                max_depth=6,
-                learning_rate=0.03,
+                n_estimators=_n_est,
+                max_depth=_max_depth,
+                learning_rate=_lr,
                 subsample=0.8,
                 colsample_bytree=0.7,
                 reg_alpha=1.0,
@@ -161,7 +183,8 @@ class TotalsRegressor:
                 try:
                     split_idx = int(n * 0.85)
                     xgb.fit(
-                        X[:split_idx], y_total[:split_idx],
+                        X[:split_idx],
+                        y_total[:split_idx],
                         eval_set=[(X[split_idx:], y_total[split_idx:])],
                         verbose=False,
                     )
@@ -172,8 +195,8 @@ class TotalsRegressor:
                 if self._use_early_stopping:
                     try:
                         xgb_no_es = XGBRegressor(
-                            n_estimators=600,
-                            max_depth=6,
+                            n_estimators=_n_est,
+                            max_depth=_max_depth,
                             learning_rate=0.03,
                             subsample=0.8,
                             colsample_bytree=0.7,
@@ -197,11 +220,20 @@ class TotalsRegressor:
         # ── 2. LightGBM Regressor ────────────────────────────────────
         try:
             from lightgbm import LGBMRegressor
+            # Lazy import LGBMEarlyStopping to avoid ImportError on older versions
+            try:
+                from lightgbm import early_stopping as _lgb_early_stopping
+            except ImportError:
+                try:
+                    from lightgbm.callback import early_stopping as _lgb_early_stopping
+                except ImportError:
+                    _lgb_early_stopping = None
+
             lgb = LGBMRegressor(
-                n_estimators=600,
+                n_estimators=_n_est,
                 max_depth=-1,
-                num_leaves=48,
-                learning_rate=0.03,
+                num_leaves=int(48 * _leaf_ratio),
+                learning_rate=_lr,
                 subsample=0.8,
                 colsample_bytree=0.7,
                 reg_alpha=1.0,
@@ -211,13 +243,14 @@ class TotalsRegressor:
                 random_state=self._random_state,
                 verbose=-1,
             )
-            if self._use_early_stopping and n > 200:
+            if self._use_early_stopping and n > 200 and _lgb_early_stopping is not None:
                 try:
                     split_idx = int(n * 0.85)
                     lgb.fit(
-                        X[:split_idx], y_total[:split_idx],
+                        X[:split_idx],
+                        y_total[:split_idx],
                         eval_set=[(X[split_idx:], y_total[split_idx:])],
-                        callbacks=[LGBMEarlyStopping(50)],
+                        callbacks=[_lgb_early_stopping(50)],
                     )
                 except Exception:
                     lgb.fit(X, y_total)
@@ -232,10 +265,11 @@ class TotalsRegressor:
         if self._use_catboost:
             try:
                 from catboost import CatBoostRegressor
+
                 cb = CatBoostRegressor(
-                    iterations=500,
-                    depth=6,
-                    learning_rate=0.05,
+                    iterations=_n_est,
+                    depth=_max_depth,
+                    learning_rate=_lr,
                     l2_leaf_reg=3.0,
                     subsample=0.8,
                     random_seed=self._random_state,
@@ -247,7 +281,8 @@ class TotalsRegressor:
                     try:
                         split_idx = int(n * 0.85)
                         cb.fit(
-                            X[:split_idx], y_total[:split_idx],
+                            X[:split_idx],
+                            y_total[:split_idx],
                             eval_set=(X[split_idx:], y_total[split_idx:]),
                             verbose=False,
                         )
@@ -263,9 +298,10 @@ class TotalsRegressor:
         # ── 4. Random Forest Regressor ───────────────────────────────
         try:
             from sklearn.ensemble import RandomForestRegressor
+
             rf = RandomForestRegressor(
-                n_estimators=400,
-                max_depth=10,
+                n_estimators=int(_n_est * 0.7),  # RF needs fewer trees
+                max_depth=_max_depth * 2,  # RF less prone to overfitting than boosting
                 min_samples_leaf=5,
                 max_features="sqrt",
                 random_state=self._random_state,
@@ -281,9 +317,10 @@ class TotalsRegressor:
         if self._use_histgb:
             try:
                 from sklearn.ensemble import HistGradientBoostingRegressor
+
                 hgb = HistGradientBoostingRegressor(
-                    max_iter=600,
-                    max_depth=5,
+                    max_iter=_n_est,
+                    max_depth=_max_depth,
                     learning_rate=0.03,
                     max_leaf_nodes=63,
                     min_samples_leaf=20,
@@ -299,7 +336,8 @@ class TotalsRegressor:
                     try:
                         split_idx = int(n * 0.85)
                         hgb.fit(
-                            X[:split_idx], y_total[:split_idx].ravel(),
+                            X[:split_idx],
+                            y_total[:split_idx].ravel(),
                         )
                     except Exception:
                         hgb.fit(X, y_total)
@@ -314,9 +352,10 @@ class TotalsRegressor:
         if self._use_extratrees:
             try:
                 from sklearn.ensemble import ExtraTreesRegressor
+
                 et = ExtraTreesRegressor(
-                    n_estimators=600,
-                    max_depth=12,
+                    n_estimators=int(_n_est * 0.7),
+                    max_depth=_max_depth * 2,
                     min_samples_leaf=3,
                     max_features="sqrt",
                     min_samples_split=8,
@@ -333,6 +372,7 @@ class TotalsRegressor:
         # ── 7. Fallback: Ridge ────────────────────────────────────────
         if not models:
             from sklearn.linear_model import Ridge
+
             ridge = Ridge(alpha=2.0, random_state=self._random_state)
             ridge.fit(X, y_total)
             models["Ridge"] = ridge
@@ -426,7 +466,11 @@ class TotalsRegressor:
 
             total_inv = sum(1.0 / max(m, 0.1) for m in model_maes.values())
             for name, m in model_maes.items():
-                weights[name] = (1.0 / max(m, 0.1)) / total_inv if total_inv > 0 else 1.0 / len(model_maes)
+                weights[name] = (
+                    (1.0 / max(m, 0.1)) / total_inv
+                    if total_inv > 0
+                    else 1.0 / len(model_maes)
+                )
         else:
             for name in models:
                 weights[name] = 1.0
@@ -497,7 +541,9 @@ class TotalsRegressor:
         """Predict total points for each sample."""
         if not self._fitted or not self._models:
             return np.full(X.shape[0], self._target_mean)
-        ensemble_pred = self._predict_ensemble_internal(X, self._models, equal_weight=False)
+        ensemble_pred = self._predict_ensemble_internal(
+            X, self._models, equal_weight=False
+        )
         return np.clip(ensemble_pred, 160.0, 280.0)
 
     def predict_quantiles(
@@ -509,7 +555,11 @@ class TotalsRegressor:
         Returns:
             (p10, p90) tuple, where each is shape (n_samples,) or None
         """
-        if not self._use_quantile or self._quantile_lower is None or self._quantile_upper is None:
+        if (
+            not self._use_quantile
+            or self._quantile_lower is None
+            or self._quantile_upper is None
+        ):
             return None, None
 
         try:
@@ -545,7 +595,11 @@ class TotalsRegressor:
         p10, p90 = self.predict_quantiles(X)
         pred_p10 = float(p10[0]) if p10 is not None else None
         pred_p90 = float(p90[0]) if p90 is not None else None
-        interval_width = (pred_p90 - pred_p10) if pred_p10 is not None and pred_p90 is not None else None
+        interval_width = (
+            (pred_p90 - pred_p10)
+            if pred_p10 is not None and pred_p90 is not None
+            else None
+        )
 
         # Compute edge vs market total
         if market_total and market_total > 0:
@@ -629,7 +683,11 @@ class TotalsRegressor:
         all_weights = []
 
         for name, model in models.items():
-            w = 1.0 / len(models) if equal_weight else self._weights.get(name, 1.0 / len(models))
+            w = (
+                1.0 / len(models)
+                if equal_weight
+                else self._weights.get(name, 1.0 / len(models))
+            )
             try:
                 preds = model.predict(X)
                 if hasattr(preds, "ndim") and preds.ndim > 1:
@@ -644,24 +702,23 @@ class TotalsRegressor:
 
         total_weight = sum(all_weights)
         if total_weight > 0:
-            ensemble = np.average(np.column_stack(all_preds), axis=1, weights=all_weights)
+            ensemble = np.average(
+                np.column_stack(all_preds), axis=1, weights=all_weights
+            )
         else:
             ensemble = np.mean(all_preds, axis=1)
 
         return ensemble
 
 
-# ── LightGBM early stopping compatibility ────────────────────────────────
-try:
-    from lightgbm import early_stopping as LGBMEarlyStopping
-except ImportError:
-    try:
-        from lightgbm.callback import early_stopping as LGBMEarlyStopping
-    except ImportError:
-        LGBMEarlyStopping = None
+# LGBMEarlyStopping is imported lazily inside the fit() method where it's used
+# to avoid ImportError on older LightGBM versions at module load time.
+# This mirrors the approach used in hyperparameter_tuning.py.
+LGBMEarlyStopping = None  # Fallback — set inside fit()
 
 
 # ── Clone helper for chronological CV (v6.6) ────────────────────────────
+
 
 def _clone_model(model: Any) -> Any:
     """
@@ -674,6 +731,7 @@ def _clone_model(model: Any) -> Any:
     """
     try:
         from sklearn.base import clone
+
         return clone(model)
     except Exception:
         pass
@@ -684,6 +742,4 @@ def _clone_model(model: Any) -> Any:
         params = model.get_params()
         return model_class(**params)
     except Exception as e:
-        raise ValueError(
-            f"Cannot clone model of type {model.__class__.__name__}: {e}"
-        )
+        raise ValueError(f"Cannot clone model of type {model.__class__.__name__}: {e}")

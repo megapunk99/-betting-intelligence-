@@ -47,7 +47,7 @@ ALERTS_LOG = PROJECT_ROOT / "data" / "analytics_alerts.jsonl"
 DEFAULT_BANKROLL = 10_000.0
 TRAILING_WINDOW_DAYS = 30
 ALERT_ROI_THRESHOLD = -0.05  # -5% ROI triggers alert
-MIN_BETS_FOR_ALERT = 5       # Minimum bets before we sound the alarm
+MIN_BETS_FOR_ALERT = 5  # Minimum bets before we sound the alarm
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -60,30 +60,30 @@ class ResolvedBet:
     """A single prediction that has been matched against an actual result."""
 
     # ── Identity ─────────────────────────────────────────────────────
-    prediction_id: str = ""          # Unique ID from the log entry
-    run_id: str = ""                 # Run ID (can group by prediction run)
-    source: str = "forward_test"      # "forward_test", "daily_run", etc.
-    source_file: str = ""             # Path to the source file
+    prediction_id: str = ""  # Unique ID from the log entry
+    run_id: str = ""  # Run ID (can group by prediction run)
+    source: str = "forward_test"  # "forward_test", "daily_run", etc.
+    source_file: str = ""  # Path to the source file
 
     # ── Game info ────────────────────────────────────────────────────
-    game_date: str = ""              # YYYY-MM-DD
-    matchup: str = ""                # "Away @ Home"
+    game_date: str = ""  # YYYY-MM-DD
+    matchup: str = ""  # "Away @ Home"
     home_team: str = ""
     away_team: str = ""
     league: str = "NBA"
 
     # ── Prediction details ───────────────────────────────────────────
-    bet_type: str = ""               # "total", "moneyline", "both"
-    bet_side: str = ""               # e.g., "Total OVER 224.5", "ML Celtics"
-    market_line: float = 0.0         # Market line at prediction time
-    predicted_value: float = 0.0     # What the model predicted
-    edge_pct: float = 0.0            # Predicted edge percentage
-    stake_dollars: float = 0.0       # Recommended stake
+    bet_type: str = ""  # "total", "moneyline", "both"
+    bet_side: str = ""  # e.g., "Total OVER 224.5", "ML Celtics"
+    market_line: float = 0.0  # Market line at prediction time
+    predicted_value: float = 0.0  # What the model predicted
+    edge_pct: float = 0.0  # Predicted edge percentage
+    stake_dollars: float = 0.0  # Recommended stake
     kelly_fraction: float = 0.0
-    confidence: str = "low"          # "high", "medium", "low"
+    confidence: str = "low"  # "high", "medium", "low"
 
     # ── Model info ───────────────────────────────────────────────────
-    model_name: str = "ensemble"     # Which model generated this
+    model_name: str = "ensemble"  # Which model generated this
     predicted_total: Optional[float] = None
     home_win_prob: Optional[float] = None
 
@@ -94,12 +94,12 @@ class ResolvedBet:
     actual_home_win: Optional[bool] = None
 
     # ── Resolution ───────────────────────────────────────────────────
-    result: Optional[str] = None     # "WIN", "LOSS", "PUSH"
-    profit_dollars: float = 0.0      # Actual profit/loss in dollars
+    result: Optional[str] = None  # "WIN", "LOSS", "PUSH"
+    profit_dollars: float = 0.0  # Actual profit/loss in dollars
     resolved_at: Optional[str] = None
 
     # ── Derived (computed after resolution) ──────────────────────────
-    roi: float = 0.0                 # profit / stake
+    roi: float = 0.0  # profit / stake
     is_clear_pick: bool = False
 
     # ── Closing Line Value (filled by compute_clv) ───────────────────
@@ -112,7 +112,7 @@ class ResolvedBet:
 class StrategyPerformance:
     """Performance of a single strategy (model/league/bet_type combo) over a window."""
 
-    strategy_name: str = ""           # e.g., "ensemble/NBA/total"
+    strategy_name: str = ""  # e.g., "ensemble/NBA/total"
     model: str = "ensemble"
     league: str = "NBA"
     bet_type: str = "total"
@@ -128,11 +128,11 @@ class StrategyPerformance:
     roi: float = 0.0
 
     avg_edge: float = 0.0
-    avg_odds: float = 0.0           # Average decimal odds (-110 = 1.909)
-    sharpe: float = 0.0             # Risk-adjusted return
+    avg_odds: float = 0.0  # Average decimal odds (-110 = 1.909)
+    sharpe: float = 0.0  # Risk-adjusted return
 
     trailing_profits: list[float] = field(default_factory=list)  # Daily P&L
-    is_alerted: bool = False         # True if ROI < threshold
+    is_alerted: bool = False  # True if ROI < threshold
     last_bet_date: str = ""
 
 
@@ -196,7 +196,9 @@ class ResultsTracker:
         predictions_dir: Optional[Path] = None,
         bankroll: float = DEFAULT_BANKROLL,
     ):
-        self.predictions_dir = Path(predictions_dir) if predictions_dir else PREDICTIONS_DIR
+        self.predictions_dir = (
+            Path(predictions_dir) if predictions_dir else PREDICTIONS_DIR
+        )
         self.bankroll = bankroll
         self.predictions_dir.mkdir(parents=True, exist_ok=True)
         REPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -228,8 +230,12 @@ class ResultsTracker:
             return 0
 
         # Step 2: Separate resolved vs unresolved
-        resolved_entries = [p for p in self._raw_predictions if p.get("actual_result") is not None]
-        unresolved = [p for p in self._raw_predictions if p.get("actual_result") is None]
+        resolved_entries = [
+            p for p in self._raw_predictions if p.get("actual_result") is not None
+        ]
+        unresolved = [
+            p for p in self._raw_predictions if p.get("actual_result") is None
+        ]
 
         logger.info(
             f"Loaded {len(self._raw_predictions)} predictions "
@@ -238,7 +244,9 @@ class ResultsTracker:
 
         if not unresolved:
             # Already all resolved — just load them
-            self._resolved_bets = [self._entry_to_resolved_bet(e) for e in resolved_entries]
+            self._resolved_bets = [
+                self._entry_to_resolved_bet(e) for e in resolved_entries
+            ]
             logger.info("All predictions already resolved")
             return 0
 
@@ -254,15 +262,19 @@ class ResultsTracker:
         for entry in unresolved:
             result = self._match_entry_to_result(entry, results_map)
             if result:
-                entry.update({
-                    "actual_home_score": result["home_score"],
-                    "actual_away_score": result["away_score"],
-                    "actual_total": result["home_score"] + result["away_score"],
-                    "actual_home_win": 1 if result["home_score"] > result["away_score"] else 0,
-                    "actual_result": result["verdict"],
-                    "actual_profit": result["profit"],
-                    "resolved_at": datetime.now().isoformat(),
-                })
+                entry.update(
+                    {
+                        "actual_home_score": result["home_score"],
+                        "actual_away_score": result["away_score"],
+                        "actual_total": result["home_score"] + result["away_score"],
+                        "actual_home_win": 1
+                        if result["home_score"] > result["away_score"]
+                        else 0,
+                        "actual_result": result["verdict"],
+                        "actual_profit": result["profit"],
+                        "resolved_at": datetime.now().isoformat(),
+                    }
+                )
                 newly_resolved += 1
 
         if newly_resolved > 0:
@@ -270,14 +282,20 @@ class ResultsTracker:
             self._save_resolved_predictions()
 
         # Step 6: Build ResolvedBet objects from ALL entries
-        all_entries = [p for p in self._raw_predictions if p.get("actual_result") is not None]
+        all_entries = [
+            p for p in self._raw_predictions if p.get("actual_result") is not None
+        ]
         self._resolved_bets = [self._entry_to_resolved_bet(e) for e in all_entries]
-        self._unresolved_predictions = [p for p in self._raw_predictions if p.get("actual_result") is None]
+        self._unresolved_predictions = [
+            p for p in self._raw_predictions if p.get("actual_result") is None
+        ]
 
         logger.info(f"Resolved {newly_resolved} predictions against actual results")
         return newly_resolved
 
-    def generate_report(self, window_days: int = TRAILING_WINDOW_DAYS) -> PerformanceReport:
+    def generate_report(
+        self, window_days: int = TRAILING_WINDOW_DAYS
+    ) -> PerformanceReport:
         """
         Generate a comprehensive performance report from resolved bets.
 
@@ -306,7 +324,9 @@ class ResultsTracker:
         wins = sum(1 for b in self._resolved_bets if b.result == "WIN")
         losses = sum(1 for b in self._resolved_bets if b.result == "LOSS")
         report.overall_win_rate = wins / (wins + losses) if (wins + losses) > 0 else 0.0
-        report.overall_roi = report.total_profit / report.total_stake if report.total_stake > 0 else 0.0
+        report.overall_roi = (
+            report.total_profit / report.total_stake if report.total_stake > 0 else 0.0
+        )
 
         # ── Daily P&L ──────────────────────────────────────────────
         daily: dict[str, list[float]] = {}
@@ -331,7 +351,9 @@ class ResultsTracker:
 
         for key, bets in strategy_map.items():
             parts = key.split("/")
-            perf = self._compute_strategy_performance(bets, parts[0], parts[1], parts[2])
+            perf = self._compute_strategy_performance(
+                bets, parts[0], parts[1], parts[2]
+            )
             report.strategies.append(perf)
 
             # Confident strategies: at least 5 bets
@@ -385,7 +407,11 @@ class ResultsTracker:
             report.clv_wins = sum(1 for c in clv_values if c > 0)
             report.clv_losses = sum(1 for c in clv_values if c < 0)
             total_clv_bets = report.clv_wins + report.clv_losses
-            report.clv_win_rate = round(report.clv_wins / total_clv_bets, 4) if total_clv_bets > 0 else None
+            report.clv_win_rate = (
+                round(report.clv_wins / total_clv_bets, 4)
+                if total_clv_bets > 0
+                else None
+            )
 
         # ── Recent bets (last 50) ───────────────────────────────────
         report.recent_bets = sorted(
@@ -423,6 +449,7 @@ class ResultsTracker:
 
         try:
             from betting_intel.db.market_odds_store import MarketOddsStore
+
             store = MarketOddsStore()
         except Exception:
             logger.debug("MarketOddsStore not available — cannot compute CLV")
@@ -464,9 +491,13 @@ class ResultsTracker:
                 continue
 
         if clv_count > 0:
-            logger.info(f"Computed CLV for {clv_count}/{len(self._resolved_bets)} resolved bets")
+            logger.info(
+                f"Computed CLV for {clv_count}/{len(self._resolved_bets)} resolved bets"
+            )
 
-    def check_alerts(self, report: Optional[PerformanceReport] = None) -> list[StrategyPerformance]:
+    def check_alerts(
+        self, report: Optional[PerformanceReport] = None
+    ) -> list[StrategyPerformance]:
         """
         Check all strategies for underperformance and log alerts.
 
@@ -504,7 +535,9 @@ class ResultsTracker:
         Returns:
             Path to the saved report file
         """
-        report_path = REPORTS_DIR / f"performance_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        report_path = (
+            REPORTS_DIR / f"performance_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        )
         report_data = {
             "generated_at": report.generated_at,
             "overall_roi": report.overall_roi,
@@ -642,29 +675,31 @@ class ResultsTracker:
                     gid = f"{bet.get('matchup', '')}_{bet.get('game_date', '')}"
                     if gid not in seen_ids:
                         seen_ids.add(gid)
-                        self._raw_predictions.append({
-                            "game_date": bet.get("game_date", ""),
-                            "matchup": bet.get("matchup", ""),
-                            "home_team": bet.get("home_team", ""),
-                            "away_team": bet.get("away_team", ""),
-                            "bet_type": bet.get("bet_type", "total"),
-                            "bet_side": bet.get("bet_side", ""),
-                            "market_line": bet.get("market_line", 0),
-                            "model_line": bet.get("model_line", 0),
-                            "edge_pct": bet.get("edge_pct", 0),
-                            "stake_dollars": bet.get("stake_dollars", 0),
-                            "kelly_fraction": bet.get("kelly_fraction", 0),
-                            "edge_confidence": bet.get("edge_confidence", "low"),
-                            "model_name": "forward_test_ensemble",
-                            "predicted_total": bet.get("model_line"),
-                            "home_win_prob": bet.get("model_line"),
-                            "actual_home_score": bet.get("actual_home_score"),
-                            "actual_away_score": bet.get("actual_away_score"),
-                            "actual_result": bet.get("actual_result"),
-                            "actual_profit": bet.get("actual_profit"),
-                            "is_clear_pick": bet.get("is_clear_pick", False),
-                            "source": "forward_test_results.json",
-                        })
+                        self._raw_predictions.append(
+                            {
+                                "game_date": bet.get("game_date", ""),
+                                "matchup": bet.get("matchup", ""),
+                                "home_team": bet.get("home_team", ""),
+                                "away_team": bet.get("away_team", ""),
+                                "bet_type": bet.get("bet_type", "total"),
+                                "bet_side": bet.get("bet_side", ""),
+                                "market_line": bet.get("market_line", 0),
+                                "model_line": bet.get("model_line", 0),
+                                "edge_pct": bet.get("edge_pct", 0),
+                                "stake_dollars": bet.get("stake_dollars", 0),
+                                "kelly_fraction": bet.get("kelly_fraction", 0),
+                                "edge_confidence": bet.get("edge_confidence", "low"),
+                                "model_name": "forward_test_ensemble",
+                                "predicted_total": bet.get("model_line"),
+                                "home_win_prob": bet.get("model_line"),
+                                "actual_home_score": bet.get("actual_home_score"),
+                                "actual_away_score": bet.get("actual_away_score"),
+                                "actual_result": bet.get("actual_result"),
+                                "actual_profit": bet.get("actual_profit"),
+                                "is_clear_pick": bet.get("is_clear_pick", False),
+                                "source": "forward_test_results.json",
+                            }
+                        )
             except Exception as e:
                 logger.debug(f"Failed to load forward_test_results.json: {e}")
 
@@ -678,32 +713,48 @@ class ResultsTracker:
                         gid = f"{row.get('matchup', '')}_{row.get('game_date', '')}"
                         if gid not in seen_ids:
                             seen_ids.add(gid)
-                            self._raw_predictions.append({
-                                "game_date": row.get("game_date", ""),
-                                "matchup": row.get("matchup", ""),
-                                "home_team": row.get("home_team", ""),
-                                "away_team": row.get("away_team", ""),
-                                "bet_type": row.get("bet_type", "total"),
-                                "bet_side": row.get("bet_side", ""),
-                                "market_line": float(row.get("market_total", 0) or 0),
-                                "model_line": float(row.get("model_total", 0) or 0),
-                                "edge_pct": float(row.get("total_edge_pct", 0) or 0),
-                                "stake_dollars": float(row.get("recommended_stake", 0) or 0),
-                                "kelly_fraction": float(row.get("kelly_fraction", 0) or 0),
-                                "edge_confidence": row.get("edge_confidence", "low"),
-                                "model_name": "csv_log",
-                                "predicted_total": float(row.get("model_total", 0) or 0),
-                                "actual_home_score": row.get("actual_home_score"),
-                                "actual_away_score": row.get("actual_away_score"),
-                                "actual_result": row.get("actual_result"),
-                                "actual_profit": row.get("actual_profit"),
-                                "is_clear_pick": False,
-                                "source": "_master.csv",
-                            })
+                            self._raw_predictions.append(
+                                {
+                                    "game_date": row.get("game_date", ""),
+                                    "matchup": row.get("matchup", ""),
+                                    "home_team": row.get("home_team", ""),
+                                    "away_team": row.get("away_team", ""),
+                                    "bet_type": row.get("bet_type", "total"),
+                                    "bet_side": row.get("bet_side", ""),
+                                    "market_line": float(
+                                        row.get("market_total", 0) or 0
+                                    ),
+                                    "model_line": float(row.get("model_total", 0) or 0),
+                                    "edge_pct": float(
+                                        row.get("total_edge_pct", 0) or 0
+                                    ),
+                                    "stake_dollars": float(
+                                        row.get("recommended_stake", 0) or 0
+                                    ),
+                                    "kelly_fraction": float(
+                                        row.get("kelly_fraction", 0) or 0
+                                    ),
+                                    "edge_confidence": row.get(
+                                        "edge_confidence", "low"
+                                    ),
+                                    "model_name": "csv_log",
+                                    "predicted_total": float(
+                                        row.get("model_total", 0) or 0
+                                    ),
+                                    "actual_home_score": row.get("actual_home_score"),
+                                    "actual_away_score": row.get("actual_away_score"),
+                                    "actual_result": row.get("actual_result"),
+                                    "actual_profit": row.get("actual_profit"),
+                                    "is_clear_pick": False,
+                                    "source": "_master.csv",
+                                }
+                            )
             except Exception as e:
                 logger.debug(f"Failed to load _master.csv: {e}")
 
-        logger.info(f"Loaded {len(self._raw_predictions)} unique predictions from {len(seen_ids)} games")
+        logger.info(
+            f"Loaded {len(self._raw_predictions)} unique predictions from {len(seen_ids)} games"
+        )
 
     # ── INTERNAL: Result Fetching ───────────────────────────────────────────
 
@@ -731,8 +782,10 @@ class ResultsTracker:
         # Try local NBA database first (fastest path)
         try:
             from betting_intel.data.loader import NBADataLoader
+
             loader = NBADataLoader()
             import pandas as pd
+
             raw_df = loader.load_game_logs()
             if raw_df is not None and not raw_df.empty:
                 games_df = loader.build_game_dataset(raw_df)
@@ -741,7 +794,10 @@ class ResultsTracker:
                     home = str(row.get("TEAM_NAME_home", ""))
                     away = str(row.get("TEAM_NAME_away", ""))
                     if home and away:
-                        for key in [f"{away} @ {home}^{gdate}", f"{home} @ {away}^{gdate}"]:
+                        for key in [
+                            f"{away} @ {home}^{gdate}",
+                            f"{home} @ {away}^{gdate}",
+                        ]:
                             if key not in results_map:
                                 results_map[key] = {
                                     "home_score": float(row.get("team_pts_home", 0)),
@@ -754,7 +810,9 @@ class ResultsTracker:
         except Exception as e:
             logger.debug(f"Database result fetch failed: {e}")
 
-        logger.warning(f"No results found for {len(dates_needed)} date(s): {dates_needed}")
+        logger.warning(
+            f"No results found for {len(dates_needed)} date(s): {dates_needed}"
+        )
         return results_map
 
     # ── INTERNAL: Matching ─────────────────────────────────────────────────
@@ -787,7 +845,9 @@ class ResultsTracker:
             pass  # If date can't be parsed, just use exact
 
         for candidate_date in dates_to_try:
-            result = self._try_match_date(entry, results_map, candidate_date, home, away, matchup)
+            result = self._try_match_date(
+                entry, results_map, candidate_date, home, away, matchup
+            )
             if result is not None:
                 return result
 
@@ -820,8 +880,14 @@ class ResultsTracker:
         # 3. Fuzzy: team names appear anywhere in key with matching date
         if home and away:
             for key, res in results_map.items():
-                if game_date in key and home.lower() in key.lower() and away.lower() in key.lower():
-                    return self._resolve_bet(entry, res["home_score"], res["away_score"])
+                if (
+                    game_date in key
+                    and home.lower() in key.lower()
+                    and away.lower() in key.lower()
+                ):
+                    return self._resolve_bet(
+                        entry, res["home_score"], res["away_score"]
+                    )
 
         return None
 
@@ -864,17 +930,33 @@ class ResultsTracker:
                 tv = str(total_verdict).upper()
                 mt = market_line
                 if tv == "OVER":
-                    verdict = "WIN" if total_score > mt else ("LOSS" if total_score < mt else "PUSH")
+                    verdict = (
+                        "WIN"
+                        if total_score > mt
+                        else ("LOSS" if total_score < mt else "PUSH")
+                    )
                 elif tv == "UNDER":
-                    verdict = "WIN" if total_score < mt else ("LOSS" if total_score > mt else "PUSH")
+                    verdict = (
+                        "WIN"
+                        if total_score < mt
+                        else ("LOSS" if total_score > mt else "PUSH")
+                    )
             elif bet_side and market_line > 0:
                 # Original format: bet_side like "Total OVER 224.5"
                 bs_upper = str(bet_side).upper()
                 mt = market_line
                 if "OVER" in bs_upper:
-                    verdict = "WIN" if total_score > mt else ("LOSS" if total_score < mt else "PUSH")
+                    verdict = (
+                        "WIN"
+                        if total_score > mt
+                        else ("LOSS" if total_score < mt else "PUSH")
+                    )
                 elif "UNDER" in bs_upper:
-                    verdict = "WIN" if total_score < mt else ("LOSS" if total_score > mt else "PUSH")
+                    verdict = (
+                        "WIN"
+                        if total_score < mt
+                        else ("LOSS" if total_score > mt else "PUSH")
+                    )
 
         # ── Moneyline ──────────────────────────────────────────────────────
         # If totals already resolved (e.g., "both" type where totals hit),
@@ -940,7 +1022,11 @@ class ResultsTracker:
                 logger.debug(f"Failed to save resolved predictions to {filepath}: {e}")
 
         # Also update forward_test_results.json if applicable
-        ft_entries = [p for p in self._raw_predictions if p.get("source") == "forward_test_results.json"]
+        ft_entries = [
+            p
+            for p in self._raw_predictions
+            if p.get("source") == "forward_test_results.json"
+        ]
         if ft_entries and FORWARD_TEST_JSON.exists():
             try:
                 with open(FORWARD_TEST_JSON, "r", encoding="utf-8") as f:
@@ -964,7 +1050,9 @@ class ResultsTracker:
                 with open(FORWARD_TEST_JSON, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2, default=str)
 
-                logger.info(f"Updated {len(ft_entries)} entries in forward_test_results.json")
+                logger.info(
+                    f"Updated {len(ft_entries)} entries in forward_test_results.json"
+                )
             except Exception as e:
                 logger.debug(f"Failed to update forward_test_results.json: {e}")
 
@@ -976,7 +1064,10 @@ class ResultsTracker:
         if stake == 0:
             stake = float(entry.get("recommended_stake", 0.0) or 0)
         profit = float(entry.get("actual_profit", 0.0) or 0)
-        _pid = entry.get("prediction_id") or f"{entry.get('matchup', '?')}_{entry.get('game_date', '?')}_{datetime.now().timestamp()}"
+        _pid = (
+            entry.get("prediction_id")
+            or f"{entry.get('matchup', '?')}_{entry.get('game_date', '?')}_{datetime.now().timestamp()}"
+        )
 
         return ResolvedBet(
             prediction_id=_pid,
@@ -1002,8 +1093,12 @@ class ResultsTracker:
             actual_home_score=entry.get("actual_home_score"),
             actual_away_score=entry.get("actual_away_score"),
             actual_total=entry.get("actual_total"),
-            actual_home_win=bool(entry.get("actual_home_win")) if entry.get("actual_home_win") is not None else None,
-            result=str(entry.get("actual_result")) if entry.get("actual_result") else None,
+            actual_home_win=bool(entry.get("actual_home_win"))
+            if entry.get("actual_home_win") is not None
+            else None,
+            result=str(entry.get("actual_result"))
+            if entry.get("actual_result")
+            else None,
             profit_dollars=profit,
             roi=profit / stake if stake > 0 else 0.0,
             is_clear_pick=bool(entry.get("is_clear_pick", False)),
@@ -1044,12 +1139,22 @@ class ResultsTracker:
         # Sharpe-like ratio: profit / (std of profits * sqrt(n))
         profits = [b.profit_dollars for b in bets]
         avg_profit = sum(profits) / len(profits) if profits else 0.0
-        variance = sum((p - avg_profit) ** 2 for p in profits) / len(profits) if len(profits) > 1 else 0.0
+        variance = (
+            sum((p - avg_profit) ** 2 for p in profits) / len(profits)
+            if len(profits) > 1
+            else 0.0
+        )
         std_profit = math.sqrt(variance) if variance > 0 else 1.0
-        sharpe = (avg_profit / std_profit) * math.sqrt(len(profits)) if std_profit > 0 else 0.0
+        sharpe = (
+            (avg_profit / std_profit) * math.sqrt(len(profits))
+            if std_profit > 0
+            else 0.0
+        )
 
         # Trailing profits (only last TRAILING_WINDOW_DAYS)
-        cutoff = (datetime.now() - timedelta(days=TRAILING_WINDOW_DAYS)).strftime("%Y-%m-%d")
+        cutoff = (datetime.now() - timedelta(days=TRAILING_WINDOW_DAYS)).strftime(
+            "%Y-%m-%d"
+        )
         trailing_bets = [b for b in bets if b.game_date >= cutoff]
         trailing_profits = [b.profit_dollars for b in trailing_bets]
         trailing_stake = sum(b.stake_dollars for b in trailing_bets)
@@ -1058,8 +1163,7 @@ class ResultsTracker:
 
         # Alert if trailing ROI < threshold and enough bets
         is_alerted = (
-            total_bets >= MIN_BETS_FOR_ALERT
-            and trailing_roi < ALERT_ROI_THRESHOLD
+            total_bets >= MIN_BETS_FOR_ALERT and trailing_roi < ALERT_ROI_THRESHOLD
         )
 
         name = f"{model}/{league}/{bet_type}"
@@ -1117,4 +1221,3 @@ class ResultsTracker:
             f"   Trailing 30d Profit: ${sum(strategy.trailing_profits):.0f}\n"
             f"   Consider pausing or re-tuning this strategy.\n"
         )
-

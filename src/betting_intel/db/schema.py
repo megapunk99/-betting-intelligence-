@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import Column, Integer, Float, String, DateTime, Boolean, Text, create_engine
+from sqlalchemy import Integer, Float, String, DateTime, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -45,9 +45,13 @@ class Game(Base):
     prediction_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     # Metadata
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
     def __repr__(self) -> str:
@@ -82,10 +86,14 @@ class Bet(Base):
     stake_dollars: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     # Metadata
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
 
     def __repr__(self) -> str:
-        return f"<Bet {self.game_id}: {self.strategy}/{self.bet_type} -> {self.outcome}>"
+        return (
+            f"<Bet {self.game_id}: {self.strategy}/{self.bet_type} -> {self.outcome}>"
+        )
 
 
 class ModelVersion(Base):
@@ -100,7 +108,9 @@ class ModelVersion(Base):
     metrics_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     feature_cols: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     artifact_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    training_date: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    training_date: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
     training_samples: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     def __repr__(self) -> str:
@@ -115,7 +125,9 @@ class PipelineRun(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     run_id: Mapped[str] = mapped_column(String(50), unique=True)
     status: Mapped[str] = mapped_column(String(20), default="running")
-    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     games_processed: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     bets_generated: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

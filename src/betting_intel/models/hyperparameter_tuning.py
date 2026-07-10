@@ -14,7 +14,7 @@ Uses Optuna's TPE (Tree-structured Parzen Estimator) sampler for efficient searc
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Callable
+from typing import Optional
 
 import numpy as np
 
@@ -92,7 +92,9 @@ class HyperparameterTuner:
             params = {
                 "n_estimators": trial.suggest_int("n_estimators", 200, 1500, step=100),
                 "max_depth": trial.suggest_int("max_depth", 3, 12),
-                "learning_rate": trial.suggest_float("learning_rate", 0.005, 0.1, log=True),
+                "learning_rate": trial.suggest_float(
+                    "learning_rate", 0.005, 0.1, log=True
+                ),
                 "subsample": trial.suggest_float("subsample", 0.6, 1.0),
                 "colsample_bytree": trial.suggest_float("colsample_bytree", 0.4, 1.0),
                 "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
@@ -107,7 +109,8 @@ class HyperparameterTuner:
 
             model = XGBClassifier(**params)
             model.fit(
-                X_train, y_train,
+                X_train,
+                y_train,
                 eval_set=[(X_val, y_val)],
                 verbose=False,
             )
@@ -150,7 +153,9 @@ class HyperparameterTuner:
                 "n_estimators": trial.suggest_int("n_estimators", 200, 1500, step=100),
                 "num_leaves": trial.suggest_int("num_leaves", 16, 128),
                 "max_depth": trial.suggest_int("max_depth", 3, 15),
-                "learning_rate": trial.suggest_float("learning_rate", 0.005, 0.1, log=True),
+                "learning_rate": trial.suggest_float(
+                    "learning_rate", 0.005, 0.1, log=True
+                ),
                 "subsample": trial.suggest_float("subsample", 0.6, 1.0),
                 "colsample_bytree": trial.suggest_float("colsample_bytree", 0.4, 1.0),
                 "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
@@ -163,9 +168,12 @@ class HyperparameterTuner:
 
             model = LGBMClassifier(**params)
             model.fit(
-                X_train, y_train,
+                X_train,
+                y_train,
                 eval_set=[(X_val, y_val)],
-                callbacks=[LGBMEarlyStopping(50)] if (LGBMEarlyStopping is not None and self._has_early_stopping()) else [],
+                callbacks=[LGBMEarlyStopping(50)]
+                if (LGBMEarlyStopping is not None and self._has_early_stopping())
+                else [],
             )
             preds = model.predict_proba(X_val)
             return float(log_loss(y_val, preds))
@@ -205,7 +213,9 @@ class HyperparameterTuner:
             params = {
                 "iterations": trial.suggest_int("iterations", 300, 1500, step=100),
                 "depth": trial.suggest_int("depth", 4, 10),
-                "learning_rate": trial.suggest_float("learning_rate", 0.005, 0.1, log=True),
+                "learning_rate": trial.suggest_float(
+                    "learning_rate", 0.005, 0.1, log=True
+                ),
                 "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1.0, 10.0),
                 "border_count": trial.suggest_int("border_count", 32, 255),
                 "subsample": trial.suggest_float("subsample", 0.6, 1.0),
@@ -218,7 +228,8 @@ class HyperparameterTuner:
 
             model = CatBoostClassifier(**params)
             model.fit(
-                X_train, y_train,
+                X_train,
+                y_train,
                 eval_set=(X_val, y_val),
                 verbose=False,
             )
@@ -237,7 +248,6 @@ class HyperparameterTuner:
             )
 
         return dict(self._best_params)
-
 
     def tune_all(
         self,
@@ -260,24 +270,36 @@ class HyperparameterTuner:
         if verbose:
             logger.info("\n--- Tuning XGBoost ---")
         results["xgb"] = self.tune_xgboost(
-            X_train, y_train, X_val, y_val,
-            n_trials=n_trials_per_model, verbose=verbose,
+            X_train,
+            y_train,
+            X_val,
+            y_val,
+            n_trials=n_trials_per_model,
+            verbose=verbose,
         )
 
         # LightGBM
         if verbose:
             logger.info("\n--- Tuning LightGBM ---")
         results["lgb"] = self.tune_lightgbm(
-            X_train, y_train, X_val, y_val,
-            n_trials=n_trials_per_model, verbose=verbose,
+            X_train,
+            y_train,
+            X_val,
+            y_val,
+            n_trials=n_trials_per_model,
+            verbose=verbose,
         )
 
         # CatBoost
         if verbose:
             logger.info("\n--- Tuning CatBoost ---")
         results["cb"] = self.tune_catboost(
-            X_train, y_train, X_val, y_val,
-            n_trials=n_trials_per_model, verbose=verbose,
+            X_train,
+            y_train,
+            X_val,
+            y_val,
+            n_trials=n_trials_per_model,
+            verbose=verbose,
         )
 
         if verbose:
@@ -321,15 +343,16 @@ class HyperparameterTuner:
             "subsample": 0.8,
         }
 
-
     @staticmethod
     def _has_early_stopping() -> bool:
         try:
             from lightgbm import early_stopping as lgb_early_stopping
+
             return True
         except ImportError:
             try:
                 from lightgbm.callback import early_stopping
+
                 return True
             except ImportError:
                 return False
@@ -339,20 +362,18 @@ class HyperparameterTuner:
         return {
             "n_trials": self.n_trials,
             "direction": self.direction,
-            "best_params": {k: str(v) if isinstance(v, tuple) else v for k, v in self._best_params.items()},
+            "best_params": {
+                k: str(v) if isinstance(v, tuple) else v
+                for k, v in self._best_params.items()
+            },
             "best_value": round(self._best_value, 4),
             "has_study": self._study is not None,
         }
 
 
-# Compatibility import for LGBM early stopping
-try:
-    from lightgbm import early_stopping as LGBMEarlyStopping
-except ImportError:
-    try:
-        from lightgbm.callback import early_stopping as LGBMEarlyStopping
-    except ImportError:
-        LGBMEarlyStopping = None
+# LGBMEarlyStopping is imported inside the LightGBM tuning method
+# where it's used (lazy import avoids import errors on older versions)
+LGBMEarlyStopping = None  # Fallback: set inside tune_lightgbm
 
 
 __all__ = [

@@ -86,6 +86,7 @@ class GamePredictor:
         self._totals_model = None
         self._totals_fitted = False
         self._totals_feature_cols = []
+
     # ── Robust System ─────────────────────────────────────────────────────
 
     def _build_robust_system(self) -> bool:
@@ -129,7 +130,7 @@ class GamePredictor:
             try:
                 store_start = features_df["GAME_DATE"].min()
                 store_end = features_df["GAME_DATE"].max()
-                if hasattr(store_start, 'strftime'):
+                if hasattr(store_start, "strftime"):
                     store_start = store_start.strftime("%Y-%m-%d")
                     store_end = store_end.strftime("%Y-%m-%d")
                 else:
@@ -142,13 +143,16 @@ class GamePredictor:
                 )
 
                 from betting_intel.data.odds_fetcher import ODDS_TO_SHORT_NAME
+
                 market_prob_overrides: dict[tuple[str, str, str], float] = {}
                 for (home_full, away_full, game_date), prob in raw_overrides.items():
                     home_short = ODDS_TO_SHORT_NAME.get(
-                        home_full, home_full.split()[-1] if " " in home_full else home_full,
+                        home_full,
+                        home_full.split()[-1] if " " in home_full else home_full,
                     )
                     away_short = ODDS_TO_SHORT_NAME.get(
-                        away_full, away_full.split()[-1] if " " in away_full else away_full,
+                        away_full,
+                        away_full.split()[-1] if " " in away_full else away_full,
                     )
                     market_prob_overrides[(home_short, away_short, game_date)] = prob
 
@@ -157,17 +161,26 @@ class GamePredictor:
                     f"({store_start} to {store_end})"
                 )
             except Exception:
-                logger.debug("Failed to query MarketOddsStore — using ELO proxy only", exc_info=True)
+                logger.debug(
+                    "Failed to query MarketOddsStore — using ELO proxy only",
+                    exc_info=True,
+                )
                 market_prob_overrides = None
 
             # Derive home_win target
             if "home_win" not in features_df.columns:
                 if "point_diff" in features_df.columns:
-                    features_df["home_win"] = (features_df["point_diff"] > 0).astype(int)
+                    features_df["home_win"] = (features_df["point_diff"] > 0).astype(
+                        int
+                    )
                 elif "WL_home" in features_df.columns:
-                    features_df["home_win"] = (features_df["WL_home"] == "W").astype(int)
+                    features_df["home_win"] = (features_df["WL_home"] == "W").astype(
+                        int
+                    )
                 else:
-                    logger.warning("Cannot derive home_win — no point_diff or WL_home column")
+                    logger.warning(
+                        "Cannot derive home_win — no point_diff or WL_home column"
+                    )
                     return False
 
             # Compute market inefficiency targets
@@ -178,12 +191,16 @@ class GamePredictor:
 
             # Log proxy source distribution
             if "market_proxy_source" in features_df.columns:
-                source_counts = features_df["market_proxy_source"].value_counts().to_dict()
+                source_counts = (
+                    features_df["market_proxy_source"].value_counts().to_dict()
+                )
                 total_games = sum(source_counts.values())
                 real_odds_count = source_counts.get("real_odds", 0)
-                logger.info(f"Market proxy source distribution: {source_counts} "
-                           f"(real_odds={real_odds_count}/{total_games} = "
-                           f"{real_odds_count/max(total_games,1)*100:.1f}%)")
+                logger.info(
+                    f"Market proxy source distribution: {source_counts} "
+                    f"(real_odds={real_odds_count}/{total_games} = "
+                    f"{real_odds_count / max(total_games, 1) * 100:.1f}%)"
+                )
                 if real_odds_count == 0:
                     logger.warning(
                         "ZERO games have real market odds. "
@@ -194,23 +211,35 @@ class GamePredictor:
             # Build clean feature matrix
             clean_feature_cols = fe.select_features(features_df)
             _market_target_cols = {
-                "market_implied_home_prob", "market_error",
-                "abs_market_error", "market_error_clipped",
-                "market_error_binary", "total_market_error",
-                "weighted_market_error", "elo_error",
-                "market_error_ma_5g", "market_error_ma_10g",
-                "market_error_trend_home", "recent_edge_streak",
+                "market_implied_home_prob",
+                "market_error",
+                "abs_market_error",
+                "market_error_clipped",
+                "market_error_binary",
+                "total_market_error",
+                "weighted_market_error",
+                "elo_error",
+                "market_error_ma_5g",
+                "market_error_ma_10g",
+                "market_error_trend_home",
+                "recent_edge_streak",
             }
-            feature_cols = [c for c in clean_feature_cols if c not in _market_target_cols]
+            feature_cols = [
+                c for c in clean_feature_cols if c not in _market_target_cols
+            ]
 
             if len(feature_cols) < 3:
-                logger.warning(f"Only {len(feature_cols)} feature cols — too few for robust system")
+                logger.warning(
+                    f"Only {len(feature_cols)} feature cols — too few for robust system"
+                )
                 return False
 
             X = features_df[feature_cols].fillna(0).values
             n_samples = len(X)
             if n_samples < 200:
-                logger.warning(f"Only {n_samples} samples — need at least 200 for robust system")
+                logger.warning(
+                    f"Only {n_samples} samples — need at least 200 for robust system"
+                )
                 return False
 
             y_binary = features_df["home_win"].values.astype(int)
@@ -220,6 +249,7 @@ class GamePredictor:
             # Removes noise features with near-zero predictive power
             try:
                 from sklearn.feature_selection import mutual_info_classif
+
                 mi = mutual_info_classif(X, y_binary, random_state=42)
                 top_n = min(60, len(feature_cols))
                 if len(mi) > top_n:
@@ -245,7 +275,8 @@ class GamePredictor:
                 random_state=42,
             )
             system.fit(
-                X, y_binary,
+                X,
+                y_binary,
                 market_probs=market_probs,
                 feature_names=feature_cols,
                 verbose=True,
@@ -267,6 +298,7 @@ class GamePredictor:
         except Exception as e:
             logger.warning(f"Failed to build MarketInefficiencySystem: {e}")
             import traceback
+
             logger.debug(traceback.format_exc())
             return False
 
@@ -277,7 +309,9 @@ class GamePredictor:
 
         # Guard: if kelly staker failed to init, skip stake computations
         if self._kelly_staker is None:
-            logger.warning("Kelly staker not available — predictions will have zero stakes")
+            logger.warning(
+                "Kelly staker not available — predictions will have zero stakes"
+            )
 
         from betting_intel.recommendations.staking import american_to_decimal
         from betting_intel.features.market_inefficiency import (
@@ -329,7 +363,9 @@ class GamePredictor:
                             away_implied = american_to_implied_prob(game.away_ml)
                             market_prob, _ = remove_vig(home_implied, away_implied)
                         except Exception:
-                            logger.debug(f"Failed to compute market prob for {game.matchup}")
+                            logger.debug(
+                                f"Failed to compute market prob for {game.matchup}"
+                            )
                             market_prob = None
 
                     # Build feature vector
@@ -352,21 +388,25 @@ class GamePredictor:
                         continue
 
                     X_pred = feat.values.reshape(1, -1)
-                    result = system.predict_with_details(X_pred, market_prob=market_prob)
+                    result = system.predict_with_details(
+                        X_pred, market_prob=market_prob
+                    )
 
                     if result is None:
                         continue
 
                     # Guard: check calibration_failed attr exists
-                    if getattr(result, 'calibration_failed', False) and getattr(result, 'calibration_warning', None):
+                    if getattr(result, "calibration_failed", False) and getattr(
+                        result, "calibration_warning", None
+                    ):
                         logger.warning(
                             f"Calibration warning for {game.matchup}: {result.calibration_warning}"
                         )
 
-                    home_win_prob = getattr(result, 'home_win_prob', 0.5)
+                    home_win_prob = getattr(result, "home_win_prob", 0.5)
 
                     # Feature importance
-                    feature_importance = getattr(result, 'feature_importance', None)
+                    feature_importance = getattr(result, "feature_importance", None)
                     if feature_importance:
                         top_features = dict(
                             sorted(
@@ -379,7 +419,11 @@ class GamePredictor:
 
                     # Apply predictions
                     if market_prob is not None:
-                        predicted_error = result.edge_pct if getattr(result, 'edge_pct', None) is not None else 0.0
+                        predicted_error = (
+                            result.edge_pct
+                            if getattr(result, "edge_pct", None) is not None
+                            else 0.0
+                        )
 
                         if abs(predicted_error) < MIN_EDGE_THRESHOLD:
                             game.edge_pct = 0.0
@@ -389,28 +433,40 @@ class GamePredictor:
                         else:
                             game.edge_pct = predicted_error
                             game.direction = "home" if predicted_error > 0 else "away"
-                            game.confidence = (getattr(result, 'confidence_label', None) or "low").lower()
+                            game.confidence = (
+                                getattr(result, "confidence_label", None) or "low"
+                            ).lower()
 
                         if predicted_error >= 0:
-                            decimal_odds = american_to_decimal(game.home_ml) if game.home_ml else 2.0
+                            decimal_odds = (
+                                american_to_decimal(game.home_ml)
+                                if game.home_ml
+                                else 2.0
+                            )
                             team_for_kelly = game.home_team_short
                             win_prob_for_kelly = home_win_prob
                         else:
-                            decimal_odds = american_to_decimal(game.away_ml) if game.away_ml else 2.0
+                            decimal_odds = (
+                                american_to_decimal(game.away_ml)
+                                if game.away_ml
+                                else 2.0
+                            )
                             team_for_kelly = game.away_team_short
                             win_prob_for_kelly = 1.0 - home_win_prob
 
                         stake_result = self._kelly_staker.compute_stake(
                             win_probability=max(win_prob_for_kelly, 0.01),
                             decimal_odds=decimal_odds,
-                            confidence_score=getattr(result, 'confidence_score', 0.5),
-                            confidence_label=getattr(result, 'confidence_label', 'low'),
+                            confidence_score=getattr(result, "confidence_score", 0.5),
+                            confidence_label=getattr(result, "confidence_label", "low"),
                             edge_pct=abs(predicted_error),
                             league=game.league,
                             team=team_for_kelly,
                             game_id=game.game_id,
                         )
-                        game.stake_dollars = stake_result.stake_dollars if stake_result else 0.0
+                        game.stake_dollars = (
+                            stake_result.stake_dollars if stake_result else 0.0
+                        )
                     else:
                         game.edge_pct = 0.0
                         game.direction = "neutral"
@@ -457,18 +513,27 @@ class GamePredictor:
 
             clean_feature_cols = fe.select_features(features_df)
             _exclude_totals = {
-                "total_points", "point_diff",
-                "market_implied_home_prob", "market_error",
-                "abs_market_error", "market_error_clipped",
-                "market_error_binary", "total_market_error",
-                "weighted_market_error", "elo_error",
-                "market_error_ma_5g", "market_error_ma_10g",
-                "market_error_trend_home", "recent_edge_streak",
+                "total_points",
+                "point_diff",
+                "market_implied_home_prob",
+                "market_error",
+                "abs_market_error",
+                "market_error_clipped",
+                "market_error_binary",
+                "total_market_error",
+                "weighted_market_error",
+                "elo_error",
+                "market_error_ma_5g",
+                "market_error_ma_10g",
+                "market_error_trend_home",
+                "recent_edge_streak",
             }
             feature_cols = [c for c in clean_feature_cols if c not in _exclude_totals]
 
             if len(feature_cols) < 3:
-                logger.warning(f"Only {len(feature_cols)} feature cols for totals model")
+                logger.warning(
+                    f"Only {len(feature_cols)} feature cols for totals model"
+                )
                 return False
 
             X = features_df[feature_cols].fillna(0).values
@@ -487,6 +552,7 @@ class GamePredictor:
             # Removes noise features with near-zero predictive power for totals
             try:
                 from sklearn.feature_selection import mutual_info_regression
+
                 mi = mutual_info_regression(X, y_total, random_state=42)
                 top_n = min(60, len(feature_cols))
                 if len(mi) > top_n:
@@ -498,9 +564,13 @@ class GamePredictor:
                         f"{top_n} retained (removed {len(mi) - top_n} noise cols)"
                     )
             except Exception:
-                logger.debug("Mutual info feature selection for totals skipped (non-critical)")
+                logger.debug(
+                    "Mutual info feature selection for totals skipped (non-critical)"
+                )
 
-            logger.info(f"Training TotalsRegressor on {n_samples} samples with {len(feature_cols)} features...")
+            logger.info(
+                f"Training TotalsRegressor on {n_samples} samples with {len(feature_cols)} features..."
+            )
 
             regressor = TotalsRegressor(random_state=42)
             regressor.fit(X, y_total, feature_names=feature_cols, verbose=True)
@@ -519,6 +589,7 @@ class GamePredictor:
         except Exception as e:
             logger.warning(f"Failed to build totals model: {e}")
             import traceback
+
             logger.debug(traceback.format_exc())
             return False
 
@@ -544,8 +615,11 @@ class GamePredictor:
                 return games
 
             nba_games = [
-                g for g in games
-                if g.sport_group == "Basketball" and g.market_total and g.market_total > 0
+                g
+                for g in games
+                if g.sport_group == "Basketball"
+                and g.market_total
+                and g.market_total > 0
             ]
             if not nba_games:
                 return games
@@ -617,25 +691,46 @@ class GamePredictor:
         if features_df is None or features_df.empty:
             return None
 
-        home_col = "TEAM_NAME_home" if "TEAM_NAME_home" in features_df.columns else "home_team"
-        away_col = "TEAM_NAME_away" if "TEAM_NAME_away" in features_df.columns else "away_team"
+        home_col = (
+            "TEAM_NAME_home" if "TEAM_NAME_home" in features_df.columns else "home_team"
+        )
+        away_col = (
+            "TEAM_NAME_away" if "TEAM_NAME_away" in features_df.columns else "away_team"
+        )
 
         if feature_cols is not None:
             cols = feature_cols
         else:
             from betting_intel.data.features import FeatureEngineer
+
             _fe = FeatureEngineer()
             cols = _fe.select_features(features_df)
-            cols = [c for c in cols if c not in {
-                "total_points", "point_diff", "home_score", "away_score",
-                "spread", "label", "home_win",
-                "market_implied_home_prob", "market_error",
-                "abs_market_error", "market_error_clipped",
-                "market_error_binary", "total_market_error",
-                "weighted_market_error", "elo_error",
-                "market_error_ma_5g", "market_error_ma_10g",
-                "market_error_trend_home", "recent_edge_streak",
-            }]
+            cols = [
+                c
+                for c in cols
+                if c
+                not in {
+                    "total_points",
+                    "point_diff",
+                    "home_score",
+                    "away_score",
+                    "spread",
+                    "label",
+                    "home_win",
+                    "market_implied_home_prob",
+                    "market_error",
+                    "abs_market_error",
+                    "market_error_clipped",
+                    "market_error_binary",
+                    "total_market_error",
+                    "weighted_market_error",
+                    "elo_error",
+                    "market_error_ma_5g",
+                    "market_error_ma_10g",
+                    "market_error_trend_home",
+                    "recent_edge_streak",
+                }
+            ]
 
         def _norm(name: str) -> str:
             return str(name).strip().lower()
@@ -651,16 +746,22 @@ class GamePredictor:
         _N_GAMES = 3
 
         home_mask = home_norm == target_home_norm
-        home_indices = features_df.index[home_mask][-_N_GAMES:] if home_mask.sum() >= 1 else pd.Index([])
+        home_indices = (
+            features_df.index[home_mask][-_N_GAMES:]
+            if home_mask.sum() >= 1
+            else pd.Index([])
+        )
         away_mask = away_norm == target_away_norm
-        away_indices = features_df.index[away_mask][-_N_GAMES:] if away_mask.sum() >= 1 else pd.Index([])
+        away_indices = (
+            features_df.index[away_mask][-_N_GAMES:]
+            if away_mask.sum() >= 1
+            else pd.Index([])
+        )
 
         # Most recent direct matchup (for H2H, rest, travel, fatigue)
         direct_mask = (
             (home_norm == target_home_norm) & (away_norm == target_away_norm)
-        ) | (
-            (home_norm == target_away_norm) & (away_norm == target_home_norm)
-        )
+        ) | ((home_norm == target_away_norm) & (away_norm == target_home_norm))
         direct_idx = features_df.index[direct_mask][-1] if direct_mask.any() else None
         direct_row = features_df.loc[direct_idx] if direct_idx is not None else None
 
@@ -687,9 +788,9 @@ class GamePredictor:
                 # Reverse values: indices are chronological (oldest first),
                 # weights are recency-order (most recent first)
                 vals = features_df.loc[indices, c].values[::-1]
-                vals_float = pd.to_numeric(vals, errors='coerce')
+                vals_float = pd.to_numeric(vals, errors="coerce")
                 vals_float = np.nan_to_num(vals_float, nan=0.0)
-                result[c] = float(np.average(vals_float, weights=w[:len(vals_float)]))
+                result[c] = float(np.average(vals_float, weights=w[: len(vals_float)]))
             return result
 
         # Weighted averages for home (*_home) and away (*_away) columns
@@ -698,14 +799,31 @@ class GamePredictor:
 
         # ── Assemble feature dict ────────────────────────────────────────
         feature_dict: dict[str, float] = {}
-        _rest_cols = {"rest_home_days", "rest_advantage", "is_b2b_home",
-                      "fatigue_home", "rest_3in4_home", "both_b2b",
-                      "fatigue_diff", "rest_home_sq", "rest_adv_sq",
-                      "fatigue_rest_interact"}
-        _away_rest_cols = {"rest_away_days", "is_b2b_away", "fatigue_away",
-                           "rest_3in4_away", "rest_away_sq"}
-        _travel_cols = {"travel_distance", "travel_distance_norm", "tz_diff",
-                        "cum_travel_diff"}
+        _rest_cols = {
+            "rest_home_days",
+            "rest_advantage",
+            "is_b2b_home",
+            "fatigue_home",
+            "rest_3in4_home",
+            "both_b2b",
+            "fatigue_diff",
+            "rest_home_sq",
+            "rest_adv_sq",
+            "fatigue_rest_interact",
+        }
+        _away_rest_cols = {
+            "rest_away_days",
+            "is_b2b_away",
+            "fatigue_away",
+            "rest_3in4_away",
+            "rest_away_sq",
+        }
+        _travel_cols = {
+            "travel_distance",
+            "travel_distance_norm",
+            "tz_diff",
+            "cum_travel_diff",
+        }
         _h2h_cols = {"h2h_win_rate", "h2h_avg_margin"}
 
         for col in cols:
@@ -723,24 +841,40 @@ class GamePredictor:
                     val = home_base - away_base
                 elif direct_row is not None and col in direct_row.index:
                     val = float(direct_row[col]) if pd.notna(direct_row[col]) else 0.0
-            elif col.startswith("TEAM_") or "rest_key" in col or col in ("home_team_name", "away_team_name"):
+            elif (
+                col.startswith("TEAM_")
+                or "rest_key" in col
+                or col in ("home_team_name", "away_team_name")
+            ):
                 val = 0.0
             elif col in _rest_cols:
                 if direct_row is not None and col in direct_row.index:
                     val = float(direct_row[col]) if pd.notna(direct_row[col]) else 0.0
                 elif len(home_indices) > 0 and col in features_df.columns:
                     # Use most recent game for game-specific features
-                    val = float(features_df.loc[home_indices[-1], col]) if pd.notna(features_df.loc[home_indices[-1], col]) else 0.0
+                    val = (
+                        float(features_df.loc[home_indices[-1], col])
+                        if pd.notna(features_df.loc[home_indices[-1], col])
+                        else 0.0
+                    )
             elif col in _away_rest_cols:
                 if direct_row is not None and col in direct_row.index:
                     val = float(direct_row[col]) if pd.notna(direct_row[col]) else 0.0
                 elif len(away_indices) > 0 and col in features_df.columns:
-                    val = float(features_df.loc[away_indices[-1], col]) if pd.notna(features_df.loc[away_indices[-1], col]) else 0.0
+                    val = (
+                        float(features_df.loc[away_indices[-1], col])
+                        if pd.notna(features_df.loc[away_indices[-1], col])
+                        else 0.0
+                    )
             elif col in _travel_cols:
                 if direct_row is not None and col in direct_row.index:
                     val = float(direct_row[col]) if pd.notna(direct_row[col]) else 0.0
                 elif len(home_indices) > 0 and col in features_df.columns:
-                    val = float(features_df.loc[home_indices[-1], col]) if pd.notna(features_df.loc[home_indices[-1], col]) else 0.0
+                    val = (
+                        float(features_df.loc[home_indices[-1], col])
+                        if pd.notna(features_df.loc[home_indices[-1], col])
+                        else 0.0
+                    )
             elif col in _h2h_cols:
                 if direct_row is not None and col in direct_row.index:
                     val = float(direct_row[col]) if pd.notna(direct_row[col]) else 0.0
@@ -749,9 +883,17 @@ class GamePredictor:
                     val = float(direct_row[col]) if pd.notna(direct_row[col]) else None
                 if val is None and len(home_indices) > 0 and col in features_df.columns:
                     # Use most recent home game as fallback
-                    val = float(features_df.loc[home_indices[-1], col]) if pd.notna(features_df.loc[home_indices[-1], col]) else None
+                    val = (
+                        float(features_df.loc[home_indices[-1], col])
+                        if pd.notna(features_df.loc[home_indices[-1], col])
+                        else None
+                    )
                 if val is None and col in features_df.columns:
-                    val = float(features_df[col].iloc[-1]) if pd.notna(features_df[col].iloc[-1]) else 0.0
+                    val = (
+                        float(features_df[col].iloc[-1])
+                        if pd.notna(features_df[col].iloc[-1])
+                        else 0.0
+                    )
 
             feature_dict[col] = val if val is not None else 0.0
 

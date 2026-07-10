@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -41,7 +41,8 @@ class PredictionResponse(BaseModel):
 # ── Backtest ───────────────────────────────────────────────────────────────
 class BacktestRequest(BaseModel):
     strategy: str = Field(
-        ..., description="Strategy name: total_ridge, total_xgboost, spread, momentum, ensemble"
+        ...,
+        description="Strategy name: total_ridge, total_xgboost, spread, momentum, ensemble",
     )
     start_date: Optional[str] = Field(None, description="Start date (YYYY-MM-DD)")
     end_date: Optional[str] = Field(None, description="End date (YYYY-MM-DD)")

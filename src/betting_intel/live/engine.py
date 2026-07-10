@@ -83,7 +83,9 @@ class LivePredictionEngine:
         model_dir: Optional[Path] = None,
     ):
         self._odds_api_key = odds_api_key or os.getenv("ODDS_API_KEY", "")
-        self._odds_api_key_fallback = odds_api_key_fallback or os.getenv("ODDS_API_KEY_FALLBACK", "")
+        self._odds_api_key_fallback = odds_api_key_fallback or os.getenv(
+            "ODDS_API_KEY_FALLBACK", ""
+        )
         self._refresh_interval = refresh_interval
         self._model_dir = model_dir
 
@@ -101,6 +103,7 @@ class LivePredictionEngine:
         # Kelly staker
         try:
             from betting_intel.recommendations.staking import KellyStaker
+
             self._kelly_staker = KellyStaker(
                 initial_bankroll=10_000.0,
                 kelly_fraction=0.25,
@@ -112,6 +115,7 @@ class LivePredictionEngine:
         # Market odds store
         try:
             from betting_intel.db.market_odds_store import MarketOddsStore
+
             self._market_odds_store = MarketOddsStore()
             self._market_odds_store.ensure_table()
         except Exception as e:
@@ -233,7 +237,9 @@ class LivePredictionEngine:
     @property
     def theoddsapi_schedule(self) -> dict:
         """Return the daily fetch schedule summary."""
-        return self._odds_fetcher._schedule_summary(self._odds_fetcher._last_theoddsapi_fetch)
+        return self._odds_fetcher._schedule_summary(
+            self._odds_fetcher._last_theoddsapi_fetch
+        )
 
     @property
     def theoddsapi_quota_summary(self) -> dict:
@@ -242,7 +248,9 @@ class LivePredictionEngine:
     @property
     def theoddsapi_schedule_status(self) -> dict:
         """Return schedule status for the dashboard API banner."""
-        return self._odds_fetcher._get_schedule_status_dict(self._odds_fetcher._last_theoddsapi_fetch)
+        return self._odds_fetcher._get_schedule_status_dict(
+            self._odds_fetcher._last_theoddsapi_fetch
+        )
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -255,9 +263,13 @@ class LivePredictionEngine:
                     age = time.time() - self._last_refresh
                     if age < ODDS_CACHE_TTL_SECONDS:
                         return self._snapshot
-                    logger.debug(f"Cached snapshot is {age:.0f}s old — stale, will refresh")
+                    logger.debug(
+                        f"Cached snapshot is {age:.0f}s old — stale, will refresh"
+                    )
                 else:
-                    logger.debug("No cached snapshot — returning empty (user must refresh)")
+                    logger.debug(
+                        "No cached snapshot — returning empty (user must refresh)"
+                    )
                     return LivePredictionSnapshot()
 
         # Fall through: force refresh or cache expired
@@ -305,6 +317,7 @@ class LivePredictionEngine:
 
         # Clear external scraper caches (best-effort, non-critical)
         import importlib
+
         _scraper_modules = [
             ("betting_intel.data.stealth_scraper", "StealthBrowser"),
             ("betting_intel.data.draftkings_scraper", "DraftKingsScraper"),
@@ -336,7 +349,10 @@ class LivePredictionEngine:
 
         # Fast-path: return cached if still fresh
         with self._lock:
-            if self._cached_odds_raw is not None and (now - self._last_odds_fetch) < ODDS_CACHE_TTL_SECONDS:
+            if (
+                self._cached_odds_raw is not None
+                and (now - self._last_odds_fetch) < ODDS_CACHE_TTL_SECONDS
+            ):
                 return self._cached_odds_raw
 
         result = self._odds_fetcher.fetch(
@@ -357,7 +373,9 @@ class LivePredictionEngine:
     def _fetch_via_theoddsapi(self) -> list[dict]:
         return self._odds_fetcher._fetch_via_theoddsapi()
 
-    def _fetch_via_theoddsapi_with_key(self, api_key: str, active_sports: list) -> list[dict]:
+    def _fetch_via_theoddsapi_with_key(
+        self, api_key: str, active_sports: list
+    ) -> list[dict]:
         return self._odds_fetcher._fetch_via_theoddsapi_with_key(api_key, active_sports)
 
     def _fetch_stealth_scraper(self) -> list[dict]:
@@ -366,7 +384,9 @@ class LivePredictionEngine:
     def _fetch_draftkings_odds(self) -> list[dict]:
         return self._odds_fetcher._fetch_draftkings_odds()
 
-    def _merge_odds_sources(self, espn_data: list[dict], dk_data: list[dict]) -> list[dict]:
+    def _merge_odds_sources(
+        self, espn_data: list[dict], dk_data: list[dict]
+    ) -> list[dict]:
         return self._odds_fetcher.merge_odds_sources(espn_data, dk_data)
 
     # ── Game Parsing (delegates to OddsParser) ────────────────────────────
@@ -400,10 +420,13 @@ class LivePredictionEngine:
         """Resolve completed games via ResultsTracker. Non-blocking on failure."""
         try:
             from betting_intel.analytics.tracker import ResultsTracker
+
             tracker = ResultsTracker()
             n = tracker.resolve_all()
             if self._snapshot_builder is not None:
-                self._snapshot_builder.set_auto_resolve_timestamp(datetime.now().isoformat())
+                self._snapshot_builder.set_auto_resolve_timestamp(
+                    datetime.now().isoformat()
+                )
             if n > 0:
                 logger.info(f"Auto-resolved {n} completed game(s)")
             return n
@@ -447,7 +470,6 @@ class LivePredictionEngine:
             logger.debug("No fresh odds — will use cached/empty games")
 
         all_games: list[LiveGame] = []
-        is_seeded = False
 
         if raw_odds:
             try:
@@ -471,6 +493,7 @@ class LivePredictionEngine:
         if raw_odds and len(raw_odds) > 0:
             try:
                 from betting_intel.arbitrage import detect_arbitrage
+
                 arb_results = detect_arbitrage(raw_odds)
                 arb_opportunities = [o.to_dict() for o in arb_results]
             except Exception as e:
@@ -526,6 +549,7 @@ class LivePredictionEngine:
         # Lazy-init notifier (only on first use)
         if self._notifier is None:
             from betting_intel.notifications.telegram_bot import TelegramNotifier
+
             self._notifier = TelegramNotifier(
                 bot_token=TELEGRAM_BOT_TOKEN,
                 chat_id=TELEGRAM_CHAT_ID,
@@ -563,7 +587,9 @@ class LivePredictionEngine:
         if nba_games and self._robust_system_fitted:
             try:
                 self._predict_with_robust_system(nba_games)
-                n_predicted = sum(1 for g in nba_games if g.edge_pct != 0 and g.edge_pct is not None)
+                n_predicted = sum(
+                    1 for g in nba_games if g.edge_pct != 0 and g.edge_pct is not None
+                )
                 logger.info(f"Robust system: predicted {n_predicted} NBA games")
             except Exception as e:
                 logger.warning(f"Robust system prediction failed: {e}")
@@ -592,10 +618,16 @@ class LivePredictionEngine:
                         # Totals prediction (over/under goals)
                         game = EPLSoccerPredictor.predict_totals(game)
                     except Exception as e:
-                        logger.debug(f"Soccer prediction failed for {game.matchup}: {e}")
+                        logger.debug(
+                            f"Soccer prediction failed for {game.matchup}: {e}"
+                        )
                         continue
 
-                n_soccer = sum(1 for g in soccer_games if g.edge_pct != 0 and g.edge_pct is not None)
+                n_soccer = sum(
+                    1
+                    for g in soccer_games
+                    if g.edge_pct != 0 and g.edge_pct is not None
+                )
                 logger.info(f"Soccer ELO predictor: predicted {n_soccer} EPL games")
             except Exception as e:
                 logger.warning(f"Soccer prediction pipeline failed: {e}")
@@ -615,9 +647,17 @@ class LivePredictionEngine:
 
             # Basketball: use market total as predicted total proxy
             if game.sport_group == "Basketball":
-                game.predicted_total = float(game.market_total) if game.market_total and game.market_total > 0 else None
+                game.predicted_total = (
+                    float(game.market_total)
+                    if game.market_total and game.market_total > 0
+                    else None
+                )
             elif game.sport_group == "Soccer":
-                game.predicted_total = float(game.market_total) if game.market_total and game.market_total > 0 else None
+                game.predicted_total = (
+                    float(game.market_total)
+                    if game.market_total and game.market_total > 0
+                    else None
+                )
             else:
                 game.predicted_total = None
 
@@ -631,4 +671,6 @@ class LivePredictionEngine:
         feature_cols: Optional[list[str]] = None,
     ) -> Optional["pd.Series"]:
         """Build a feature vector. Import pandas lazily to avoid import-order issues."""
-        return self._predictor._build_feature_vector(home_team, away_team, features_df, feature_cols)
+        return self._predictor._build_feature_vector(
+            home_team, away_team, features_df, feature_cols
+        )

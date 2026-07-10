@@ -17,10 +17,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
 
 
 # ── Sport Config Data Class ───────────────────────────────────────────────
+
 
 @dataclass
 class SportConfig:
@@ -30,13 +30,13 @@ class SportConfig:
     sport_key: str
 
     # Display names
-    display_name: str          # e.g. "NBA" (short badge text)
-    full_name: str             # e.g. "National Basketball Association"
+    display_name: str  # e.g. "NBA" (short badge text)
+    full_name: str  # e.g. "National Basketball Association"
 
     # Market types this sport supports
-    has_h2h: bool = True       # Moneyline (head-to-head)
+    has_h2h: bool = True  # Moneyline (head-to-head)
     has_spreads: bool = False  # Point spreads
-    has_totals: bool = False   # Over/under totals
+    has_totals: bool = False  # Over/under totals
 
     # Team name mapping: TheOddsAPI full name → short display name
     team_name_map: dict[str, str] = field(default_factory=dict)
@@ -55,7 +55,9 @@ class SportConfig:
     season_end_month: int = 6
 
     # Markets to fetch from TheOddsAPI
-    markets_to_fetch: list[str] = field(default_factory=lambda: ["h2h", "spreads", "totals"])
+    markets_to_fetch: list[str] = field(
+        default_factory=lambda: ["h2h", "spreads", "totals"]
+    )
 
     @property
     def is_in_season(self) -> bool:
@@ -91,18 +93,36 @@ NBA = SportConfig(
     has_spreads=True,
     has_totals=True,
     team_name_map={
-        "Atlanta Hawks": "Hawks", "Boston Celtics": "Celtics", "Brooklyn Nets": "Nets",
-        "Charlotte Hornets": "Hornets", "Chicago Bulls": "Bulls", "Cleveland Cavaliers": "Cavaliers",
-        "Dallas Mavericks": "Mavericks", "Denver Nuggets": "Nuggets", "Detroit Pistons": "Pistons",
-        "Golden State Warriors": "Warriors", "Houston Rockets": "Rockets", "Indiana Pacers": "Pacers",
-        "LA Clippers": "Clippers", "Los Angeles Lakers": "Lakers", "Memphis Grizzlies": "Grizzlies",
-        "Miami Heat": "Heat", "Milwaukee Bucks": "Bucks", "Minnesota Timberwolves": "Timberwolves",
-        "New Orleans Pelicans": "Pelicans", "New York Knicks": "Knicks",
-        "Oklahoma City Thunder": "Thunder", "Orlando Magic": "Magic",
-        "Philadelphia 76ers": "76ers", "Phoenix Suns": "Suns",
-        "Portland Trail Blazers": "Trail Blazers", "Sacramento Kings": "Kings",
-        "San Antonio Spurs": "Spurs", "Toronto Raptors": "Raptors",
-        "Utah Jazz": "Jazz", "Washington Wizards": "Wizards",
+        "Atlanta Hawks": "Hawks",
+        "Boston Celtics": "Celtics",
+        "Brooklyn Nets": "Nets",
+        "Charlotte Hornets": "Hornets",
+        "Chicago Bulls": "Bulls",
+        "Cleveland Cavaliers": "Cavaliers",
+        "Dallas Mavericks": "Mavericks",
+        "Denver Nuggets": "Nuggets",
+        "Detroit Pistons": "Pistons",
+        "Golden State Warriors": "Warriors",
+        "Houston Rockets": "Rockets",
+        "Indiana Pacers": "Pacers",
+        "LA Clippers": "Clippers",
+        "Los Angeles Lakers": "Lakers",
+        "Memphis Grizzlies": "Grizzlies",
+        "Miami Heat": "Heat",
+        "Milwaukee Bucks": "Bucks",
+        "Minnesota Timberwolves": "Timberwolves",
+        "New Orleans Pelicans": "Pelicans",
+        "New York Knicks": "Knicks",
+        "Oklahoma City Thunder": "Thunder",
+        "Orlando Magic": "Magic",
+        "Philadelphia 76ers": "76ers",
+        "Phoenix Suns": "Suns",
+        "Portland Trail Blazers": "Trail Blazers",
+        "Sacramento Kings": "Kings",
+        "San Antonio Spurs": "Spurs",
+        "Toronto Raptors": "Raptors",
+        "Utah Jazz": "Jazz",
+        "Washington Wizards": "Wizards",
     },
     prediction_strategy="total",
     total_min=180.0,
@@ -342,8 +362,8 @@ EPL = SportConfig(
     display_name="EPL",
     full_name="English Premier League",
     has_h2h=True,
-    has_spreads=False,      # Asian handicaps exist but are separate
-    has_totals=True,         # Over/under goals
+    has_spreads=False,  # Asian handicaps exist but are separate
+    has_totals=True,  # Over/under goals
     team_name_map={
         "Arsenal": "Arsenal",
         "Aston Villa": "Aston Villa",
@@ -402,29 +422,45 @@ NFL = SportConfig(
     has_totals=True,
     team_name_map={
         # AFC East
-        "Buffalo Bills": "Bills", "Miami Dolphins": "Dolphins",
-        "New England Patriots": "Patriots", "New York Jets": "Jets",
+        "Buffalo Bills": "Bills",
+        "Miami Dolphins": "Dolphins",
+        "New England Patriots": "Patriots",
+        "New York Jets": "Jets",
         # AFC North
-        "Baltimore Ravens": "Ravens", "Cincinnati Bengals": "Bengals",
-        "Cleveland Browns": "Browns", "Pittsburgh Steelers": "Steelers",
+        "Baltimore Ravens": "Ravens",
+        "Cincinnati Bengals": "Bengals",
+        "Cleveland Browns": "Browns",
+        "Pittsburgh Steelers": "Steelers",
         # AFC South
-        "Houston Texans": "Texans", "Indianapolis Colts": "Colts",
-        "Jacksonville Jaguars": "Jaguars", "Tennessee Titans": "Titans",
+        "Houston Texans": "Texans",
+        "Indianapolis Colts": "Colts",
+        "Jacksonville Jaguars": "Jaguars",
+        "Tennessee Titans": "Titans",
         # AFC West
-        "Denver Broncos": "Broncos", "Kansas City Chiefs": "Chiefs",
-        "Las Vegas Raiders": "Raiders", "Los Angeles Chargers": "Chargers",
+        "Denver Broncos": "Broncos",
+        "Kansas City Chiefs": "Chiefs",
+        "Las Vegas Raiders": "Raiders",
+        "Los Angeles Chargers": "Chargers",
         # NFC East
-        "Dallas Cowboys": "Cowboys", "New York Giants": "Giants",
-        "Philadelphia Eagles": "Eagles", "Washington Commanders": "Commanders",
+        "Dallas Cowboys": "Cowboys",
+        "New York Giants": "Giants",
+        "Philadelphia Eagles": "Eagles",
+        "Washington Commanders": "Commanders",
         # NFC North
-        "Chicago Bears": "Bears", "Detroit Lions": "Lions",
-        "Green Bay Packers": "Packers", "Minnesota Vikings": "Vikings",
+        "Chicago Bears": "Bears",
+        "Detroit Lions": "Lions",
+        "Green Bay Packers": "Packers",
+        "Minnesota Vikings": "Vikings",
         # NFC South
-        "Atlanta Falcons": "Falcons", "Carolina Panthers": "Panthers",
-        "New Orleans Saints": "Saints", "Tampa Bay Buccaneers": "Buccaneers",
+        "Atlanta Falcons": "Falcons",
+        "Carolina Panthers": "Panthers",
+        "New Orleans Saints": "Saints",
+        "Tampa Bay Buccaneers": "Buccaneers",
         # NFC West
-        "Arizona Cardinals": "Cardinals", "Los Angeles Rams": "Rams",
-        "San Francisco 49ers": "49ers", "Seattle Seahawks": "Seahawks",
+        "Arizona Cardinals": "Cardinals",
+        "Los Angeles Rams": "Rams",
+        "San Francisco 49ers": "49ers",
+        "Seattle Seahawks": "Seahawks",
     },
     prediction_strategy="total",
     total_min=30.0,
@@ -440,9 +476,11 @@ NFL = SportConfig(
 # All supported sports — NBA + NCAAB + Euroleague + EPL + NFL
 ALL_SPORTS: list[SportConfig] = [NBA, NCAAB, EUROLEAGUE, EPL, NFL]
 
+
 # Sports that are currently in season
 def get_active_sports() -> list[SportConfig]:
     return [s for s in ALL_SPORTS if s.is_in_season]
+
 
 # TheOddsAPI sport_key → SportConfig lookup
 SPORT_KEY_TO_CONFIG: dict[str, SportConfig] = {s.sport_key: s for s in ALL_SPORTS}
@@ -459,6 +497,7 @@ for _sport in ALL_SPORTS:
 
 
 # ── Helper Functions ──────────────────────────────────────────────────────
+
 
 def league_from_sport_key(sport_key: str) -> str:
     """Convert a TheOddsAPI sport key to a short league display name."""

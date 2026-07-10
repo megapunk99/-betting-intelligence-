@@ -56,11 +56,13 @@ class DatabaseManager:
     def __init__(self, database_url: Optional[str] = None):
         if database_url:
             self.database_url = database_url
-        elif hasattr(settings, 'database_url') and getattr(settings, 'database_url', None):
+        elif hasattr(settings, "database_url") and getattr(
+            settings, "database_url", None
+        ):
             self.database_url = settings.database_url
         else:
             # Build SQLite URL from the nba_db_path setting
-            db_path = getattr(settings, 'nba_db_path', './data/nba_data.db')
+            db_path = getattr(settings, "nba_db_path", "./data/nba_data.db")
             self.database_url = f"sqlite:///{db_path}"
         self._engine = None
         self._session_factory = None

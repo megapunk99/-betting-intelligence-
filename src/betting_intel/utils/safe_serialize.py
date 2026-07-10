@@ -319,9 +319,15 @@ def require_hash(path: Union[str, Path]) -> None:
 
 
 __all__ = [
-    "safe_joblib_dump", "safe_joblib_load",
-    "safe_pickle_dump", "safe_pickle_load",
-    "compute_file_hash", "verify_file_hash",
-    "add_hash_to_existing_file", "has_hash", "require_hash",
-    "ModelIntegrityError", "ModelNotFoundError",
+    "safe_joblib_dump",
+    "safe_joblib_load",
+    "safe_pickle_dump",
+    "safe_pickle_load",
+    "compute_file_hash",
+    "verify_file_hash",
+    "add_hash_to_existing_file",
+    "has_hash",
+    "require_hash",
+    "ModelIntegrityError",
+    "ModelNotFoundError",
 ]

@@ -11,11 +11,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-import numpy as np
 
 from betting_intel.config import settings
 from betting_intel.utils.safe_serialize import (
-    safe_joblib_dump, safe_joblib_load,
+    safe_joblib_dump,
+    safe_joblib_load,
     add_hash_to_existing_file,
 )
 import logging
@@ -101,11 +101,21 @@ class ModelRegistry:
             self._registry["models"][model_name] = []
         self._registry["models"][model_name].append(version)
         self._registry["versions"].append(
-            {"model_name": model_name, "version": version, "created_at": metadata["created_at"]}
+            {
+                "model_name": model_name,
+                "version": version,
+                "created_at": metadata["created_at"],
+            }
         )
         self._save_registry()
 
-        logger.info("Model saved: model=%s version=%s path=%s features=%d", model_name, version, model_path, len(feature_cols))
+        logger.info(
+            "Model saved: model=%s version=%s path=%s features=%d",
+            model_name,
+            version,
+            model_path,
+            len(feature_cols),
+        )
         return version
 
     def load(self, model_name: str, version: Optional[str] = None) -> tuple[Any, dict]:
@@ -144,7 +154,9 @@ class ModelRegistry:
 
         logger.info(
             "Model loaded: model=%s version=%s features=%d integrity=hash_verified",
-            model_name, version, len(metadata.get("feature_cols", [])),
+            model_name,
+            version,
+            len(metadata.get("feature_cols", [])),
         )
         return model, metadata
 
@@ -175,6 +187,7 @@ class ModelRegistry:
             ]
         else:
             import shutil
+
             shutil.rmtree(model_dir)
             self._registry["models"].pop(model_name, None)
             self._registry["versions"] = [
@@ -187,15 +200,18 @@ class ModelRegistry:
             if p.exists():
                 p.unlink()
 
-        if model_name in self._registry["models"] and version in self._registry["models"][model_name]:
+        if (
+            model_name in self._registry["models"]
+            and version in self._registry["models"][model_name]
+        ):
             self._registry["models"][model_name].remove(version)
         self._registry["versions"] = [
-            v for v in self._registry["versions"]
+            v
+            for v in self._registry["versions"]
             if not (v["model_name"] == model_name and v["version"] == version)
         ]
         self._save_registry()
         return True
-
 
     @staticmethod
     def _backfill_hashes() -> None:
@@ -216,5 +232,6 @@ class ModelRegistry:
                     pass
         except Exception:
             pass
+
 
 model_registry = ModelRegistry()

@@ -56,6 +56,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class StakeResult:
     """Result of a stake calculation."""
+
     stake_dollars: float = 0.0
     kelly_full: float = 0.0
     kelly_fractional: float = 0.0
@@ -69,6 +70,7 @@ class StakeResult:
 @dataclass
 class BankrollState:
     """Current state of the bankroll."""
+
     current: float
     initial: float
     peak: float
@@ -83,6 +85,7 @@ class BankrollState:
 @dataclass
 class ExposureTracker:
     """Tracks exposure across teams, leagues, and games."""
+
     per_team: dict[str, float] = field(default_factory=dict)
     per_league: dict[str, float] = field(default_factory=dict)
     per_game: dict[str, float] = field(default_factory=dict)
@@ -116,12 +119,12 @@ class KellyStaker:
         self,
         initial_bankroll: float = 10_000.0,
         kelly_fraction: float = 0.25,
-        max_exposure_pct: float = 0.05,       # Max 5% on any single bet
-        max_team_exposure_pct: float = 0.10,   # Max 10% on any single team
+        max_exposure_pct: float = 0.05,  # Max 5% on any single bet
+        max_team_exposure_pct: float = 0.10,  # Max 10% on any single team
         max_league_exposure_pct: float = 0.30,  # Max 30% on any single league
         max_daily_bets: int = 20,
         drawdown_recovery: bool = True,
-        min_edge_threshold: float = 0.03,      # Minimum 3% edge to bet (was 1%)
+        min_edge_threshold: float = 0.03,  # Minimum 3% edge to bet (was 1%)
         confidence_multipliers: Optional[dict[str, float]] = None,
     ):
         self.initial_bankroll = initial_bankroll
@@ -134,11 +137,11 @@ class KellyStaker:
         self.min_edge_threshold = min_edge_threshold
 
         self.confidence_multipliers = confidence_multipliers or {
-            "VERY_HIGH": 1.0,   # Full Kelly fraction
-            "HIGH": 0.75,        # 75% of Kelly fraction
-            "MEDIUM": 0.50,      # 50% of Kelly fraction
-            "LOW": 0.25,         # 25% of Kelly fraction
-            "VERY_LOW": 0.10,    # 10% of Kelly fraction
+            "VERY_HIGH": 1.0,  # Full Kelly fraction
+            "HIGH": 0.75,  # 75% of Kelly fraction
+            "MEDIUM": 0.50,  # 50% of Kelly fraction
+            "LOW": 0.25,  # 25% of Kelly fraction
+            "VERY_LOW": 0.10,  # 10% of Kelly fraction
         }
 
         # Bankroll state
@@ -223,7 +226,9 @@ class KellyStaker:
 
         # ── 1. Edge check ──────────────────────────────────────────────
         if abs(edge_pct) < self.min_edge_threshold:
-            adjustments.append(f"Edge ({edge_pct:.2%}) below threshold ({self.min_edge_threshold:.2%})")
+            adjustments.append(
+                f"Edge ({edge_pct:.2%}) below threshold ({self.min_edge_threshold:.2%})"
+            )
             return StakeResult(
                 stake_dollars=0.0,
                 adjustment_reasons=adjustments,
@@ -235,7 +240,11 @@ class KellyStaker:
         b = decimal_odds - 1.0  # Net odds received
         if b <= 0:
             adjustments.append(f"Invalid odds: decimal_odds={decimal_odds}")
-            return StakeResult(stake_dollars=0.0, adjustment_reasons=adjustments, bankroll_after=bankroll)
+            return StakeResult(
+                stake_dollars=0.0,
+                adjustment_reasons=adjustments,
+                bankroll_after=bankroll,
+            )
 
         p = max(0.01, min(0.99, win_probability))
         q = 1.0 - p
@@ -257,7 +266,9 @@ class KellyStaker:
             # at 40% drawdown, cut to 0%
             if self.drawdown_pct >= 0.40:
                 dd_adjustment = 0.0
-                adjustments.append(f"Drawdown >40% ({self.drawdown_pct:.1%}) — no betting")
+                adjustments.append(
+                    f"Drawdown >40% ({self.drawdown_pct:.1%}) — no betting"
+                )
             else:
                 dd_adjustment = 1.0 - (self.drawdown_pct / 0.40) ** 2
                 adjustments.append(
@@ -357,11 +368,17 @@ class KellyStaker:
 
         # Update exposure
         if team:
-            self._exposure.per_team[team] = self._exposure.per_team.get(team, 0.0) + stake
+            self._exposure.per_team[team] = (
+                self._exposure.per_team.get(team, 0.0) + stake
+            )
         if league:
-            self._exposure.per_league[league] = self._exposure.per_league.get(league, 0.0) + stake
+            self._exposure.per_league[league] = (
+                self._exposure.per_league.get(league, 0.0) + stake
+            )
         if game_id:
-            self._exposure.per_game[game_id] = self._exposure.per_game.get(game_id, 0.0) + stake
+            self._exposure.per_game[game_id] = (
+                self._exposure.per_game.get(game_id, 0.0) + stake
+            )
         self._exposure.total_exposed += stake
 
         # Update consecutive losses
@@ -372,7 +389,9 @@ class KellyStaker:
 
         # Update bet counts
         today = datetime.now().strftime("%Y-%m-%d")
-        week_start = (datetime.now() - timedelta(days=datetime.now().weekday())).strftime("%Y-%m-%d")
+        week_start = (
+            datetime.now() - timedelta(days=datetime.now().weekday())
+        ).strftime("%Y-%m-%d")
 
         if self._last_bet_date != today:
             self._n_bets_today = 0
@@ -385,28 +404,36 @@ class KellyStaker:
         self._n_bets_this_week += 1
 
         # History
-        self._history.append({
-            "timestamp": datetime.now().isoformat(),
-            "team": team,
-            "league": league,
-            "game_id": game_id,
-            "stake": stake,
-            "decimal_odds": decimal_odds,
-            "won": won,
-            "profit": profit,
-            "bankroll_after": round(self._bankroll, 2),
-        })
+        self._history.append(
+            {
+                "timestamp": datetime.now().isoformat(),
+                "team": team,
+                "league": league,
+                "game_id": game_id,
+                "stake": stake,
+                "decimal_odds": decimal_odds,
+                "won": won,
+                "profit": profit,
+                "bankroll_after": round(self._bankroll, 2),
+            }
+        )
 
     def release_exposure(self, team: str = "", league: str = "", game_id: str = ""):
         """Release exposure for settled bets."""
         if team and team in self._exposure.per_team:
-            self._exposure.total_exposed = max(0.0, self._exposure.total_exposed - self._exposure.per_team[team])
+            self._exposure.total_exposed = max(
+                0.0, self._exposure.total_exposed - self._exposure.per_team[team]
+            )
             del self._exposure.per_team[team]
         if league and league in self._exposure.per_league:
-            self._exposure.total_exposed = max(0.0, self._exposure.total_exposed - self._exposure.per_league[league])
+            self._exposure.total_exposed = max(
+                0.0, self._exposure.total_exposed - self._exposure.per_league[league]
+            )
             del self._exposure.per_league[league]
         if game_id and game_id in self._exposure.per_game:
-            self._exposure.total_exposed = max(0.0, self._exposure.total_exposed - self._exposure.per_game[game_id])
+            self._exposure.total_exposed = max(
+                0.0, self._exposure.total_exposed - self._exposure.per_game[game_id]
+            )
             del self._exposure.per_game[game_id]
 
     def get_exposure(self) -> ExposureTracker:
@@ -451,7 +478,10 @@ class KellyStaker:
         std_p = float(np.std(profits, ddof=1)) if len(profits) > 1 else 1.0
         sharpe = (avg_p / std_p) * math.sqrt(len(profits)) if std_p > 0 else 0.0
 
-        from betting_intel.models.robust_ensemble import compute_statistical_significance
+        from betting_intel.models.robust_ensemble import (
+            compute_statistical_significance,
+        )
+
         sig = compute_statistical_significance(wins, losses)
 
         return {

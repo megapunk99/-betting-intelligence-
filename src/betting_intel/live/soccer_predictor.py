@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import datetime, date
+from datetime import datetime
 from typing import Optional
 
 from betting_intel.live.models import LiveGame, MIN_EDGE_THRESHOLD
@@ -29,9 +29,9 @@ logger = logging.getLogger(__name__)
 # ── Constants ──────────────────────────────────────────────────────────────
 
 # ELO parameters (standard soccer values)
-ELO_K = 32                # K-factor for ELO updates
-ELO_HOME_ADVANTAGE = 75   # ~75 ELO points ≈ 0.38 expected goals advantage
-ELO_INITIAL = 1500        # Starting ELO for all teams
+ELO_K = 32  # K-factor for ELO updates
+ELO_HOME_ADVANTAGE = 75  # ~75 ELO points ≈ 0.38 expected goals advantage
+ELO_INITIAL = 1500  # Starting ELO for all teams
 ELO_DECAY_OFFSEASON = 50  # ELO decay during offseason (per month)
 
 # Poisson expected goals conversion
@@ -40,9 +40,9 @@ ELO_DECAY_OFFSEASON = 50  # ELO decay during offseason (per month)
 #   Convert ELO diff to expected goals via logistic
 
 # Average EPL stats
-AVG_GOALS_HOME = 1.53     # Avg home goals per game in EPL
-AVG_GOALS_AWAY = 1.19     # Avg away goals per game in EPL
-AVG_TOTAL_GOALS = 2.72    # Avg total goals per game
+AVG_GOALS_HOME = 1.53  # Avg home goals per game in EPL
+AVG_GOALS_AWAY = 1.19  # Avg away goals per game in EPL
+AVG_TOTAL_GOALS = 2.72  # Avg total goals per game
 
 # Home advantage in ELO points
 # 75 ELO = 60.6% home win probability vs equal opponent
@@ -115,7 +115,7 @@ class EPLSoccerPredictor:
     @classmethod
     def poisson_prob(cls, k: int, lam: float) -> float:
         """Poisson probability of exactly k goals given expected rate lam."""
-        return (lam ** k) * math.exp(-lam) / math.factorial(k)
+        return (lam**k) * math.exp(-lam) / math.factorial(k)
 
     @classmethod
     def match_outcome_probs(
@@ -229,13 +229,19 @@ class EPLSoccerPredictor:
         market_draw_prob = None
         market_away_prob = None
 
-        if game.home_ml is not None and game.away_ml is not None and game.draw_ml is not None:
+        if (
+            game.home_ml is not None
+            and game.away_ml is not None
+            and game.draw_ml is not None
+        ):
             from betting_intel.features.market_inefficiency import (
                 american_to_implied_prob,
             )
 
             market_home_prob = american_to_implied_prob(game.home_ml)
-            market_draw_prob = american_to_implied_prob(game.draw_ml) if game.draw_ml else 0.0
+            market_draw_prob = (
+                american_to_implied_prob(game.draw_ml) if game.draw_ml else 0.0
+            )
             market_away_prob = american_to_implied_prob(game.away_ml)
 
             # For soccer, we need 3-way vig removal
@@ -306,11 +312,16 @@ class EPLSoccerPredictor:
 
         # Model prediction
         expected_total = cls.expected_total_goals(home_team, away_team)
-        over_prob, under_prob = cls.over_under_probs(home_team, away_team, game.market_total)
+        over_prob, under_prob = cls.over_under_probs(
+            home_team, away_team, game.market_total
+        )
 
         # Market-implied over/under probability
         if game.over_odds is not None and game.under_odds is not None:
-            from betting_intel.features.market_inefficiency import american_to_implied_prob
+            from betting_intel.features.market_inefficiency import (
+                american_to_implied_prob,
+            )
+
             market_over_prob = american_to_implied_prob(game.over_odds)
             market_under_prob = american_to_implied_prob(game.under_odds)
 
@@ -327,11 +338,19 @@ class EPLSoccerPredictor:
                 game.total_prediction = round(expected_total, 2)
                 game.total_edge_pct = over_edge
                 game.total_direction = "over"
-                game.total_confidence = "high" if abs(over_edge) >= 0.08 else ("medium" if abs(over_edge) >= 0.05 else "low")
+                game.total_confidence = (
+                    "high"
+                    if abs(over_edge) >= 0.08
+                    else ("medium" if abs(over_edge) >= 0.05 else "low")
+                )
             elif abs(under_edge) >= 0.02:
                 game.total_prediction = round(expected_total, 2)
                 game.total_edge_pct = under_edge
                 game.total_direction = "under"
-                game.total_confidence = "high" if abs(under_edge) >= 0.08 else ("medium" if abs(under_edge) >= 0.05 else "low")
+                game.total_confidence = (
+                    "high"
+                    if abs(under_edge) >= 0.08
+                    else ("medium" if abs(under_edge) >= 0.05 else "low")
+                )
 
         return game

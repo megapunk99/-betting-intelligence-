@@ -22,7 +22,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 
 class BetType(str, Enum):
@@ -61,19 +61,19 @@ class BetType(str, Enum):
 
     def icon(self) -> str:
         return {
-            "moneyline": "\U0001F3C6",
-            "spread": "\U0001F4CA",
-            "total_points": "\U0001F3AF",
-            "team_total": "\U0001F4C8",
-            "first_quarter_winner": "\U0001F525",
-            "quarter_total": "\U0001F4CA",
-            "first_half_total": "\U0001F3C0",
-            "second_half_total": "\U0001F3C0",
-            "player_points": "\U0001F4B0",
-            "player_rebounds": "\U0001F4B0",
-            "player_assists": "\U0001F4B0",
-            "player_pra": "\U0001F4B0",
-            "parlay": "\U0001F3B2",
+            "moneyline": "\U0001f3c6",
+            "spread": "\U0001f4ca",
+            "total_points": "\U0001f3af",
+            "team_total": "\U0001f4c8",
+            "first_quarter_winner": "\U0001f525",
+            "quarter_total": "\U0001f4ca",
+            "first_half_total": "\U0001f3c0",
+            "second_half_total": "\U0001f3c0",
+            "player_points": "\U0001f4b0",
+            "player_rebounds": "\U0001f4b0",
+            "player_assists": "\U0001f4b0",
+            "player_pra": "\U0001f4b0",
+            "parlay": "\U0001f3b2",
         }[self.value]
 
 
@@ -87,7 +87,13 @@ class Confidence(str, Enum):
     VERY_LOW = "VERY LOW"
 
     def numeric(self) -> float:
-        return {"VERY HIGH": 0.9, "HIGH": 0.75, "MEDIUM": 0.5, "LOW": 0.25, "VERY LOW": 0.1}[self.value]
+        return {
+            "VERY HIGH": 0.9,
+            "HIGH": 0.75,
+            "MEDIUM": 0.5,
+            "LOW": 0.25,
+            "VERY LOW": 0.1,
+        }[self.value]
 
     def is_clear(self) -> bool:
         """A 'clear' pick is one with high or very high confidence."""
@@ -162,7 +168,7 @@ class BetSuggestion:
         if self.is_parlay and self.legs:
             product = 1.0
             for leg in self.legs:
-                product *= (1 + leg.edge_pct)
+                product *= 1 + leg.edge_pct
             return product - 1.0
         return self.edge_pct
 
@@ -199,7 +205,12 @@ class BetSuggestion:
             "model_name": self.model_name,
             "confidence_reason": self.confidence_reason,
             "tags": self.tags,
-            "metadata": {k: v if isinstance(v, (str, int, float, bool, list, dict)) or v is None else str(v) for k, v in self.metadata.items()},
+            "metadata": {
+                k: v
+                if isinstance(v, (str, int, float, bool, list, dict)) or v is None
+                else str(v)
+                for k, v in self.metadata.items()
+            },
             "legs": [leg.as_dict() for leg in self.legs],
         }
 
@@ -252,7 +263,11 @@ def SpreadBet(
     """Create a spread bet suggestion."""
     # If team is favored (negative spread line), they need to win by more than the spread
     # If team is underdog (positive spread line), they need to not lose by more than the spread
-    covers = (predicted_margin > spread_line) if spread_line < 0 else (predicted_margin > -spread_line)
+    covers = (
+        (predicted_margin > spread_line)
+        if spread_line < 0
+        else (predicted_margin > -spread_line)
+    )
 
     # PROPER probability: sigmoid function calibrated for spread betting
     # k=0.03 means 10pt margin diff → ~58% confidence (not the crude linear 70%)

@@ -9,7 +9,7 @@ import json
 import math
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch, MagicMock, PropertyMock
+from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -17,11 +17,7 @@ from betting_intel.analytics.tracker import (
     ResultsTracker,
     ResolvedBet,
     StrategyPerformance,
-    PerformanceReport,
     TRAILING_WINDOW_DAYS,
-    ALERT_ROI_THRESHOLD,
-    MIN_BETS_FOR_ALERT,
-    ALERTS_LOG,
 )
 
 
@@ -119,51 +115,83 @@ def results_map() -> dict[str, dict]:
 class TestResolveBet:
     """Unit tests for the _resolve_bet internal method."""
 
-    def test_total_over_win(self, temp_tracker: ResultsTracker, sample_entry_over: dict):
+    def test_total_over_win(
+        self, temp_tracker: ResultsTracker, sample_entry_over: dict
+    ):
         """Total OVER 224.5, actual total = 230 → OVER wins (230 > 224.5)."""
-        result = temp_tracker._resolve_bet(sample_entry_over, home_score=120.0, away_score=110.0)
+        result = temp_tracker._resolve_bet(
+            sample_entry_over, home_score=120.0, away_score=110.0
+        )
         assert result["verdict"] == "WIN"
         assert result["profit"] == round(100.0 * 0.909, 2)
 
-    def test_total_over_loss(self, temp_tracker: ResultsTracker, sample_entry_over: dict):
+    def test_total_over_loss(
+        self, temp_tracker: ResultsTracker, sample_entry_over: dict
+    ):
         """Total OVER 224.5, actual total = 220 → LOSS."""
-        result = temp_tracker._resolve_bet(sample_entry_over, home_score=110.0, away_score=110.0)
+        result = temp_tracker._resolve_bet(
+            sample_entry_over, home_score=110.0, away_score=110.0
+        )
         assert result["verdict"] == "LOSS"
         assert result["profit"] == -100.0
 
-    def test_total_over_push(self, temp_tracker: ResultsTracker, sample_entry_over: dict):
+    def test_total_over_push(
+        self, temp_tracker: ResultsTracker, sample_entry_over: dict
+    ):
         """Total OVER 224.5, actual total = 224.5 exactly → PUSH."""
-        result = temp_tracker._resolve_bet(sample_entry_over, home_score=112.25, away_score=112.25)
+        result = temp_tracker._resolve_bet(
+            sample_entry_over, home_score=112.25, away_score=112.25
+        )
         assert result["verdict"] == "PUSH"
         assert result["profit"] == 0.0
 
-    def test_total_under_win(self, temp_tracker: ResultsTracker, sample_entry_under: dict):
+    def test_total_under_win(
+        self, temp_tracker: ResultsTracker, sample_entry_under: dict
+    ):
         """Total UNDER 224.5, actual total = 210 → WIN."""
-        result = temp_tracker._resolve_bet(sample_entry_under, home_score=105.0, away_score=105.0)
+        result = temp_tracker._resolve_bet(
+            sample_entry_under, home_score=105.0, away_score=105.0
+        )
         assert result["verdict"] == "WIN"
         assert result["profit"] == round(100.0 * 0.909, 2)
 
-    def test_total_under_loss(self, temp_tracker: ResultsTracker, sample_entry_under: dict):
+    def test_total_under_loss(
+        self, temp_tracker: ResultsTracker, sample_entry_under: dict
+    ):
         """Total UNDER 224.5, actual total = 230 → LOSS."""
-        result = temp_tracker._resolve_bet(sample_entry_under, home_score=120.0, away_score=110.0)
+        result = temp_tracker._resolve_bet(
+            sample_entry_under, home_score=120.0, away_score=110.0
+        )
         assert result["verdict"] == "LOSS"
         assert result["profit"] == -100.0
 
-    def test_total_under_push(self, temp_tracker: ResultsTracker, sample_entry_under: dict):
+    def test_total_under_push(
+        self, temp_tracker: ResultsTracker, sample_entry_under: dict
+    ):
         """Total UNDER 224.5, actual total = 224.5 exactly → PUSH."""
-        result = temp_tracker._resolve_bet(sample_entry_under, home_score=112.25, away_score=112.25)
+        result = temp_tracker._resolve_bet(
+            sample_entry_under, home_score=112.25, away_score=112.25
+        )
         assert result["verdict"] == "PUSH"
         assert result["profit"] == 0.0
 
-    def test_moneyline_home_win(self, temp_tracker: ResultsTracker, sample_entry_moneyline_home: dict):
+    def test_moneyline_home_win(
+        self, temp_tracker: ResultsTracker, sample_entry_moneyline_home: dict
+    ):
         """ML Lakers, Lakers (home) win → WIN."""
-        result = temp_tracker._resolve_bet(sample_entry_moneyline_home, home_score=115.0, away_score=108.0)
+        result = temp_tracker._resolve_bet(
+            sample_entry_moneyline_home, home_score=115.0, away_score=108.0
+        )
         assert result["verdict"] == "WIN"
         assert result["profit"] == round(200.0 * 0.909, 2)
 
-    def test_moneyline_home_loss(self, temp_tracker: ResultsTracker, sample_entry_moneyline_home: dict):
+    def test_moneyline_home_loss(
+        self, temp_tracker: ResultsTracker, sample_entry_moneyline_home: dict
+    ):
         """ML Lakers, Lakers (home) lose → LOSS."""
-        result = temp_tracker._resolve_bet(sample_entry_moneyline_home, home_score=100.0, away_score=115.0)
+        result = temp_tracker._resolve_bet(
+            sample_entry_moneyline_home, home_score=100.0, away_score=115.0
+        )
         assert result["verdict"] == "LOSS"
         assert result["profit"] == -200.0
 
@@ -187,7 +215,9 @@ class TestResolveBet:
         result = temp_tracker._resolve_bet(entry, home_score=115.0, away_score=105.0)
         assert result["verdict"] == "LOSS"
 
-    def test_no_stake_no_profit(self, temp_tracker: ResultsTracker, sample_entry_over: dict):
+    def test_no_stake_no_profit(
+        self, temp_tracker: ResultsTracker, sample_entry_over: dict
+    ):
         """Bet with $0 stake → $0 profit regardless of outcome."""
         entry = {**sample_entry_over, "stake_dollars": 0.0}
         result = temp_tracker._resolve_bet(entry, home_score=120.0, away_score=110.0)
@@ -229,7 +259,9 @@ class TestResolveBet:
 class TestMatchEntryToResult:
     """Unit tests for _match_entry_to_result."""
 
-    def test_direct_matchup_key(self, temp_tracker: ResultsTracker, sample_entry_over: dict, results_map: dict):
+    def test_direct_matchup_key(
+        self, temp_tracker: ResultsTracker, sample_entry_over: dict, results_map: dict
+    ):
         """Match by standard 'Away @ Home^{date}' key."""
         result = temp_tracker._match_entry_to_result(sample_entry_over, results_map)
         assert result is not None
@@ -237,13 +269,17 @@ class TestMatchEntryToResult:
         assert result["away_score"] == 108.0
         # total=223 < market=224.5, OVER → LOSS
 
-    def test_no_match_returns_none(self, temp_tracker: ResultsTracker, sample_entry_over: dict):
+    def test_no_match_returns_none(
+        self, temp_tracker: ResultsTracker, sample_entry_over: dict
+    ):
         """Entry with date that has no results → None."""
         entry = {**sample_entry_over, "game_date": "2099-12-31", "matchup": "No @ Game"}
         result = temp_tracker._match_entry_to_result(entry, {})
         assert result is None
 
-    def test_fuzzy_team_name_match(self, temp_tracker: ResultsTracker, results_map: dict):
+    def test_fuzzy_team_name_match(
+        self, temp_tracker: ResultsTracker, results_map: dict
+    ):
         """Fuzzy match when exact key not found but team names and date are present."""
         entry = {
             "game_date": "2026-01-15",
@@ -259,7 +295,9 @@ class TestMatchEntryToResult:
         assert result is not None
         assert result["home_score"] == 115.0
 
-    def test_match_by_team_name_key(self, temp_tracker: ResultsTracker, results_map: dict):
+    def test_match_by_team_name_key(
+        self, temp_tracker: ResultsTracker, results_map: dict
+    ):
         """Match by {away} @ {home}^{date} key when matchup format differs."""
         entry = {
             "game_date": "2026-01-14",
@@ -288,10 +326,22 @@ class TestComputeStrategyPerformance:
     def test_all_wins(self, temp_tracker: ResultsTracker):
         """All bets WIN → 100% win rate, positive ROI."""
         bets = [
-            ResolvedBet(result="WIN", profit_dollars=90.0, stake_dollars=100.0, game_date="2026-01-10"),
-            ResolvedBet(result="WIN", profit_dollars=90.0, stake_dollars=100.0, game_date="2026-01-11"),
+            ResolvedBet(
+                result="WIN",
+                profit_dollars=90.0,
+                stake_dollars=100.0,
+                game_date="2026-01-10",
+            ),
+            ResolvedBet(
+                result="WIN",
+                profit_dollars=90.0,
+                stake_dollars=100.0,
+                game_date="2026-01-11",
+            ),
         ]
-        perf = temp_tracker._compute_strategy_performance(bets, "model1", "NBA", "total")
+        perf = temp_tracker._compute_strategy_performance(
+            bets, "model1", "NBA", "total"
+        )
         assert perf.n_bets == 2
         assert perf.wins == 2
         assert perf.losses == 0
@@ -301,10 +351,22 @@ class TestComputeStrategyPerformance:
     def test_all_losses(self, temp_tracker: ResultsTracker):
         """All bets LOSS → 0% win rate, negative ROI."""
         bets = [
-            ResolvedBet(result="LOSS", profit_dollars=-100.0, stake_dollars=100.0, game_date="2026-01-10"),
-            ResolvedBet(result="LOSS", profit_dollars=-100.0, stake_dollars=100.0, game_date="2026-01-11"),
+            ResolvedBet(
+                result="LOSS",
+                profit_dollars=-100.0,
+                stake_dollars=100.0,
+                game_date="2026-01-10",
+            ),
+            ResolvedBet(
+                result="LOSS",
+                profit_dollars=-100.0,
+                stake_dollars=100.0,
+                game_date="2026-01-11",
+            ),
         ]
-        perf = temp_tracker._compute_strategy_performance(bets, "model1", "NBA", "total")
+        perf = temp_tracker._compute_strategy_performance(
+            bets, "model1", "NBA", "total"
+        )
         assert perf.wins == 0
         assert perf.losses == 2
         assert perf.win_rate == 0.0
@@ -313,11 +375,28 @@ class TestComputeStrategyPerformance:
     def test_mixed_results(self, temp_tracker: ResultsTracker):
         """Mixed WIN/LOSS → 50% win rate, ROI should reflect net."""
         bets = [
-            ResolvedBet(result="WIN", profit_dollars=90.0, stake_dollars=100.0, game_date="2026-01-10"),
-            ResolvedBet(result="LOSS", profit_dollars=-100.0, stake_dollars=100.0, game_date="2026-01-11"),
-            ResolvedBet(result="PUSH", profit_dollars=0.0, stake_dollars=100.0, game_date="2026-01-12"),
+            ResolvedBet(
+                result="WIN",
+                profit_dollars=90.0,
+                stake_dollars=100.0,
+                game_date="2026-01-10",
+            ),
+            ResolvedBet(
+                result="LOSS",
+                profit_dollars=-100.0,
+                stake_dollars=100.0,
+                game_date="2026-01-11",
+            ),
+            ResolvedBet(
+                result="PUSH",
+                profit_dollars=0.0,
+                stake_dollars=100.0,
+                game_date="2026-01-12",
+            ),
         ]
-        perf = temp_tracker._compute_strategy_performance(bets, "model1", "NBA", "total")
+        perf = temp_tracker._compute_strategy_performance(
+            bets, "model1", "NBA", "total"
+        )
         assert perf.n_bets == 3
         assert perf.wins == 1
         assert perf.losses == 1
@@ -327,8 +406,17 @@ class TestComputeStrategyPerformance:
 
     def test_strategy_name_format(self, temp_tracker: ResultsTracker):
         """Strategy name is '{model}/{league}/{bet_type}'."""
-        bets = [ResolvedBet(result="WIN", profit_dollars=90.0, stake_dollars=100.0, game_date="2026-01-10")]
-        perf = temp_tracker._compute_strategy_performance(bets, "ridge", "WNBA", "spread")
+        bets = [
+            ResolvedBet(
+                result="WIN",
+                profit_dollars=90.0,
+                stake_dollars=100.0,
+                game_date="2026-01-10",
+            )
+        ]
+        perf = temp_tracker._compute_strategy_performance(
+            bets, "ridge", "WNBA", "spread"
+        )
         assert perf.strategy_name == "ridge/WNBA/spread"
         assert perf.model == "ridge"
         assert perf.league == "WNBA"
@@ -337,10 +425,30 @@ class TestComputeStrategyPerformance:
     def test_sharpe_ratio_computed(self, temp_tracker: ResultsTracker):
         """Sharpe-like ratio is computed from profit distribution."""
         bets = [
-            ResolvedBet(result="WIN", profit_dollars=90.0, stake_dollars=100.0, game_date="2026-01-10"),
-            ResolvedBet(result="LOSS", profit_dollars=-100.0, stake_dollars=100.0, game_date="2026-01-11"),
-            ResolvedBet(result="WIN", profit_dollars=90.0, stake_dollars=100.0, game_date="2026-01-12"),
-            ResolvedBet(result="LOSS", profit_dollars=-100.0, stake_dollars=100.0, game_date="2026-01-13"),
+            ResolvedBet(
+                result="WIN",
+                profit_dollars=90.0,
+                stake_dollars=100.0,
+                game_date="2026-01-10",
+            ),
+            ResolvedBet(
+                result="LOSS",
+                profit_dollars=-100.0,
+                stake_dollars=100.0,
+                game_date="2026-01-11",
+            ),
+            ResolvedBet(
+                result="WIN",
+                profit_dollars=90.0,
+                stake_dollars=100.0,
+                game_date="2026-01-12",
+            ),
+            ResolvedBet(
+                result="LOSS",
+                profit_dollars=-100.0,
+                stake_dollars=100.0,
+                game_date="2026-01-13",
+            ),
         ]
         perf = temp_tracker._compute_strategy_performance(bets, "e", "NBA", "t")
         # Sharpe = (avg_profit / std_profit) * sqrt(n)
@@ -353,7 +461,14 @@ class TestComputeStrategyPerformance:
 
     def test_no_decision_bets_zero_win_rate(self, temp_tracker: ResultsTracker):
         """Only pushes → win_rate = 0.0 (no decisions)."""
-        bets = [ResolvedBet(result="PUSH", profit_dollars=0.0, stake_dollars=100.0, game_date="2026-01-10")]
+        bets = [
+            ResolvedBet(
+                result="PUSH",
+                profit_dollars=0.0,
+                stake_dollars=100.0,
+                game_date="2026-01-10",
+            )
+        ]
         perf = temp_tracker._compute_strategy_performance(bets, "m", "NBA", "t")
         assert perf.win_rate == 0.0
         assert perf.roi == 0.0
@@ -372,10 +487,14 @@ class TestAlertThreshold:
         today = datetime.now().strftime("%Y-%m-%d")
         bets = []
         for i in range(5):
-            bets.append(ResolvedBet(
-                result="LOSS", profit_dollars=-100.0, stake_dollars=100.0,
-                game_date=today,
-            ))
+            bets.append(
+                ResolvedBet(
+                    result="LOSS",
+                    profit_dollars=-100.0,
+                    stake_dollars=100.0,
+                    game_date=today,
+                )
+            )
         perf = temp_tracker._compute_strategy_performance(bets, "m", "NBA", "t")
         assert perf.is_alerted is True
         assert perf.roi == -1.0
@@ -386,10 +505,14 @@ class TestAlertThreshold:
         today = datetime.now().strftime("%Y-%m-%d")
         bets = []
         for i in range(5):
-            bets.append(ResolvedBet(
-                result="WIN", profit_dollars=90.0, stake_dollars=100.0,
-                game_date=today,
-            ))
+            bets.append(
+                ResolvedBet(
+                    result="WIN",
+                    profit_dollars=90.0,
+                    stake_dollars=100.0,
+                    game_date=today,
+                )
+            )
         perf = temp_tracker._compute_strategy_performance(bets, "m", "NBA", "t")
         assert perf.is_alerted is False
         # ROI = 450/500 = 0.9 >> -0.05 → not alerted
@@ -398,8 +521,18 @@ class TestAlertThreshold:
         """Strategy with only 2 bets at -10% → is_alerted=False (< MIN_BETS_FOR_ALERT)."""
         today = datetime.now().strftime("%Y-%m-%d")
         bets = [
-            ResolvedBet(result="LOSS", profit_dollars=-100.0, stake_dollars=100.0, game_date=today),
-            ResolvedBet(result="LOSS", profit_dollars=-100.0, stake_dollars=100.0, game_date=today),
+            ResolvedBet(
+                result="LOSS",
+                profit_dollars=-100.0,
+                stake_dollars=100.0,
+                game_date=today,
+            ),
+            ResolvedBet(
+                result="LOSS",
+                profit_dollars=-100.0,
+                stake_dollars=100.0,
+                game_date=today,
+            ),
         ]
         perf = temp_tracker._compute_strategy_performance(bets, "m", "NBA", "t")
         assert perf.n_bets == 2
@@ -409,19 +542,56 @@ class TestAlertThreshold:
 
     def test_trailing_window_only_recent_bets(self, temp_tracker: ResultsTracker):
         """Trailing ROI only considers bets within TRAILING_WINDOW_DAYS."""
-        long_ago = (datetime.now() - timedelta(days=TRAILING_WINDOW_DAYS + 10)).strftime("%Y-%m-%d")
+        long_ago = (
+            datetime.now() - timedelta(days=TRAILING_WINDOW_DAYS + 10)
+        ).strftime("%Y-%m-%d")
         today = datetime.now().strftime("%Y-%m-%d")
 
         bets = [
             # Old bets (outside window — ignored for trailing)
-            ResolvedBet(result="WIN", profit_dollars=90.0, stake_dollars=100.0, game_date=long_ago),
-            ResolvedBet(result="WIN", profit_dollars=90.0, stake_dollars=100.0, game_date=long_ago),
+            ResolvedBet(
+                result="WIN",
+                profit_dollars=90.0,
+                stake_dollars=100.0,
+                game_date=long_ago,
+            ),
+            ResolvedBet(
+                result="WIN",
+                profit_dollars=90.0,
+                stake_dollars=100.0,
+                game_date=long_ago,
+            ),
             # Recent bets (inside window — counted)
-            ResolvedBet(result="LOSS", profit_dollars=-100.0, stake_dollars=100.0, game_date=today),
-            ResolvedBet(result="LOSS", profit_dollars=-100.0, stake_dollars=100.0, game_date=today),
-            ResolvedBet(result="LOSS", profit_dollars=-100.0, stake_dollars=100.0, game_date=today),
-            ResolvedBet(result="LOSS", profit_dollars=-100.0, stake_dollars=100.0, game_date=today),
-            ResolvedBet(result="LOSS", profit_dollars=-100.0, stake_dollars=100.0, game_date=today),
+            ResolvedBet(
+                result="LOSS",
+                profit_dollars=-100.0,
+                stake_dollars=100.0,
+                game_date=today,
+            ),
+            ResolvedBet(
+                result="LOSS",
+                profit_dollars=-100.0,
+                stake_dollars=100.0,
+                game_date=today,
+            ),
+            ResolvedBet(
+                result="LOSS",
+                profit_dollars=-100.0,
+                stake_dollars=100.0,
+                game_date=today,
+            ),
+            ResolvedBet(
+                result="LOSS",
+                profit_dollars=-100.0,
+                stake_dollars=100.0,
+                game_date=today,
+            ),
+            ResolvedBet(
+                result="LOSS",
+                profit_dollars=-100.0,
+                stake_dollars=100.0,
+                game_date=today,
+            ),
         ]
         perf = temp_tracker._compute_strategy_performance(bets, "m", "NBA", "t")
         # Total: 7 bets, 2 wins, 5 losses, total_stake=700, total_profit=-320
@@ -431,15 +601,24 @@ class TestAlertThreshold:
         assert len(perf.trailing_profits) == 5
         assert perf.is_alerted is True  # 5 losses, trailing_roi=-1.0 < -0.05
 
-    def test_check_alerts_returns_alerted_strategies(self, temp_tracker: ResultsTracker):
+    def test_check_alerts_returns_alerted_strategies(
+        self, temp_tracker: ResultsTracker
+    ):
         """check_alerts() returns only strategies below threshold with enough bets."""
         today = datetime.now().strftime("%Y-%m-%d")
         # Add 5 losing bets directly to resolved state
         for _ in range(5):
-            temp_tracker._resolved_bets.append(ResolvedBet(
-                result="LOSS", profit_dollars=-100.0, stake_dollars=100.0,
-                game_date=today, model_name="bad_model", league="NBA", bet_type="total",
-            ))
+            temp_tracker._resolved_bets.append(
+                ResolvedBet(
+                    result="LOSS",
+                    profit_dollars=-100.0,
+                    stake_dollars=100.0,
+                    game_date=today,
+                    model_name="bad_model",
+                    league="NBA",
+                    bet_type="total",
+                )
+            )
         report = temp_tracker.generate_report()
         alerts = temp_tracker.check_alerts(report)
         assert len(alerts) == 1
@@ -449,10 +628,17 @@ class TestAlertThreshold:
         """check_alerts() returns empty list when all strategies are above threshold."""
         today = datetime.now().strftime("%Y-%m-%d")
         for _ in range(5):
-            temp_tracker._resolved_bets.append(ResolvedBet(
-                result="WIN", profit_dollars=90.0, stake_dollars=100.0,
-                game_date=today, model_name="good_model", league="NBA", bet_type="total",
-            ))
+            temp_tracker._resolved_bets.append(
+                ResolvedBet(
+                    result="WIN",
+                    profit_dollars=90.0,
+                    stake_dollars=100.0,
+                    game_date=today,
+                    model_name="good_model",
+                    league="NBA",
+                    bet_type="total",
+                )
+            )
         report = temp_tracker.generate_report()
         alerts = temp_tracker.check_alerts(report)
         assert len(alerts) == 0
@@ -480,29 +666,75 @@ class TestReportGeneration:
     def test_report_with_multiple_strategies(self, temp_tracker: ResultsTracker):
         """Multiple strategies in the same tracker → separate breakdowns."""
         temp_tracker._resolved_bets = [
-            ResolvedBet(result="WIN", profit_dollars=90.0, stake_dollars=100.0,
-                        game_date="2026-01-10", model_name="m1", league="NBA", bet_type="total"),
-            ResolvedBet(result="LOSS", profit_dollars=-100.0, stake_dollars=100.0,
-                        game_date="2026-01-10", model_name="m1", league="NBA", bet_type="total"),
-            ResolvedBet(result="WIN", profit_dollars=45.0, stake_dollars=50.0,
-                        game_date="2026-01-10", model_name="m2", league="WNBA", bet_type="spread"),
+            ResolvedBet(
+                result="WIN",
+                profit_dollars=90.0,
+                stake_dollars=100.0,
+                game_date="2026-01-10",
+                model_name="m1",
+                league="NBA",
+                bet_type="total",
+            ),
+            ResolvedBet(
+                result="LOSS",
+                profit_dollars=-100.0,
+                stake_dollars=100.0,
+                game_date="2026-01-10",
+                model_name="m1",
+                league="NBA",
+                bet_type="total",
+            ),
+            ResolvedBet(
+                result="WIN",
+                profit_dollars=45.0,
+                stake_dollars=50.0,
+                game_date="2026-01-10",
+                model_name="m2",
+                league="WNBA",
+                bet_type="spread",
+            ),
         ]
         report = temp_tracker.generate_report()
         assert report.total_bets == 3
         assert len(report.strategies) == 2
         # Sorted by ROI descending
-        assert report.strategies[0].strategy_name == "m2/WNBA/spread"  # ROI = 45/50 = 0.9
-        assert report.strategies[1].strategy_name == "m1/NBA/total"     # ROI = -10/200 = -0.05
+        assert (
+            report.strategies[0].strategy_name == "m2/WNBA/spread"
+        )  # ROI = 45/50 = 0.9
+        assert (
+            report.strategies[1].strategy_name == "m1/NBA/total"
+        )  # ROI = -10/200 = -0.05
 
     def test_report_daily_pnl(self, temp_tracker: ResultsTracker):
         """Daily P&L groups bets by game_date."""
         temp_tracker._resolved_bets = [
-            ResolvedBet(result="WIN", profit_dollars=90.0, stake_dollars=100.0,
-                        game_date="2026-01-10", model_name="m1", league="NBA", bet_type="total"),
-            ResolvedBet(result="LOSS", profit_dollars=-100.0, stake_dollars=100.0,
-                        game_date="2026-01-10", model_name="m1", league="NBA", bet_type="total"),
-            ResolvedBet(result="WIN", profit_dollars=90.0, stake_dollars=100.0,
-                        game_date="2026-01-11", model_name="m1", league="NBA", bet_type="total"),
+            ResolvedBet(
+                result="WIN",
+                profit_dollars=90.0,
+                stake_dollars=100.0,
+                game_date="2026-01-10",
+                model_name="m1",
+                league="NBA",
+                bet_type="total",
+            ),
+            ResolvedBet(
+                result="LOSS",
+                profit_dollars=-100.0,
+                stake_dollars=100.0,
+                game_date="2026-01-10",
+                model_name="m1",
+                league="NBA",
+                bet_type="total",
+            ),
+            ResolvedBet(
+                result="WIN",
+                profit_dollars=90.0,
+                stake_dollars=100.0,
+                game_date="2026-01-11",
+                model_name="m1",
+                league="NBA",
+                bet_type="total",
+            ),
         ]
         report = temp_tracker.generate_report()
         assert len(report.daily_pnl) == 2
@@ -516,10 +748,24 @@ class TestReportGeneration:
     def test_model_and_league_comparison(self, temp_tracker: ResultsTracker):
         """Model and league comparison dicts are populated."""
         temp_tracker._resolved_bets = [
-            ResolvedBet(result="WIN", profit_dollars=90.0, stake_dollars=100.0,
-                        game_date="2026-01-10", model_name="ridge", league="NBA", bet_type="total"),
-            ResolvedBet(result="WIN", profit_dollars=45.0, stake_dollars=50.0,
-                        game_date="2026-01-10", model_name="xgboost", league="NBA", bet_type="total"),
+            ResolvedBet(
+                result="WIN",
+                profit_dollars=90.0,
+                stake_dollars=100.0,
+                game_date="2026-01-10",
+                model_name="ridge",
+                league="NBA",
+                bet_type="total",
+            ),
+            ResolvedBet(
+                result="WIN",
+                profit_dollars=45.0,
+                stake_dollars=50.0,
+                game_date="2026-01-10",
+                model_name="xgboost",
+                league="NBA",
+                bet_type="total",
+            ),
         ]
         report = temp_tracker.generate_report()
         assert "ridge" in report.model_comparison
@@ -530,8 +776,15 @@ class TestReportGeneration:
     def test_save_report_creates_file(self, temp_tracker: ResultsTracker):
         """save_report() writes JSON to disk."""
         temp_tracker._resolved_bets = [
-            ResolvedBet(result="WIN", profit_dollars=90.0, stake_dollars=100.0,
-                        game_date="2026-01-10", model_name="m1", league="NBA", bet_type="total"),
+            ResolvedBet(
+                result="WIN",
+                profit_dollars=90.0,
+                stake_dollars=100.0,
+                game_date="2026-01-10",
+                model_name="m1",
+                league="NBA",
+                bet_type="total",
+            ),
         ]
         report = temp_tracker.generate_report()
         path = temp_tracker.save_report(report)
@@ -550,7 +803,9 @@ class TestReportGeneration:
 class TestResolveFromDisk:
     """Test resolve_all with synthetic prediction files (mocking the DB fetch)."""
 
-    def test_resolve_all_with_forward_test_json(self, temp_tracker: ResultsTracker, tmp_path: Path):
+    def test_resolve_all_with_forward_test_json(
+        self, temp_tracker: ResultsTracker, tmp_path: Path
+    ):
         """resolve_all loads predictions from forward_test_results.json, matches results."""
         # Write a forward_test_results.json with one unresolved bet
         ft_file = tmp_path / "data" / "forward_test_results.json"
@@ -576,27 +831,42 @@ class TestResolveFromDisk:
 
         # Patch FORWARD_TEST_JSON path and _fetch_results to return synthetic results
         with patch("betting_intel.analytics.tracker.FORWARD_TEST_JSON", ft_file):
-            with patch.object(temp_tracker, "_fetch_results", return_value={
-                "Celtics @ Lakers^2026-01-15": {"home_score": 120.0, "away_score": 110.0},
-            }):
+            with patch.object(
+                temp_tracker,
+                "_fetch_results",
+                return_value={
+                    "Celtics @ Lakers^2026-01-15": {
+                        "home_score": 120.0,
+                        "away_score": 110.0,
+                    },
+                },
+            ):
                 n = temp_tracker.resolve_all()
                 assert n == 1  # 1 newly resolved
 
                 report = temp_tracker.generate_report()
                 assert report.total_bets == 1
-                assert report.total_profit == pytest.approx(90.9, abs=0.01)  # 100 * 0.909
+                assert report.total_profit == pytest.approx(
+                    90.9, abs=0.01
+                )  # 100 * 0.909
                 assert report.overall_roi == pytest.approx(0.909, abs=0.001)
 
     def test_resolve_all_empty_predictions_dir(self, temp_tracker: ResultsTracker):
         """resolve_all with no prediction files → 0 resolved."""
         # Override FORWARD_TEST_JSON to non-existent path
-        with patch("betting_intel.analytics.tracker.FORWARD_TEST_JSON", Path("/nonexistent/path.json")):
+        with patch(
+            "betting_intel.analytics.tracker.FORWARD_TEST_JSON",
+            Path("/nonexistent/path.json"),
+        ):
             n = temp_tracker.resolve_all()
             assert n == 0
 
     def test_get_dashboard_data_smoke(self, temp_tracker: ResultsTracker):
         """get_dashboard_data() returns correctly shaped dict even with empty state."""
-        with patch("betting_intel.analytics.tracker.FORWARD_TEST_JSON", Path("/nonexistent/path.json")):
+        with patch(
+            "betting_intel.analytics.tracker.FORWARD_TEST_JSON",
+            Path("/nonexistent/path.json"),
+        ):
             with patch.object(temp_tracker, "_fetch_results", return_value={}):
                 data = temp_tracker.get_dashboard_data()
         assert "generated_at" in data
@@ -748,7 +1018,9 @@ class TestEntryToResolvedBet:
 class TestLogAlert:
     """Tests for _log_alert writing alerts to JSONL disk storage."""
 
-    def test_log_alert_writes_to_disk(self, temp_tracker: ResultsTracker, tmp_path: Path):
+    def test_log_alert_writes_to_disk(
+        self, temp_tracker: ResultsTracker, tmp_path: Path
+    ):
         """_log_alert writes a JSONL entry to the alerts log file."""
         strategy = StrategyPerformance(
             strategy_name="test_model/NBA/total",
@@ -781,29 +1053,53 @@ class TestLogAlert:
         assert entry["threshold"] == -0.05
         assert "timestamp" in entry
 
-    def test_log_alert_appends_multiple_alerts(self, temp_tracker: ResultsTracker, tmp_path: Path):
+    def test_log_alert_appends_multiple_alerts(
+        self, temp_tracker: ResultsTracker, tmp_path: Path
+    ):
         """Multiple _log_alert calls append to the same file."""
         alert_file = tmp_path / "analytics_alerts.jsonl"
         with patch("betting_intel.analytics.tracker.ALERTS_LOG", alert_file):
-            temp_tracker._log_alert(StrategyPerformance(
-                strategy_name="s1", n_bets=5, losses=5, roi=-1.0, total_profit=-500.0,
-            ))
-            temp_tracker._log_alert(StrategyPerformance(
-                strategy_name="s2", n_bets=6, losses=6, roi=-0.8, total_profit=-480.0,
-            ))
+            temp_tracker._log_alert(
+                StrategyPerformance(
+                    strategy_name="s1",
+                    n_bets=5,
+                    losses=5,
+                    roi=-1.0,
+                    total_profit=-500.0,
+                )
+            )
+            temp_tracker._log_alert(
+                StrategyPerformance(
+                    strategy_name="s2",
+                    n_bets=6,
+                    losses=6,
+                    roi=-0.8,
+                    total_profit=-480.0,
+                )
+            )
 
         lines = alert_file.read_text().strip().split("\n")
         assert len(lines) == 2
         assert json.loads(lines[0])["strategy_name"] == "s1"
         assert json.loads(lines[1])["strategy_name"] == "s2"
 
-    def test_log_alert_handles_write_error_gracefully(self, temp_tracker: ResultsTracker, caplog):
+    def test_log_alert_handles_write_error_gracefully(
+        self, temp_tracker: ResultsTracker, caplog
+    ):
         """Write failure does not raise — just logs a warning."""
-        import logging
-        with patch("betting_intel.analytics.tracker.ALERTS_LOG", Path("/nonexistent_dir/alert.jsonl")):
-            temp_tracker._log_alert(StrategyPerformance(
-                strategy_name="s1", n_bets=5, losses=5, roi=-1.0, total_profit=-500.0,
-            ))
+        with patch(
+            "betting_intel.analytics.tracker.ALERTS_LOG",
+            Path("/nonexistent_dir/alert.jsonl"),
+        ):
+            temp_tracker._log_alert(
+                StrategyPerformance(
+                    strategy_name="s1",
+                    n_bets=5,
+                    losses=5,
+                    roi=-1.0,
+                    total_profit=-500.0,
+                )
+            )
         # Should not raise — gracefully handled
         assert True
 
@@ -818,13 +1114,34 @@ class TestResolveAllPreResolved:
 
     def test_all_entries_already_resolved(self, temp_tracker: ResultsTracker):
         """All predictions have actual_result → no fetch, 0 newly resolved, bets loaded."""
-        with patch.object(temp_tracker, "_raw_predictions", [
-            {"game_date": "2026-01-15", "matchup": "Celtics @ Lakers",
-             "bet_type": "total", "actual_result": "WIN", "actual_profit": 90.9,
-             "stake_dollars": 100.0, "model_name": "m1", "league": "NBA", "bet_type": "total"},
-            {"game_date": "2026-01-15", "matchup": "Heat @ Bucks",
-             "bet_type": "total", "actual_result": "LOSS", "actual_profit": -100.0,
-             "stake_dollars": 100.0, "model_name": "m1", "league": "NBA", "bet_type": "total"},        ]):
+        with patch.object(
+            temp_tracker,
+            "_raw_predictions",
+            [
+                {
+                    "game_date": "2026-01-15",
+                    "matchup": "Celtics @ Lakers",
+                    "bet_type": "total",
+                    "actual_result": "WIN",
+                    "actual_profit": 90.9,
+                    "stake_dollars": 100.0,
+                    "model_name": "m1",
+                    "league": "NBA",
+                    "bet_type": "total",
+                },
+                {
+                    "game_date": "2026-01-15",
+                    "matchup": "Heat @ Bucks",
+                    "bet_type": "total",
+                    "actual_result": "LOSS",
+                    "actual_profit": -100.0,
+                    "stake_dollars": 100.0,
+                    "model_name": "m1",
+                    "league": "NBA",
+                    "bet_type": "total",
+                },
+            ],
+        ):
             with patch.object(temp_tracker, "_load_predictions", return_value=None):
                 with patch.object(temp_tracker, "_fetch_results") as mock_fetch:
                     n = temp_tracker.resolve_all()
@@ -837,21 +1154,45 @@ class TestResolveAllPreResolved:
 
     def test_mixed_resolved_and_unresolved(self, temp_tracker: ResultsTracker):
         """Some pre-resolved, some pending — only pending are fetched and matched."""
-        with patch.object(temp_tracker, "_raw_predictions", [
-            {"game_date": "2026-01-15", "matchup": "Celtics @ Lakers",
-             "home_team": "Lakers", "away_team": "Celtics",
-             "bet_type": "total", "bet_side": "Total OVER 224.5",
-             "market_line": 224.5, "stake_dollars": 100.0,
-             "actual_result": "WIN", "actual_profit": 90.9},  # pre-resolved
-            {"game_date": "2026-01-15", "matchup": "Heat @ Bucks",
-             "home_team": "Bucks", "away_team": "Heat",
-             "bet_type": "total", "bet_side": "Total OVER 220.0",
-             "market_line": 220.0, "stake_dollars": 100.0},  # pending
-        ]):
+        with patch.object(
+            temp_tracker,
+            "_raw_predictions",
+            [
+                {
+                    "game_date": "2026-01-15",
+                    "matchup": "Celtics @ Lakers",
+                    "home_team": "Lakers",
+                    "away_team": "Celtics",
+                    "bet_type": "total",
+                    "bet_side": "Total OVER 224.5",
+                    "market_line": 224.5,
+                    "stake_dollars": 100.0,
+                    "actual_result": "WIN",
+                    "actual_profit": 90.9,
+                },  # pre-resolved
+                {
+                    "game_date": "2026-01-15",
+                    "matchup": "Heat @ Bucks",
+                    "home_team": "Bucks",
+                    "away_team": "Heat",
+                    "bet_type": "total",
+                    "bet_side": "Total OVER 220.0",
+                    "market_line": 220.0,
+                    "stake_dollars": 100.0,
+                },  # pending
+            ],
+        ):
             with patch.object(temp_tracker, "_load_predictions", return_value=None):
-                with patch.object(temp_tracker, "_fetch_results", return_value={
-                    "Heat @ Bucks^2026-01-15": {"home_score": 120.0, "away_score": 100.0},
-                }):
+                with patch.object(
+                    temp_tracker,
+                    "_fetch_results",
+                    return_value={
+                        "Heat @ Bucks^2026-01-15": {
+                            "home_score": 120.0,
+                            "away_score": 100.0,
+                        },
+                    },
+                ):
                     n = temp_tracker.resolve_all()
 
         assert n == 1  # 1 newly resolved
@@ -861,24 +1202,40 @@ class TestResolveAllPreResolved:
         # Second entry newly resolved: total=220, market=220.0 -> PUSH
         assert temp_tracker._resolved_bets[1].result == "PUSH"
 
-    def test_resolve_all_saves_to_forward_test_json(self, temp_tracker: ResultsTracker, tmp_path: Path):
+    def test_resolve_all_saves_to_forward_test_json(
+        self, temp_tracker: ResultsTracker, tmp_path: Path
+    ):
         """Resolved predictions are written back to forward_test_results.json."""
         ft_file = tmp_path / "forward_test_results.json"
         ft_data = {
             "all_bets": [
-                {"game_date": "2026-01-15", "matchup": "Celtics @ Lakers",
-                 "home_team": "Lakers", "away_team": "Celtics",
-                 "bet_type": "total", "bet_side": "Total OVER 224.5",
-                 "market_line": 224.5, "stake_dollars": 100.0, "is_clear_pick": True}
+                {
+                    "game_date": "2026-01-15",
+                    "matchup": "Celtics @ Lakers",
+                    "home_team": "Lakers",
+                    "away_team": "Celtics",
+                    "bet_type": "total",
+                    "bet_side": "Total OVER 224.5",
+                    "market_line": 224.5,
+                    "stake_dollars": 100.0,
+                    "is_clear_pick": True,
+                }
             ]
         }
         with open(ft_file, "w") as f:
             json.dump(ft_data, f)
 
         with patch("betting_intel.analytics.tracker.FORWARD_TEST_JSON", ft_file):
-            with patch.object(temp_tracker, "_fetch_results", return_value={
-                "Celtics @ Lakers^2026-01-15": {"home_score": 120.0, "away_score": 110.0},
-            }):
+            with patch.object(
+                temp_tracker,
+                "_fetch_results",
+                return_value={
+                    "Celtics @ Lakers^2026-01-15": {
+                        "home_score": 120.0,
+                        "away_score": 110.0,
+                    },
+                },
+            ):
                 n = temp_tracker.resolve_all()
 
         assert n == 1
@@ -903,15 +1260,22 @@ class TestLoadPredictionsFromJsonl:
         jsonl = temp_tracker.predictions_dir / "predictions_20260115.jsonl"
         with open(jsonl, "w", encoding="utf-8") as f:
             for i in range(3):
-                f.write(json.dumps({
-                    "game_date": f"2026-01-1{i}",
-                    "matchup": f"TeamA @ TeamB",
-                    "bet_type": "total",
-                    "bet_side": "OVER 220.0",
-                    "stake_dollars": 100.0,
-                }) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "game_date": f"2026-01-1{i}",
+                            "matchup": "TeamA @ TeamB",
+                            "bet_type": "total",
+                            "bet_side": "OVER 220.0",
+                            "stake_dollars": 100.0,
+                        }
+                    )
+                    + "\n"
+                )
 
-        with patch("betting_intel.analytics.tracker.FORWARD_TEST_JSON", Path("/nonexistent")):
+        with patch(
+            "betting_intel.analytics.tracker.FORWARD_TEST_JSON", Path("/nonexistent")
+        ):
             temp_tracker._load_predictions()
 
         assert len(temp_tracker._raw_predictions) == 3
@@ -921,20 +1285,34 @@ class TestLoadPredictionsFromJsonl:
         for fname in ["batch1.jsonl", "batch2.jsonl"]:
             fpath = temp_tracker.predictions_dir / fname
             with open(fpath, "w", encoding="utf-8") as f:
-                f.write(json.dumps({
-                    "game_date": "2026-01-15",
-                    "matchup": "Celtics @ Lakers",
-                    "bet_type": "total",
-                    "stake_dollars": 100.0,
-                }) + "\n")
-                f.write(json.dumps({
-                    "game_date": "2026-01-16",
-                    "matchup": "Heat @ Bucks" if fname == "batch1.jsonl" else "Warriors @ Suns",
-                    "bet_type": "total",
-                    "stake_dollars": 50.0,
-                }) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "game_date": "2026-01-15",
+                            "matchup": "Celtics @ Lakers",
+                            "bet_type": "total",
+                            "stake_dollars": 100.0,
+                        }
+                    )
+                    + "\n"
+                )
+                f.write(
+                    json.dumps(
+                        {
+                            "game_date": "2026-01-16",
+                            "matchup": "Heat @ Bucks"
+                            if fname == "batch1.jsonl"
+                            else "Warriors @ Suns",
+                            "bet_type": "total",
+                            "stake_dollars": 50.0,
+                        }
+                    )
+                    + "\n"
+                )
 
-        with patch("betting_intel.analytics.tracker.FORWARD_TEST_JSON", Path("/nonexistent")):
+        with patch(
+            "betting_intel.analytics.tracker.FORWARD_TEST_JSON", Path("/nonexistent")
+        ):
             temp_tracker._load_predictions()
 
         # 3 unique games: Celtics@Lakers (batch1+batch2 deduped) + Heat@Bucks (batch1) + Warriors@Suns (batch2)
@@ -945,7 +1323,9 @@ class TestLoadPredictionsFromJsonl:
         empty = temp_tracker.predictions_dir / "empty.jsonl"
         empty.touch()
 
-        with patch("betting_intel.analytics.tracker.FORWARD_TEST_JSON", Path("/nonexistent")):
+        with patch(
+            "betting_intel.analytics.tracker.FORWARD_TEST_JSON", Path("/nonexistent")
+        ):
             temp_tracker._load_predictions()
 
         assert len(temp_tracker._raw_predictions) == 0
@@ -958,37 +1338,51 @@ class TestLoadPredictionsFromJsonl:
             f.write("not valid json\n")
             f.write('{"game_date": "2026-01-16", "matchup": "Also Good"}\n')
 
-        with patch("betting_intel.analytics.tracker.FORWARD_TEST_JSON", Path("/nonexistent")):
+        with patch(
+            "betting_intel.analytics.tracker.FORWARD_TEST_JSON", Path("/nonexistent")
+        ):
             temp_tracker._load_predictions()
 
         # The try/except wraps the entire file, so a bad line aborts the read
         assert len(temp_tracker._raw_predictions) == 1
         assert temp_tracker._raw_predictions[0]["matchup"] == "Good"
 
-    def test_jsonl_and_forward_test_dedup_same_game(self, temp_tracker: ResultsTracker, tmp_path: Path):
+    def test_jsonl_and_forward_test_dedup_same_game(
+        self, temp_tracker: ResultsTracker, tmp_path: Path
+    ):
         """Same game in both JSONL and forward_test_results.json — deduped, first source wins."""
         # Write a jsonl file
         jsonl = temp_tracker.predictions_dir / "daily.jsonl"
         with open(jsonl, "w", encoding="utf-8") as f:
-            f.write(json.dumps({
-                "game_date": "2026-01-15",
-                "matchup": "Celtics @ Lakers",
-                "bet_type": "total",
-                "stake_dollars": 100.0,
-            }) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "game_date": "2026-01-15",
+                        "matchup": "Celtics @ Lakers",
+                        "bet_type": "total",
+                        "stake_dollars": 100.0,
+                    }
+                )
+                + "\n"
+            )
 
         # Write a forward_test_results.json with the same game
         ft_file = tmp_path / "forward_test_results.json"
         with open(ft_file, "w") as f:
-            json.dump({
-                "all_bets": [{
-                    "game_date": "2026-01-15",
-                    "matchup": "Celtics @ Lakers",
-                    "bet_type": "total",
-                    "stake_dollars": 200.0,
-                    "is_clear_pick": True,
-                }]
-            }, f)
+            json.dump(
+                {
+                    "all_bets": [
+                        {
+                            "game_date": "2026-01-15",
+                            "matchup": "Celtics @ Lakers",
+                            "bet_type": "total",
+                            "stake_dollars": 200.0,
+                            "is_clear_pick": True,
+                        }
+                    ]
+                },
+                f,
+            )
 
         with patch("betting_intel.analytics.tracker.FORWARD_TEST_JSON", ft_file):
             temp_tracker._load_predictions()
@@ -998,18 +1392,33 @@ class TestLoadPredictionsFromJsonl:
         # JSONL stake=100.0 should be preserved (first source wins)
         assert temp_tracker._raw_predictions[0]["stake_dollars"] == 100.0
 
-    def test_only_forward_test_json_no_jsonl(self, temp_tracker: ResultsTracker, tmp_path: Path):
+    def test_only_forward_test_json_no_jsonl(
+        self, temp_tracker: ResultsTracker, tmp_path: Path
+    ):
         """No JSONL files, only forward_test_results.json — loads from JSON."""
         ft_file = tmp_path / "forward_test_results.json"
         with open(ft_file, "w") as f:
-            json.dump({
-                "all_bets": [
-                    {"game_date": "2026-01-15", "matchup": "Game1",
-                     "bet_type": "moneyline", "stake_dollars": 100.0, "is_clear_pick": False},
-                    {"game_date": "2026-01-16", "matchup": "Game2",
-                     "bet_type": "spread", "stake_dollars": 50.0, "is_clear_pick": True},
-                ]
-            }, f)
+            json.dump(
+                {
+                    "all_bets": [
+                        {
+                            "game_date": "2026-01-15",
+                            "matchup": "Game1",
+                            "bet_type": "moneyline",
+                            "stake_dollars": 100.0,
+                            "is_clear_pick": False,
+                        },
+                        {
+                            "game_date": "2026-01-16",
+                            "matchup": "Game2",
+                            "bet_type": "spread",
+                            "stake_dollars": 50.0,
+                            "is_clear_pick": True,
+                        },
+                    ]
+                },
+                f,
+            )
 
         with patch("betting_intel.analytics.tracker.FORWARD_TEST_JSON", ft_file):
             temp_tracker._load_predictions()
@@ -1037,15 +1446,20 @@ class TestComputeCLV:
         """We predicted 3% edge and closing line only moved 1% → CLV = +0.02."""
         temp_tracker._resolved_bets = [
             ResolvedBet(
-                home_team="Celtics", away_team="Lakers",
-                game_date="2026-01-15", edge_pct=0.03,  # We predicted 3% edge
+                home_team="Celtics",
+                away_team="Lakers",
+                game_date="2026-01-15",
+                edge_pct=0.03,  # We predicted 3% edge
             )
         ]
         # Mock store: opening=0.50, closing=0.52 (market moved 2% toward our prediction but we predicted 3%)
         mock_store = MagicMock()
         mock_store.get_closing_vs_opening_prob.return_value = (0.50, 0.52)
 
-        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+        with patch(
+            "betting_intel.db.market_odds_store.MarketOddsStore",
+            return_value=mock_store,
+        ):
             temp_tracker.compute_clv()
 
         bet = temp_tracker._resolved_bets[0]
@@ -1057,8 +1471,10 @@ class TestComputeCLV:
         """We predicted 2% edge but closing line moved 5% against us → CLV = -0.03."""
         temp_tracker._resolved_bets = [
             ResolvedBet(
-                home_team="Celtics", away_team="Lakers",
-                game_date="2026-01-15", edge_pct=0.02,
+                home_team="Celtics",
+                away_team="Lakers",
+                game_date="2026-01-15",
+                edge_pct=0.02,
             )
         ]
         # Opening=0.50, closing=0.55 (market moved to favor our team by 5%,
@@ -1066,7 +1482,10 @@ class TestComputeCLV:
         mock_store = MagicMock()
         mock_store.get_closing_vs_opening_prob.return_value = (0.50, 0.55)
 
-        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+        with patch(
+            "betting_intel.db.market_odds_store.MarketOddsStore",
+            return_value=mock_store,
+        ):
             temp_tracker.compute_clv()
 
         bet = temp_tracker._resolved_bets[0]
@@ -1078,14 +1497,19 @@ class TestComputeCLV:
         """Edge=0, market moved 2% → CLV = -0.02 (we just tracked the market, didn't beat it)."""
         temp_tracker._resolved_bets = [
             ResolvedBet(
-                home_team="Celtics", away_team="Lakers",
-                game_date="2026-01-15", edge_pct=0.0,
+                home_team="Celtics",
+                away_team="Lakers",
+                game_date="2026-01-15",
+                edge_pct=0.0,
             )
         ]
         mock_store = MagicMock()
         mock_store.get_closing_vs_opening_prob.return_value = (0.48, 0.50)
 
-        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+        with patch(
+            "betting_intel.db.market_odds_store.MarketOddsStore",
+            return_value=mock_store,
+        ):
             temp_tracker.compute_clv()
 
         bet = temp_tracker._resolved_bets[0]
@@ -1095,8 +1519,10 @@ class TestComputeCLV:
         """Negative edge (we predicted against the market) with closing line movement."""
         temp_tracker._resolved_bets = [
             ResolvedBet(
-                home_team="Celtics", away_team="Lakers",
-                game_date="2026-01-15", edge_pct=-0.02,  # We bet against the home team
+                home_team="Celtics",
+                away_team="Lakers",
+                game_date="2026-01-15",
+                edge_pct=-0.02,  # We bet against the home team
             )
         ]
         # Opening=0.55, closing=0.50 (market moved 5% against home team)
@@ -1104,7 +1530,10 @@ class TestComputeCLV:
         mock_store = MagicMock()
         mock_store.get_closing_vs_opening_prob.return_value = (0.55, 0.50)
 
-        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+        with patch(
+            "betting_intel.db.market_odds_store.MarketOddsStore",
+            return_value=mock_store,
+        ):
             temp_tracker.compute_clv()
 
         bet = temp_tracker._resolved_bets[0]
@@ -1114,14 +1543,19 @@ class TestComputeCLV:
         """No odds data available → CLV stays None."""
         temp_tracker._resolved_bets = [
             ResolvedBet(
-                home_team="Celtics", away_team="Lakers",
-                game_date="2026-01-15", edge_pct=0.03,
+                home_team="Celtics",
+                away_team="Lakers",
+                game_date="2026-01-15",
+                edge_pct=0.03,
             )
         ]
         mock_store = MagicMock()
         mock_store.get_closing_vs_opening_prob.return_value = (None, None)
 
-        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+        with patch(
+            "betting_intel.db.market_odds_store.MarketOddsStore",
+            return_value=mock_store,
+        ):
             temp_tracker.compute_clv()
 
         bet = temp_tracker._resolved_bets[0]
@@ -1133,7 +1567,10 @@ class TestComputeCLV:
         """No resolved bets → compute_clv does nothing."""
         # No bets added
         mock_store = MagicMock()
-        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+        with patch(
+            "betting_intel.db.market_odds_store.MarketOddsStore",
+            return_value=mock_store,
+        ):
             temp_tracker.compute_clv()
         mock_store.get_closing_vs_opening_prob.assert_not_called()
 
@@ -1141,12 +1578,17 @@ class TestComputeCLV:
         """Bets without home/away team or game_date are skipped gracefully."""
         temp_tracker._resolved_bets = [
             ResolvedBet(home_team="", away_team="", game_date="", edge_pct=0.03),
-            ResolvedBet(home_team="Celtics", away_team="", game_date="2026-01-15", edge_pct=0.03),
+            ResolvedBet(
+                home_team="Celtics", away_team="", game_date="2026-01-15", edge_pct=0.03
+            ),
         ]
         mock_store = MagicMock()
         mock_store.get_closing_vs_opening_prob.return_value = (0.50, 0.52)
 
-        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+        with patch(
+            "betting_intel.db.market_odds_store.MarketOddsStore",
+            return_value=mock_store,
+        ):
             temp_tracker.compute_clv()
 
         # Both bets should be skipped (empty home/away or missing team)
@@ -1157,10 +1599,18 @@ class TestComputeCLV:
     def test_multiple_bets_all_computed(self, temp_tracker: ResultsTracker):
         """Multiple bets: each gets CLV computed independently."""
         temp_tracker._resolved_bets = [
-            ResolvedBet(home_team="Celtics", away_team="Lakers",
-                        game_date="2026-01-15", edge_pct=0.03),
-            ResolvedBet(home_team="Heat", away_team="Knicks",
-                        game_date="2026-01-15", edge_pct=0.01),
+            ResolvedBet(
+                home_team="Celtics",
+                away_team="Lakers",
+                game_date="2026-01-15",
+                edge_pct=0.03,
+            ),
+            ResolvedBet(
+                home_team="Heat",
+                away_team="Knicks",
+                game_date="2026-01-15",
+                edge_pct=0.01,
+            ),
         ]
 
         mock_store = MagicMock()
@@ -1174,7 +1624,10 @@ class TestComputeCLV:
 
         mock_store.get_closing_vs_opening_prob.side_effect = side_effect
 
-        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+        with patch(
+            "betting_intel.db.market_odds_store.MarketOddsStore",
+            return_value=mock_store,
+        ):
             temp_tracker.compute_clv()
 
         # Celtics: 0.50 + 0.03 = 0.53, clv = 0.53 - 0.52 = +0.01
@@ -1185,13 +1638,20 @@ class TestComputeCLV:
     def test_exception_in_store_handled_gracefully(self, temp_tracker: ResultsTracker):
         """Store raises exception → bet is skipped (no crash)."""
         temp_tracker._resolved_bets = [
-            ResolvedBet(home_team="Celtics", away_team="Lakers",
-                        game_date="2026-01-15", edge_pct=0.03),
+            ResolvedBet(
+                home_team="Celtics",
+                away_team="Lakers",
+                game_date="2026-01-15",
+                edge_pct=0.03,
+            ),
         ]
         mock_store = MagicMock()
         mock_store.get_closing_vs_opening_prob.side_effect = ValueError("DB error")
 
-        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+        with patch(
+            "betting_intel.db.market_odds_store.MarketOddsStore",
+            return_value=mock_store,
+        ):
             temp_tracker.compute_clv()  # Should not raise
 
         assert temp_tracker._resolved_bets[0].clv is None
@@ -1200,14 +1660,28 @@ class TestComputeCLV:
         """generate_report() populates CLV metrics when compute_clv succeeds."""
         temp_tracker._resolved_bets = [
             ResolvedBet(
-                result="WIN", profit_dollars=90.0, stake_dollars=100.0,
-                game_date="2026-01-15", model_name="m1", league="NBA", bet_type="total",
-                home_team="Celtics", away_team="Lakers", edge_pct=0.03,
+                result="WIN",
+                profit_dollars=90.0,
+                stake_dollars=100.0,
+                game_date="2026-01-15",
+                model_name="m1",
+                league="NBA",
+                bet_type="total",
+                home_team="Celtics",
+                away_team="Lakers",
+                edge_pct=0.03,
             ),
             ResolvedBet(
-                result="LOSS", profit_dollars=-100.0, stake_dollars=100.0,
-                game_date="2026-01-15", model_name="m1", league="NBA", bet_type="total",
-                home_team="Heat", away_team="Knicks", edge_pct=0.01,
+                result="LOSS",
+                profit_dollars=-100.0,
+                stake_dollars=100.0,
+                game_date="2026-01-15",
+                model_name="m1",
+                league="NBA",
+                bet_type="total",
+                home_team="Heat",
+                away_team="Knicks",
+                edge_pct=0.01,
             ),
         ]
 
@@ -1220,7 +1694,10 @@ class TestComputeCLV:
 
         mock_store.get_closing_vs_opening_prob.side_effect = side_effect
 
-        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+        with patch(
+            "betting_intel.db.market_odds_store.MarketOddsStore",
+            return_value=mock_store,
+        ):
             report = temp_tracker.generate_report()
 
         # CLV metrics should be populated
@@ -1234,7 +1711,10 @@ class TestComputeCLV:
     def test_clv_in_report_empty_bets(self, temp_tracker: ResultsTracker):
         """generate_report() with no resolved bets → CLV metrics are None."""
         mock_store = MagicMock()
-        with patch("betting_intel.db.market_odds_store.MarketOddsStore", return_value=mock_store):
+        with patch(
+            "betting_intel.db.market_odds_store.MarketOddsStore",
+            return_value=mock_store,
+        ):
             report = temp_tracker.generate_report()
 
         assert report.avg_clv is None

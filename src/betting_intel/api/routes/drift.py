@@ -40,9 +40,15 @@ def _get_tracker() -> ResultsTracker:
 @router.get("/drift")
 async def get_drift_report(
     model_name: Optional[str] = Query(None, description="Filter by model name"),
-    n_baseline: int = Query(3, description="Number of recent training runs to compare", ge=1, le=20),
-    window_days: int = Query(30, description="Performance window in days", ge=7, le=365),
-    verbose: bool = Query(False, description="Include extended daily P&L history (14 days vs 7)"),
+    n_baseline: int = Query(
+        3, description="Number of recent training runs to compare", ge=1, le=20
+    ),
+    window_days: int = Query(
+        30, description="Performance window in days", ge=7, le=365
+    ),
+    verbose: bool = Query(
+        False, description="Include extended daily P&L history (14 days vs 7)"
+    ),
 ) -> dict:
     """Return a comprehensive drift report using model version history + P&L trends.
 
@@ -81,19 +87,23 @@ async def get_drift_report(
         for ver in versions[-n_baseline:]:
             try:
                 _, metadata = model_registry.load(mname, version=ver)
-                version_details.append({
-                    "version": ver,
-                    "created_at": metadata.get("created_at", ""),
-                    "n_features": len(metadata.get("feature_cols", [])),
-                    "n_metrics": len(metadata.get("metrics", {})),
-                    "metrics": metadata.get("metrics", {}),
-                })
+                version_details.append(
+                    {
+                        "version": ver,
+                        "created_at": metadata.get("created_at", ""),
+                        "n_features": len(metadata.get("feature_cols", [])),
+                        "n_metrics": len(metadata.get("metrics", {})),
+                        "metrics": metadata.get("metrics", {}),
+                    }
+                )
             except Exception:
                 version_details.append({"version": ver, "error": "could_not_load"})
 
         # Determine drift direction from training dates
         drift_direction = "stable"
-        timestamps = [v.get("created_at", "") for v in version_details if v.get("created_at")]
+        timestamps = [
+            v.get("created_at", "") for v in version_details if v.get("created_at")
+        ]
         if len(timestamps) >= 2:
             try:
                 times = [datetime.fromisoformat(t) for t in timestamps]
@@ -156,16 +166,22 @@ async def get_drift_report(
     if len(daily_pnl) >= 4:
         mid = len(daily_pnl) // 2
         first_half_avg = sum(d["profit"] for d in daily_pnl[:mid]) / max(mid, 1)
-        second_half_avg = sum(d["profit"] for d in daily_pnl[mid:]) / max(len(daily_pnl) - mid, 1)
+        second_half_avg = sum(d["profit"] for d in daily_pnl[mid:]) / max(
+            len(daily_pnl) - mid, 1
+        )
         if second_half_avg < first_half_avg * 0.5:
             pnl_trend = "degrading"
         elif second_half_avg > first_half_avg * 1.5:
             pnl_trend = "improving"
 
     # Determine overall status
-    has_drift = len(strategy_alerts) > 0 or (per_model and not all(
-        m.get("drift", "unknown") in ("improving", "stable") for m in per_model.values()
-    ))
+    has_drift = len(strategy_alerts) > 0 or (
+        per_model
+        and not all(
+            m.get("drift", "unknown") in ("improving", "stable")
+            for m in per_model.values()
+        )
+    )
 
     return {
         "status": "drift_detected" if has_drift else "ok",
@@ -232,7 +248,9 @@ async def get_performance_history(
 
     # Model version history
     all_models = model_registry.list_models()
-    filtered = [m for m in all_models if model_name is None or m["model_name"] == model_name]
+    filtered = [
+        m for m in all_models if model_name is None or m["model_name"] == model_name
+    ]
 
     for m in filtered:
         mname = m["model_name"]
@@ -242,20 +260,24 @@ async def get_performance_history(
         for ver in versions:
             try:
                 _, metadata = model_registry.load(mname, version=ver)
-                result["model_versions"].append({
-                    "model_name": mname,
-                    "version": ver,
-                    "created_at": metadata.get("created_at", ""),
-                    "n_features": len(metadata.get("feature_cols", [])),
-                    "metrics": metadata.get("metrics", {}),
-                    "parameters": metadata.get("parameters", {}),
-                })
+                result["model_versions"].append(
+                    {
+                        "model_name": mname,
+                        "version": ver,
+                        "created_at": metadata.get("created_at", ""),
+                        "n_features": len(metadata.get("feature_cols", [])),
+                        "metrics": metadata.get("metrics", {}),
+                        "parameters": metadata.get("parameters", {}),
+                    }
+                )
             except Exception:
-                result["model_versions"].append({
-                    "model_name": mname,
-                    "version": ver,
-                    "error": "could_not_load_metadata",
-                })
+                result["model_versions"].append(
+                    {
+                        "model_name": mname,
+                        "version": ver,
+                        "error": "could_not_load_metadata",
+                    }
+                )
 
     # Recent resolved bets
     tracker = _get_tracker()

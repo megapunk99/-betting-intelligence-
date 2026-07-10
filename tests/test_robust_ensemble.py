@@ -4,10 +4,8 @@ Comprehensive tests for RobustPredictionSystem and KellyStaker.
 
 from __future__ import annotations
 
-import math
 import numpy as np
 import pytest
-from unittest.mock import patch, MagicMock
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -32,6 +30,7 @@ class TestRobustPredictionSystem:
     def _make_fast_system(**kwargs):
         """Create a RobustPredictionSystem with reduced estimators for fast testing."""
         from betting_intel.models.robust_ensemble import RobustPredictionSystem
+
         # Override defaults: 30 estimators instead of 800 for tree models
         fast_params = dict(
             calibrate=False,
@@ -47,19 +46,8 @@ class TestRobustPredictionSystem:
 
     # ── v6.6 New Models Tests ────────────────────────────────────────
 
-
-
-
-
-
-
-
-
-
-
     def test_calibrate_with_isotonic_method(self, sample_data):
         """Test that calibration_method='isotonic' uses isotonic regression."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system(calibrate=True, calibration_method="isotonic")
@@ -70,7 +58,6 @@ class TestRobustPredictionSystem:
 
     def test_calibrate_with_platt_method(self, sample_data):
         """Test that calibration_method='platt' uses Platt scaling."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system(calibrate=True, calibration_method="platt")
@@ -80,7 +67,6 @@ class TestRobustPredictionSystem:
 
     def test_calibrate_with_auto_method(self, sample_data):
         """Test that calibration_method='auto' tries isotonic then plattt."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system(calibrate=True, calibration_method="auto")
@@ -94,7 +80,6 @@ class TestRobustPredictionSystem:
         Note: Brier scores are still computed (they use raw probs for both
         raw and 'calibrated' when calibrate=False), so they are not None.
         """
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system(calibrate=False)
@@ -108,7 +93,6 @@ class TestRobustPredictionSystem:
 
     def test_calibrated_brier_not_worse_than_raw(self, sample_data):
         """Test that calibrated Brier is not drastically worse than raw Brier."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system(calibrate=True, calibration_method="auto")
@@ -122,7 +106,6 @@ class TestRobustPredictionSystem:
 
     def test_adversarial_validation_disabled_by_default(self, sample_data):
         """Test that adversarial validation returns None when disabled."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system(use_adversarial_validation=False)
@@ -132,7 +115,6 @@ class TestRobustPredictionSystem:
 
     def test_adversarial_validation_enabled(self, sample_data):
         """Test that adversarial validation runs when enabled."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system(use_adversarial_validation=True)
@@ -152,7 +134,9 @@ class TestRobustPredictionSystem:
         X = np.random.randn(150, 5)
         y = (X[:, 0] > 0).astype(int)
         system = RobustPredictionSystem(
-            calibrate=False, n_folds=2, min_train_samples=30,
+            calibrate=False,
+            n_folds=2,
+            min_train_samples=30,
             use_adversarial_validation=True,
             rf_params={"n_estimators": 10, "n_jobs": 1},
             xgb_params={"n_estimators": 10, "verbosity": 0},
@@ -168,7 +152,6 @@ class TestRobustPredictionSystem:
 
     def test_ensemble_diversity_disabled_by_default(self, sample_data):
         """Test that diversity metrics are None when pruning is disabled."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system()
@@ -178,7 +161,6 @@ class TestRobustPredictionSystem:
 
     def test_ensemble_diversity_enabled(self, sample_data):
         """Test that diversity metrics compute when pruning is enabled."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system(pruning_keep_top_n=4)
@@ -192,7 +174,6 @@ class TestRobustPredictionSystem:
 
     def test_pruning_keeps_top_n(self, sample_data):
         """Test that pruning_keep_top_n limits model count."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system(
@@ -211,7 +192,6 @@ class TestRobustPredictionSystem:
 
     def test_permutation_importance_disabled(self, sample_data):
         """Test that permutation importance returns empty when disabled."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system(use_permutation_importance=False)
@@ -221,7 +201,6 @@ class TestRobustPredictionSystem:
 
     def test_permutation_importance_enabled(self, sample_data):
         """Test that permutation importance computes top features."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system(
@@ -242,7 +221,6 @@ class TestRobustPredictionSystem:
 
     def test_bootstrap_uncertainty_disabled(self, sample_data):
         """Test that bootstrap uncertainty returns None when disabled."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system(use_bootstrap_uncertainty=False)
@@ -252,7 +230,6 @@ class TestRobustPredictionSystem:
 
     def test_bootstrap_uncertainty_enabled(self, sample_data):
         """Test that bootstrap uncertainty computes metrics."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system(
@@ -273,15 +250,15 @@ class TestRobustPredictionSystem:
     def test_import(self):
         """Verify the module imports correctly."""
         from betting_intel.models.robust_ensemble import (
-            RobustPredictionSystem, PredictionResult,
-            compute_statistical_significance, compute_drawdown,
+            RobustPredictionSystem,
+            PredictionResult,
         )
+
         assert RobustPredictionSystem is not None
         assert PredictionResult is not None
 
     def test_fit_and_predict_with_defaults(self, sample_data):
         """Test that fit() and predict_proba() work with default params."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system()
@@ -298,7 +275,6 @@ class TestRobustPredictionSystem:
 
     def test_predict_with_details(self, sample_data):
         """Test predict_with_details returns complete PredictionResult."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system(calibrate=True)
@@ -306,13 +282,18 @@ class TestRobustPredictionSystem:
 
         result = system.predict_with_details(X[0])
         assert 0 < result.home_win_prob < 1
-        assert result.confidence_label in ("VERY_HIGH", "HIGH", "MEDIUM", "LOW", "VERY_LOW")
+        assert result.confidence_label in (
+            "VERY_HIGH",
+            "HIGH",
+            "MEDIUM",
+            "LOW",
+            "VERY_LOW",
+        )
         assert result.n_models >= 1
         assert len(result.model_probs) >= 1
 
     def test_predict_with_details_2d_input(self, sample_data):
         """Test predict_with_details handles 2D input."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system()
@@ -347,7 +328,6 @@ class TestRobustPredictionSystem:
 
     def test_compute_edge_valid(self, sample_data):
         """Test compute_edge with valid market odds."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         system = self._make_fast_system()
         X, y = sample_data
@@ -368,7 +348,6 @@ class TestRobustPredictionSystem:
 
     def test_compute_edge_none_odds(self, sample_data):
         """Test compute_edge with None odds returns neutral."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         system = self._make_fast_system()
         X, y = sample_data
@@ -381,11 +360,12 @@ class TestRobustPredictionSystem:
 
     def test_feature_importance(self, sample_data):
         """Test feature importance returns correct format."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system()
-        system.fit(X, y, feature_names=[f"feat_{i}" for i in range(X.shape[1])], verbose=False)
+        system.fit(
+            X, y, feature_names=[f"feat_{i}" for i in range(X.shape[1])], verbose=False
+        )
 
         importance = system.get_feature_importance(top_n=5)
         assert len(importance) <= 5
@@ -396,7 +376,6 @@ class TestRobustPredictionSystem:
 
     def test_get_summary(self, sample_data):
         """Test get_summary returns valid dict."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system()
@@ -410,7 +389,6 @@ class TestRobustPredictionSystem:
 
     def test_get_model_diagnostics(self, sample_data):
         """Test model diagnostics returns info per model."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system()
@@ -459,7 +437,6 @@ class TestRobustPredictionSystem:
 
     def test_predict_binary(self, sample_data):
         """Test predict() returns binary classes."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system()
@@ -471,7 +448,6 @@ class TestRobustPredictionSystem:
 
     def test_calibration_improves_brier(self, sample_data):
         """Test that calibrated Brier is not worse than raw Brier."""
-        from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
         X, y = sample_data
         system = self._make_fast_system(calibrate=True)
@@ -496,7 +472,9 @@ class TestStatisticalSignificance:
 
     def test_significant_result(self):
         """Test that 60/40 is significant at 95% level."""
-        from betting_intel.models.robust_ensemble import compute_statistical_significance
+        from betting_intel.models.robust_ensemble import (
+            compute_statistical_significance,
+        )
 
         result = compute_statistical_significance(60, 40)
         assert result["win_rate"] == 0.6
@@ -505,7 +483,9 @@ class TestStatisticalSignificance:
 
     def test_not_significant(self):
         """Test that 55/45 is not necessarily significant with small n."""
-        from betting_intel.models.robust_ensemble import compute_statistical_significance
+        from betting_intel.models.robust_ensemble import (
+            compute_statistical_significance,
+        )
 
         result = compute_statistical_significance(55, 45)
         assert result["win_rate"] == 0.55
@@ -513,7 +493,9 @@ class TestStatisticalSignificance:
 
     def test_edge_case_no_bets(self):
         """Test edge case with zero bets."""
-        from betting_intel.models.robust_ensemble import compute_statistical_significance
+        from betting_intel.models.robust_ensemble import (
+            compute_statistical_significance,
+        )
 
         result = compute_statistical_significance(0, 0)
         assert result["win_rate"] == 0.0
@@ -523,7 +505,9 @@ class TestStatisticalSignificance:
 
     def test_perfect_record(self):
         """Test perfect record gives very low p-value."""
-        from betting_intel.models.robust_ensemble import compute_statistical_significance
+        from betting_intel.models.robust_ensemble import (
+            compute_statistical_significance,
+        )
 
         result = compute_statistical_significance(20, 0)
         assert result["win_rate"] == 1.0
@@ -532,7 +516,9 @@ class TestStatisticalSignificance:
 
     def test_ci_bounds(self):
         """Test confidence intervals are within [0, 1]."""
-        from betting_intel.models.robust_ensemble import compute_statistical_significance
+        from betting_intel.models.robust_ensemble import (
+            compute_statistical_significance,
+        )
 
         for wins, losses in [(10, 10), (30, 20), (50, 10), (5, 15), (100, 100)]:
             result = compute_statistical_significance(wins, losses)
@@ -600,15 +586,16 @@ class TestKellyStaker:
     def staker(self):
         """Create a basic staker."""
         from betting_intel.recommendations.staking import KellyStaker
+
         return KellyStaker(initial_bankroll=10000, kelly_fraction=0.25)
 
     def test_import(self):
         """Verify staking module imports correctly."""
         from betting_intel.recommendations.staking import (
-            KellyStaker, StakeResult, BankrollState,
-            american_to_decimal, decimal_to_american,
-            american_to_implied, remove_vig,
+            KellyStaker,
+            StakeResult,
         )
+
         assert KellyStaker is not None
         assert StakeResult is not None
 
@@ -671,8 +658,10 @@ class TestKellyStaker:
 
         # No losses
         result_no_loss = staker.compute_stake(
-            win_probability=0.65, decimal_odds=1.91,
-            confidence_score=0.9, confidence_label="VERY_HIGH",
+            win_probability=0.65,
+            decimal_odds=1.91,
+            confidence_score=0.9,
+            confidence_label="VERY_HIGH",
             edge_pct=0.10,
         )
 
@@ -681,8 +670,10 @@ class TestKellyStaker:
             staker.record_bet(stake=100, won=False, profit=-100)
 
         result_with_losses = staker.compute_stake(
-            win_probability=0.65, decimal_odds=1.91,
-            confidence_score=0.9, confidence_label="VERY_HIGH",
+            win_probability=0.65,
+            decimal_odds=1.91,
+            confidence_score=0.9,
+            confidence_label="VERY_HIGH",
             edge_pct=0.10,
         )
 
@@ -699,8 +690,10 @@ class TestKellyStaker:
             staker.record_bet(stake=2000, won=False, profit=-2000)
 
         result = staker.compute_stake(
-            win_probability=0.70, decimal_odds=1.91,
-            confidence_score=0.9, confidence_label="VERY_HIGH",
+            win_probability=0.70,
+            decimal_odds=1.91,
+            confidence_score=0.9,
+            confidence_label="VERY_HIGH",
             edge_pct=0.15,
         )
         # After 3 * 2000 losses, bankroll is 4000, drawdown is 60%
@@ -712,17 +705,25 @@ class TestKellyStaker:
         """Test that team exposure limit works."""
         # First bet on Lakers
         result1 = staker.compute_stake(
-            win_probability=0.60, decimal_odds=1.91,
-            confidence_score=0.8, confidence_label="HIGH",
-            edge_pct=0.05, league="NBA", team="Lakers",
+            win_probability=0.60,
+            decimal_odds=1.91,
+            confidence_score=0.8,
+            confidence_label="HIGH",
+            edge_pct=0.05,
+            league="NBA",
+            team="Lakers",
         )
         staker.record_bet(team="Lakers", stake=result1.stake_dollars, won=True)
 
         # Second bet on Lakers should be limited
         result2 = staker.compute_stake(
-            win_probability=0.65, decimal_odds=1.91,
-            confidence_score=0.85, confidence_label="VERY_HIGH",
-            edge_pct=0.08, league="NBA", team="Lakers",
+            win_probability=0.65,
+            decimal_odds=1.91,
+            confidence_score=0.85,
+            confidence_label="VERY_HIGH",
+            edge_pct=0.08,
+            league="NBA",
+            team="Lakers",
         )
 
         # Exposure per team should not exceed max
@@ -787,14 +788,18 @@ class TestKellyStaker:
         staker = KellyStaker(initial_bankroll=10000)
 
         low_conf = staker.compute_stake(
-            win_probability=0.60, decimal_odds=1.91,
-            confidence_score=0.5, confidence_label="LOW",
+            win_probability=0.60,
+            decimal_odds=1.91,
+            confidence_score=0.5,
+            confidence_label="LOW",
             edge_pct=0.05,
         )
 
         high_conf = staker.compute_stake(
-            win_probability=0.60, decimal_odds=1.91,
-            confidence_score=0.9, confidence_label="VERY_HIGH",
+            win_probability=0.60,
+            decimal_odds=1.91,
+            confidence_score=0.9,
+            confidence_label="VERY_HIGH",
             edge_pct=0.05,
         )
 
@@ -807,8 +812,10 @@ class TestKellyStaker:
             staker._n_bets_today += 1
 
         result = staker.compute_stake(
-            win_probability=0.60, decimal_odds=1.91,
-            confidence_score=0.8, confidence_label="HIGH",
+            win_probability=0.60,
+            decimal_odds=1.91,
+            confidence_score=0.8,
+            confidence_label="HIGH",
             edge_pct=0.05,
         )
         assert result.stake_dollars == 0.0
@@ -834,34 +841,42 @@ class TestOddsConversion:
 
     def test_american_to_decimal_favorite(self):
         from betting_intel.recommendations.staking import american_to_decimal
+
         assert abs(american_to_decimal(-150) - 1.6667) < 0.01
 
     def test_american_to_decimal_underdog(self):
         from betting_intel.recommendations.staking import american_to_decimal
+
         assert abs(american_to_decimal(+200) - 3.0) < 0.01
 
     def test_american_to_decimal_even(self):
         from betting_intel.recommendations.staking import american_to_decimal
+
         assert abs(american_to_decimal(100) - 2.0) < 0.01
 
     def test_decimal_to_american(self):
         from betting_intel.recommendations.staking import decimal_to_american
+
         assert decimal_to_american(1.91) == -110  # Common NBA odds
 
     def test_decimal_to_american_underdog(self):
         from betting_intel.recommendations.staking import decimal_to_american
+
         assert decimal_to_american(3.0) == 200
 
     def test_american_to_implied_favorite(self):
         from betting_intel.recommendations.staking import american_to_implied
-        assert abs(american_to_implied(-200) - 2/3) < 0.01
+
+        assert abs(american_to_implied(-200) - 2 / 3) < 0.01
 
     def test_american_to_implied_underdog(self):
         from betting_intel.recommendations.staking import american_to_implied
-        assert abs(american_to_implied(+200) - 1/3) < 0.01
+
+        assert abs(american_to_implied(+200) - 1 / 3) < 0.01
 
     def test_remove_vig(self):
         from betting_intel.recommendations.staking import remove_vig
+
         home, away = remove_vig(0.6, 0.45)
         total = home + away
         assert abs(total - 1.0) < 0.001  # Should sum to 1
@@ -877,7 +892,8 @@ class TestEngineIntegration:
 
     def test_engine_imports(self):
         """Verify engine imports work."""
-        from betting_intel.live.engine import LivePredictionEngine, LiveGame, LivePredictionSnapshot
+        from betting_intel.live.engine import LivePredictionEngine, LiveGame
+
         assert LivePredictionEngine is not None
         assert LiveGame is not None
 
@@ -966,7 +982,9 @@ class TestLiveGame:
         d = game.to_dict()
         assert d["game_id"] == "test_1"
         assert d["home_ml"] == -150
-        assert d.get("matchup", "MISSING") == "MISSING"  # 'matchup' is a @property, not in to_dict()
+        assert (
+            d.get("matchup", "MISSING") == "MISSING"
+        )  # 'matchup' is a @property, not in to_dict()
         assert d["away_team_short"] == "BOS"
         assert d["home_team_short"] == "LAL"
 

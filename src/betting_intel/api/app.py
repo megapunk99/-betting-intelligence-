@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import time
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +18,7 @@ from betting_intel.api.routes.drift import router as drift
 from betting_intel.config import settings
 from betting_intel.db.connection import db_manager
 import logging
+
 logger = logging.getLogger(__name__)
 # Alert system removed — was in deleted alerts/ package
 
@@ -50,7 +50,11 @@ def create_app() -> FastAPI:
         # ── Init Live Odds Poller + WebSocket ─────────────────────────
         global _odds_ws_manager
         try:
-            if settings.enable_live_odds and settings.odds_api_key and settings.odds_api_key != "your-api-key-here":
+            if (
+                settings.enable_live_odds
+                and settings.odds_api_key
+                and settings.odds_api_key != "your-api-key-here"
+            ):
                 from pathlib import Path
                 from betting_intel.data.websocket_odds import OddsWebSocketManager
 
@@ -62,7 +66,9 @@ def create_app() -> FastAPI:
                 await _odds_ws_manager.start()
                 logger.info("Live odds WebSocket manager started")
             else:
-                logger.info("Live odds disabled (set ENABLE_LIVE_ODDS=true and ODDS_API_KEY)")
+                logger.info(
+                    "Live odds disabled (set ENABLE_LIVE_ODDS=true and ODDS_API_KEY)"
+                )
         except Exception as exc:
             logger.warning(f"Live odds init failed: {exc}")
             _odds_ws_manager = None
@@ -87,7 +93,9 @@ def create_app() -> FastAPI:
     )
 
     # ── CORS ──────────────────────────────────────────────────────────
-    origins = settings.cors_origins.split(",") if settings.cors_origins != "*" else ["*"]
+    origins = (
+        settings.cors_origins.split(",") if settings.cors_origins != "*" else ["*"]
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
@@ -118,7 +126,9 @@ def create_app() -> FastAPI:
             status_code=500,
             content={
                 "error": "Internal server error",
-                "detail": str(exc) if settings.log_level == "DEBUG" else "An unexpected error occurred",
+                "detail": str(exc)
+                if settings.log_level == "DEBUG"
+                else "An unexpected error occurred",
                 "code": "INTERNAL_ERROR",
             },
         )
@@ -152,14 +162,17 @@ def create_app() -> FastAPI:
             await _odds_ws_manager.websocket_endpoint(websocket)
         else:
             await websocket.accept()
-            await websocket.send_json({
-                "type": "error",
-                "message": "Live odds not enabled. Set ENABLE_LIVE_ODDS=true and ODDS_API_KEY.",
-            })
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "message": "Live odds not enabled. Set ENABLE_LIVE_ODDS=true and ODDS_API_KEY.",
+                }
+            )
             await websocket.close()
 
     # ── WebSocket Connection Tracking ─────────────────────────────────
     if _odds_ws_manager:
+
         @app.get("/ws/stats")
         async def websocket_stats():
             return {

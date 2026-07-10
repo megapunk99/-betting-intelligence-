@@ -42,7 +42,6 @@ Architecture
 
 from __future__ import annotations
 
-import json
 import logging
 import math
 import warnings
@@ -51,12 +50,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-import joblib
 import numpy as np
-import pandas as pd
 
 from betting_intel.utils.safe_serialize import (
-    safe_joblib_dump, safe_joblib_load, ModelIntegrityError,
+    safe_joblib_dump,
+    safe_joblib_load,
 )
 from sklearn.metrics import r2_score, mean_absolute_error, brier_score_loss
 from sklearn.calibration import CalibratedClassifierCV
@@ -75,6 +73,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ModelDiagnostics:
     """Diagnostic information for a single model in the ensemble."""
+
     name: str
     oos_brier: float = 0.0
     oos_accuracy: float = 0.0
@@ -90,12 +89,13 @@ class ModelDiagnostics:
 @dataclass
 class PredictionResult:
     """Prediction result with full confidence breakdown."""
+
     home_win_prob: float = 0.5
     away_win_prob: float = 0.5
 
     # Ensemble details
     n_models: int = 0
-    consensus: float = 0.0        # 0-1, how much models agree
+    consensus: float = 0.0  # 0-1, how much models agree
     model_variance: float = 0.0
 
     # Calibrated probability (if available)
@@ -127,6 +127,7 @@ class PredictionResult:
 @dataclass
 class WalkForwardFold:
     """Metrics from a single walk-forward fold."""
+
     fold: int
     train_start: int
     train_end: int
@@ -144,6 +145,7 @@ class WalkForwardFold:
 @dataclass
 class OverfittingReport:
     """Overfitting analysis report."""
+
     is_overfit: bool = False
     avg_train_r2: float = 0.0
     avg_test_r2: float = 0.0
@@ -176,7 +178,7 @@ class RobustPredictionSystem:
     def __init__(
         self,
         calibrate: bool = True,
-        calibration_method: str = 'auto',  # 'platt', 'isotonic', 'auto' (v6.6)
+        calibration_method: str = "auto",  # 'platt', 'isotonic', 'auto' (v6.6)
         n_folds: int = 5,
         min_train_samples: int = 100,
         min_test_samples: int = 10,
@@ -192,12 +194,12 @@ class RobustPredictionSystem:
         use_early_stopping: bool = True,
         use_hyperparameter_tuning: bool = False,  # v6.6 NEW — wire tuner into fit()
         ensemble_diversity_threshold: float = 0.3,
-        stacking_meta_model: str = 'ridge',  # 'ridge', 'lasso', 'xgboost', or 'none'
+        stacking_meta_model: str = "ridge",  # 'ridge', 'lasso', 'xgboost', or 'none'
         use_adversarial_validation: bool = False,  # v6.6 NEW
         use_permutation_importance: bool = False,  # v6.6 NEW
-        use_bootstrap_uncertainty: bool = False,    # v6.6 NEW
-        n_bootstrap_samples: int = 50,              # v6.6 NEW
-        pruning_keep_top_n: int = 0,                # v6.6 NEW — 0 = no pruning
+        use_bootstrap_uncertainty: bool = False,  # v6.6 NEW
+        n_bootstrap_samples: int = 50,  # v6.6 NEW
+        pruning_keep_top_n: int = 0,  # v6.6 NEW — 0 = no pruning
     ):
         self.calibrate = calibrate
         self.calibration_method = calibration_method
@@ -254,7 +256,9 @@ class RobustPredictionSystem:
         self._brier_score: Optional[float] = None
         self._calibrated_brier: Optional[float] = None
         self._calibration_model: Any = None
-        self._calibration_models: dict[str, Any] = {}  # v6.6 — store per-model calibrators
+        self._calibration_models: dict[
+            str, Any
+        ] = {}  # v6.6 — store per-model calibrators
 
         # Persistence
         self._fit_timestamp: Optional[str] = None
@@ -316,7 +320,10 @@ class RobustPredictionSystem:
         for i in range(1, self.n_folds + 1):
             test_end = min(i * fold_size, n)
             test_start = test_end - fold_size
-            if test_start >= self.min_train_samples and (test_end - test_start) >= self.min_test_samples:
+            if (
+                test_start >= self.min_train_samples
+                and (test_end - test_start) >= self.min_test_samples
+            ):
                 fold_boundaries.append((test_start, test_end))
 
         if not fold_boundaries:
@@ -380,22 +387,43 @@ class RobustPredictionSystem:
                     if hasattr(model, "predict"):
                         train_preds = model.predict(X_train)
                         if train_preds.ndim > 1:
-                            train_preds = train_preds[:, 1] if train_preds.shape[1] >= 2 else train_preds.ravel()
+                            train_preds = (
+                                train_preds[:, 1]
+                                if train_preds.shape[1] >= 2
+                                else train_preds.ravel()
+                            )
                         fold_metrics.train_r2 = float(r2_score(y_train, train_preds))
-                        fold_metrics.train_mae = float(mean_absolute_error(y_train, train_preds))
+                        fold_metrics.train_mae = float(
+                            mean_absolute_error(y_train, train_preds)
+                        )
 
                         test_preds_fold = oos_preds
-                        if hasattr(test_preds_fold, "ndim") and test_preds_fold.ndim > 1:
-                            test_preds_fold = test_preds_fold[:, 1] if test_preds_fold.shape[1] >= 2 else test_preds_fold.ravel()
+                        if (
+                            hasattr(test_preds_fold, "ndim")
+                            and test_preds_fold.ndim > 1
+                        ):
+                            test_preds_fold = (
+                                test_preds_fold[:, 1]
+                                if test_preds_fold.shape[1] >= 2
+                                else test_preds_fold.ravel()
+                            )
                         fold_metrics.test_r2 = float(r2_score(y_test, test_preds_fold))
-                        fold_metrics.test_mae = float(mean_absolute_error(y_test, test_preds_fold))
-                        fold_metrics.gap_r2 = fold_metrics.train_r2 - fold_metrics.test_r2
+                        fold_metrics.test_mae = float(
+                            mean_absolute_error(y_test, test_preds_fold)
+                        )
+                        fold_metrics.gap_r2 = (
+                            fold_metrics.train_r2 - fold_metrics.test_r2
+                        )
 
                 except Exception as e:
-                    logger.debug(f"Model {model_name} failed on fold {fold_idx + 1}: {e}")
+                    logger.debug(
+                        f"Model {model_name} failed on fold {fold_idx + 1}: {e}"
+                    )
                     if model_name not in all_models_oos:
                         all_models_oos[model_name] = []
-                    all_models_oos[model_name].append(np.full(len(X_test), self._target_mean))
+                    all_models_oos[model_name].append(
+                        np.full(len(X_test), self._target_mean)
+                    )
 
             # Add fold to list if we have metrics
             if fold_metrics.train_r2 > 0 or fold_metrics.n_train > 0:
@@ -411,9 +439,13 @@ class RobustPredictionSystem:
             if name in all_models_oos and all_models_oos[name]:
                 oos_dict[name] = np.concatenate(all_models_oos[name])
             else:
-                oos_dict[name] = np.concatenate(all_oos_targets) if all_oos_targets else np.array([])
+                oos_dict[name] = (
+                    np.concatenate(all_oos_targets) if all_oos_targets else np.array([])
+                )
 
-        oos_targets = np.concatenate(all_oos_targets) if all_oos_targets else np.array([])
+        oos_targets = (
+            np.concatenate(all_oos_targets) if all_oos_targets else np.array([])
+        )
 
         if len(oos_targets) == 0:
             raise ValueError("No OOS predictions collected — cannot train ensemble.")
@@ -425,8 +457,12 @@ class RobustPredictionSystem:
                 oos_probs = oos_dict[model_name]
                 oos_probs_clipped = np.clip(oos_probs, 0.001, 0.999)
 
-                cal = LogisticRegression(C=1.0, max_iter=1000, random_state=self.random_state)
-                calibrator = CalibratedClassifierCV(estimator=cal, method="sigmoid", cv=3)
+                cal = LogisticRegression(
+                    C=1.0, max_iter=1000, random_state=self.random_state
+                )
+                calibrator = CalibratedClassifierCV(
+                    estimator=cal, method="sigmoid", cv=3
+                )
 
                 X_cal = oos_probs_clipped.reshape(-1, 1)
                 y_cal = oos_targets
@@ -435,7 +471,9 @@ class RobustPredictionSystem:
                     calibrator.fit(X_cal, y_cal)
                     self._calibrators[model_name] = calibrator
                 else:
-                    logger.debug(f"Model {model_name}: only one class in OOS — skipping calibration")
+                    logger.debug(
+                        f"Model {model_name}: only one class in OOS — skipping calibration"
+                    )
             except Exception as e:
                 logger.debug(f"Calibration failed for {model_name}: {e}")
 
@@ -450,16 +488,30 @@ class RobustPredictionSystem:
             cal_probs_dict = dict(oos_dict)
 
         # ── Step 4: Build calibrated/raw prob arrays ────────────
-        self._raw_probs = np.column_stack([oos_dict[name] for name in oos_dict]) if len(oos_dict) > 1 \
+        self._raw_probs = (
+            np.column_stack([oos_dict[name] for name in oos_dict])
+            if len(oos_dict) > 1
             else oos_dict[list(oos_dict.keys())[0]].reshape(-1, 1)
+        )
 
-        self._calibrated_probs = np.column_stack([cal_probs_dict[name] for name in cal_probs_dict]) \
-            if len(cal_probs_dict) > 1 else cal_probs_dict[list(cal_probs_dict.keys())[0]].reshape(-1, 1)
+        self._calibrated_probs = (
+            np.column_stack([cal_probs_dict[name] for name in cal_probs_dict])
+            if len(cal_probs_dict) > 1
+            else cal_probs_dict[list(cal_probs_dict.keys())[0]].reshape(-1, 1)
+        )
 
         # Brier scores
         for model_name in oos_dict:
-            raw_brier = float(brier_score_loss(oos_targets, np.clip(oos_dict[model_name], 0.001, 0.999)))
-            cal_brier = float(brier_score_loss(oos_targets, np.clip(cal_probs_dict[model_name], 0.001, 0.999)))
+            raw_brier = float(
+                brier_score_loss(
+                    oos_targets, np.clip(oos_dict[model_name], 0.001, 0.999)
+                )
+            )
+            cal_brier = float(
+                brier_score_loss(
+                    oos_targets, np.clip(cal_probs_dict[model_name], 0.001, 0.999)
+                )
+            )
             acc = float(np.mean((cal_probs_dict[model_name] > 0.5) == oos_targets))
 
             diag = ModelDiagnostics(
@@ -480,10 +532,22 @@ class RobustPredictionSystem:
             self._model_diagnostics[model_name] = diag
 
         # Overall Brier
-        ensemble_raw = np.mean(self._raw_probs, axis=1) if self._raw_probs.ndim > 1 else self._raw_probs
-        ensemble_cal = np.mean(self._calibrated_probs, axis=1) if self._calibrated_probs.ndim > 1 else self._calibrated_probs
-        self._brier_score = float(brier_score_loss(oos_targets, np.clip(ensemble_raw, 0.001, 0.999)))
-        self._calibrated_brier = float(brier_score_loss(oos_targets, np.clip(ensemble_cal, 0.001, 0.999)))
+        ensemble_raw = (
+            np.mean(self._raw_probs, axis=1)
+            if self._raw_probs.ndim > 1
+            else self._raw_probs
+        )
+        ensemble_cal = (
+            np.mean(self._calibrated_probs, axis=1)
+            if self._calibrated_probs.ndim > 1
+            else self._calibrated_probs
+        )
+        self._brier_score = float(
+            brier_score_loss(oos_targets, np.clip(ensemble_raw, 0.001, 0.999))
+        )
+        self._calibrated_brier = float(
+            brier_score_loss(oos_targets, np.clip(ensemble_cal, 0.001, 0.999))
+        )
 
         if verbose:
             logger.info(
@@ -503,41 +567,49 @@ class RobustPredictionSystem:
             # exp(-brier * 8) instead of exp(-brier * 5) — more weight on
             # better models, faster decay for worse ones.
             # Floor weight of 0.05 prevents any model from being ignored.
-            raw_weights = {n: math.exp(-b * 8.0) + 0.05 for n, b in brier_scores.items()}
+            raw_weights = {
+                n: math.exp(-b * 8.0) + 0.05 for n, b in brier_scores.items()
+            }
             total = sum(raw_weights.values())
             self._weights = {n: w / total for n, w in raw_weights.items()}
         else:
-            self._weights = {name: 1.0 / max(len(self._model_diagnostics), 1)
-                             for name in self._model_diagnostics}
+            self._weights = {
+                name: 1.0 / max(len(self._model_diagnostics), 1)
+                for name in self._model_diagnostics
+            }
 
-                # ── Step 6: Train stacking meta-model (optional) ───────────────
+            # ── Step 6: Train stacking meta-model (optional) ───────────────
         if self.use_stacking and len(self._model_diagnostics) >= 2:
             try:
-                meta_features = np.column_stack([
-                    cal_probs_dict[name] for name in cal_probs_dict
-                ])
-                
+                meta_features = np.column_stack(
+                    [cal_probs_dict[name] for name in cal_probs_dict]
+                )
+
                 # Add raw (uncalibrated) probabilities as additional meta-features
                 # This gives the meta-model access to both calibrated and raw signals
                 if self._raw_probs is not None and self._raw_probs.shape[1] > 1:
-                    meta_features = np.column_stack([
-                        meta_features,
-                        self._raw_probs,
-                    ])
-                
+                    meta_features = np.column_stack(
+                        [
+                            meta_features,
+                            self._raw_probs,
+                        ]
+                    )
+
                 # Choose meta-model based on configuration
                 model_type = self.stacking_meta_model
-                if model_type == 'lasso':
+                if model_type == "lasso":
                     from sklearn.linear_model import LassoCV
+
                     self._meta_model = LassoCV(
                         alphas=[0.001, 0.01, 0.1, 1.0, 10.0],
                         cv=3,
                         random_state=self.random_state,
                         max_iter=5000,
                     )
-                elif model_type == 'xgboost':
+                elif model_type == "xgboost":
                     try:
                         from xgboost import XGBRegressor
+
                         self._meta_model = XGBRegressor(
                             n_estimators=200,
                             max_depth=3,
@@ -550,23 +622,27 @@ class RobustPredictionSystem:
                         )
                     except ImportError:
                         from sklearn.linear_model import Ridge
-                        self._meta_model = Ridge(alpha=1.0, random_state=self.random_state)
+
+                        self._meta_model = Ridge(
+                            alpha=1.0, random_state=self.random_state
+                        )
                 else:  # default: Ridge
                     from sklearn.linear_model import RidgeCV
+
                     self._meta_model = RidgeCV(
                         alphas=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0],
                         cv=3,
                     )
-                
+
                 self._meta_model.fit(meta_features, oos_targets)
-                
+
                 if verbose:
                     logger.info(
-                        f'Stacking meta-model ({model_type}) trained on '
-                        f'{meta_features.shape[1]} features'
+                        f"Stacking meta-model ({model_type}) trained on "
+                        f"{meta_features.shape[1]} features"
                     )
             except Exception as e:
-                logger.debug(f'Stacking meta-model failed: {e}')
+                logger.debug(f"Stacking meta-model failed: {e}")
                 self._meta_model = None
 
         # ── Step 7: Train final models on ALL data ─────────────────────
@@ -596,7 +672,9 @@ class RobustPredictionSystem:
                 # Get ensemble predictions on training data
                 ensemble_train = self._predict_ensemble_internal(X)
 
-                cal_model = LogisticRegression(C=1.0, max_iter=1000, random_state=self.random_state)
+                cal_model = LogisticRegression(
+                    C=1.0, max_iter=1000, random_state=self.random_state
+                )
                 self._calibration_model = CalibratedClassifierCV(
                     estimator=cal_model, method="sigmoid", cv=3
                 )
@@ -633,7 +711,8 @@ class RobustPredictionSystem:
             # Recompute weights after pruning
             if self._pruned_models:
                 remaining_weights = {
-                    n: w for n, w in self._weights.items()
+                    n: w
+                    for n, w in self._weights.items()
                     if n not in self._pruned_models
                 }
                 total = sum(remaining_weights.values())
@@ -641,7 +720,9 @@ class RobustPredictionSystem:
                     self._weights = {n: w / total for n, w in remaining_weights.items()}
 
         # Step 12: Permutation Importance (v6.6)
-        self._compute_permutation_importance(X, y, n_repeats=3, n_features=20, verbose=verbose)
+        self._compute_permutation_importance(
+            X, y, n_repeats=3, n_features=20, verbose=verbose
+        )
 
         # Step 13: Bootstrap Uncertainty (v6.6)
         self._compute_bootstrap_uncertainty(X, y, verbose=verbose)
@@ -719,7 +800,9 @@ class RobustPredictionSystem:
             weighted_sum += prob * w
             total_weight += w
 
-        home_win_prob = weighted_sum / total_weight if total_weight > 0 else self._target_mean
+        home_win_prob = (
+            weighted_sum / total_weight if total_weight > 0 else self._target_mean
+        )
 
         # Apply ensemble-level calibration
         calibrated_prob = None
@@ -735,7 +818,9 @@ class RobustPredictionSystem:
             except Exception as e:
                 calibrated_prob = None
                 calibration_failed = True
-                calibration_warning = f"Ensemble calibration failed: {e}. Using raw ensemble."
+                calibration_warning = (
+                    f"Ensemble calibration failed: {e}. Using raw ensemble."
+                )
                 logger.debug(calibration_warning)
 
         final_prob = calibrated_prob if calibrated_prob is not None else home_win_prob
@@ -752,9 +837,9 @@ class RobustPredictionSystem:
         n_model_factor = min(n_models / 4.0, 1.0)  # 4+ models = full confidence
         proximity_to_50 = 1.0 - abs(final_prob - 0.5) * 2.0  # 0 at 50%, 1 at 0% or 100%
         confidence_score = (
-            consensus_factor * 0.4 +
-            n_model_factor * 0.2 +
-            (1.0 - proximity_to_50) * 0.4  # More confident when further from 50/50
+            consensus_factor * 0.4
+            + n_model_factor * 0.2
+            + (1.0 - proximity_to_50) * 0.4  # More confident when further from 50/50
         )
         confidence_score = float(np.clip(confidence_score, 0.0, 1.0))
 
@@ -779,7 +864,9 @@ class RobustPredictionSystem:
             n_models=n_models,
             consensus=round(consensus, 3),
             model_variance=round(variance, 6),
-            calibrated_home_win_prob=round(calibrated_prob, 4) if calibrated_prob is not None else None,
+            calibrated_home_win_prob=round(calibrated_prob, 4)
+            if calibrated_prob is not None
+            else None,
             model_probs={k: round(v, 4) for k, v in sorted(model_probs.items())},
             model_weights={k: round(v, 4) for k, v in sorted(self._weights.items())},
             confidence_score=round(confidence_score, 3),
@@ -882,9 +969,7 @@ class RobustPredictionSystem:
 
         # Average importance across models, then normalize
         avg_importance = {
-            name: float(np.mean(vals))
-            for name, vals in importances.items()
-            if vals
+            name: float(np.mean(vals)) for name, vals in importances.items() if vals
         }
 
         total = sum(avg_importance.values())
@@ -892,7 +977,9 @@ class RobustPredictionSystem:
             avg_importance = {k: v / total for k, v in avg_importance.items()}
 
         # Sort and return top N
-        sorted_imp = sorted(avg_importance.items(), key=lambda x: x[1], reverse=True)[:top_n]
+        sorted_imp = sorted(avg_importance.items(), key=lambda x: x[1], reverse=True)[
+            :top_n
+        ]
         return dict(sorted_imp)
 
     @property
@@ -919,7 +1006,9 @@ class RobustPredictionSystem:
             "n_folds": len(self._fold_metrics),
             "target_mean": round(self._target_mean, 4),
             "brier_score": round(self._brier_score, 4) if self._brier_score else None,
-            "calibrated_brier": round(self._calibrated_brier, 4) if self._calibrated_brier else None,
+            "calibrated_brier": round(self._calibrated_brier, 4)
+            if self._calibrated_brier
+            else None,
             "model_weights": {k: round(v, 4) for k, v in self._weights.items()},
             "model_diagnostics": {
                 name: {
@@ -932,11 +1021,21 @@ class RobustPredictionSystem:
                 for name, d in self._model_diagnostics.items()
             },
             "overfitting": {
-                "is_overfit": self._overfitting.is_overfit if self._overfitting else False,
-                "avg_train_r2": round(self._overfitting.avg_train_r2, 4) if self._overfitting else None,
-                "avg_test_r2": round(self._overfitting.avg_test_r2, 4) if self._overfitting else None,
-                "r2_gap": round(self._overfitting.r2_gap, 4) if self._overfitting else None,
-            } if self._overfitting else None,
+                "is_overfit": self._overfitting.is_overfit
+                if self._overfitting
+                else False,
+                "avg_train_r2": round(self._overfitting.avg_train_r2, 4)
+                if self._overfitting
+                else None,
+                "avg_test_r2": round(self._overfitting.avg_test_r2, 4)
+                if self._overfitting
+                else None,
+                "r2_gap": round(self._overfitting.r2_gap, 4)
+                if self._overfitting
+                else None,
+            }
+            if self._overfitting
+            else None,
         }
 
     def save(self, path: Path) -> str:
@@ -1005,6 +1104,7 @@ class RobustPredictionSystem:
         # 2. XGBoost — with early stopping
         try:
             from xgboost import XGBClassifier
+
             xgb_params = {
                 "n_estimators": self._xgb_params.get("n_estimators", 1200),
                 "max_depth": self._xgb_params.get("max_depth", 6),
@@ -1027,6 +1127,7 @@ class RobustPredictionSystem:
         # 3. LightGBM — with early stopping
         try:
             from lightgbm import LGBMClassifier
+
             lgb_params = {
                 "n_estimators": self._lgb_params.get("n_estimators", 1200),
                 "max_depth": self._lgb_params.get("max_depth", -1),
@@ -1062,6 +1163,7 @@ class RobustPredictionSystem:
         if self.use_catboost:
             try:
                 from catboost import CatBoostClassifier
+
                 cb_params = {
                     "iterations": self._cb_params.get("iterations", 800),
                     "depth": self._cb_params.get("depth", 8),
@@ -1080,14 +1182,6 @@ class RobustPredictionSystem:
                 specs.append(("CatBoost", CatBoostClassifier, cb_params))
             except ImportError:
                 pass
-
-
-
-
-
-
-
-
 
         return specs
 
@@ -1128,12 +1222,17 @@ class RobustPredictionSystem:
             return np.full(X.shape[0], self._target_mean)
 
         total_weight = sum(all_weights)
-        weighted_avg = np.average(np.column_stack(all_preds), axis=1, weights=all_weights) \
-            if len(all_preds) > 1 else all_preds[0]
+        weighted_avg = (
+            np.average(np.column_stack(all_preds), axis=1, weights=all_weights)
+            if len(all_preds) > 1
+            else all_preds[0]
+        )
 
         return np.clip(weighted_avg, 0.001, 0.999)
 
-    def select_features_mutual_info(self, X: np.ndarray, y: np.ndarray, n_features: int = 50) -> np.ndarray:
+    def select_features_mutual_info(
+        self, X: np.ndarray, y: np.ndarray, n_features: int = 50
+    ) -> np.ndarray:
         """
         Select top N features via mutual information.
 
@@ -1152,13 +1251,16 @@ class RobustPredictionSystem:
         """
         try:
             from sklearn.feature_selection import mutual_info_classif
+
             mi = mutual_info_classif(X, y, random_state=self.random_state)
             if len(mi) <= n_features:
                 return np.ones(X.shape[1], dtype=bool)
             top_idx = np.argsort(mi)[-n_features:]
             mask = np.zeros(X.shape[1], dtype=bool)
             mask[top_idx] = True
-            logger.info(f"Mutual info feature selection: {X.shape[1]} → {n_features} features")
+            logger.info(
+                f"Mutual info feature selection: {X.shape[1]} → {n_features} features"
+            )
             return mask
         except Exception as e:
             logger.debug(f"Mutual info feature selection failed: {e}")
@@ -1184,11 +1286,17 @@ class RobustPredictionSystem:
 
         flags: list[str] = []
         if avg_test_r2 < -0.10:
-            flags.append(f"Test R² ({avg_test_r2:.3f}) is severely negative — model likely overfit")
+            flags.append(
+                f"Test R² ({avg_test_r2:.3f}) is severely negative — model likely overfit"
+            )
         if avg_gap > 0.15:
-            flags.append(f"Train-test R² gap ({avg_gap:.3f}) exceeds 0.15 — overfitting likely")
+            flags.append(
+                f"Train-test R² gap ({avg_gap:.3f}) exceeds 0.15 — overfitting likely"
+            )
         if avg_test_r2 < 0 and avg_train_r2 > 0.5:
-            flags.append(f"High train R² ({avg_train_r2:.3f}) but negative test R² — clear overfitting")
+            flags.append(
+                f"High train R² ({avg_train_r2:.3f}) but negative test R² — clear overfitting"
+            )
         if avg_test_r2 < 0.50 and avg_train_r2 > 0.90:
             flags.append("Extreme overfitting: train R² > 0.90 but test R² < 0.50")
 
@@ -1202,7 +1310,6 @@ class RobustPredictionSystem:
             flags=flags,
             folds=fold_metrics,
         )
-
 
     # ── v6.6: Hyperparameter Tuning Integration ─────────────────────────────
 
@@ -1242,7 +1349,10 @@ class RobustPredictionSystem:
                 logger.info("=" * 60)
 
             results = tuner.tune_all(
-                X_tune, y_tune, X_val, y_val,
+                X_tune,
+                y_tune,
+                X_val,
+                y_val,
                 n_trials_per_model=30,
                 verbose=verbose,
             )
@@ -1251,32 +1361,41 @@ class RobustPredictionSystem:
 
             # Map tuning results back to our param dicts
             _mappings = {
-                "xgb": ("_xgb_params", {
-                    "n_estimators": "n_estimators",
-                    "max_depth": "max_depth",
-                    "learning_rate": "learning_rate",
-                    "subsample": "subsample",
-                    "colsample_bytree": "colsample_bytree",
-                    "reg_alpha": "reg_alpha",
-                    "reg_lambda": "reg_lambda",
-                }),
-                "lgb": ("_lgb_params", {
-                    "n_estimators": "n_estimators",
-                    "num_leaves": "num_leaves",
-                    "learning_rate": "learning_rate",
-                    "subsample": "subsample",
-                    "colsample_bytree": "colsample_bytree",
-                    "reg_alpha": "reg_alpha",
-                    "reg_lambda": "reg_lambda",
-                    "min_child_samples": "min_child_samples",
-                }),
-                "cb": ("_cb_params", {
-                    "iterations": "iterations",
-                    "depth": "depth",
-                    "learning_rate": "learning_rate",
-                    "l2_leaf_reg": "l2_leaf_reg",
-                    "border_count": "border_count",
-                }),
+                "xgb": (
+                    "_xgb_params",
+                    {
+                        "n_estimators": "n_estimators",
+                        "max_depth": "max_depth",
+                        "learning_rate": "learning_rate",
+                        "subsample": "subsample",
+                        "colsample_bytree": "colsample_bytree",
+                        "reg_alpha": "reg_alpha",
+                        "reg_lambda": "reg_lambda",
+                    },
+                ),
+                "lgb": (
+                    "_lgb_params",
+                    {
+                        "n_estimators": "n_estimators",
+                        "num_leaves": "num_leaves",
+                        "learning_rate": "learning_rate",
+                        "subsample": "subsample",
+                        "colsample_bytree": "colsample_bytree",
+                        "reg_alpha": "reg_alpha",
+                        "reg_lambda": "reg_lambda",
+                        "min_child_samples": "min_child_samples",
+                    },
+                ),
+                "cb": (
+                    "_cb_params",
+                    {
+                        "iterations": "iterations",
+                        "depth": "depth",
+                        "learning_rate": "learning_rate",
+                        "l2_leaf_reg": "l2_leaf_reg",
+                        "border_count": "border_count",
+                    },
+                ),
             }
 
             for model_key, (attr, mapping) in _mappings.items():
@@ -1326,7 +1445,6 @@ class RobustPredictionSystem:
         try:
             from sklearn.ensemble import RandomForestClassifier
             from sklearn.model_selection import cross_val_score
-            from sklearn.metrics import roc_auc_score
 
             n = len(X)
             if n < 200:
@@ -1340,13 +1458,16 @@ class RobustPredictionSystem:
 
             # Create domain label: 0 = first half, 1 = second half
             X_adv = np.vstack([X_first, X_second])
-            y_adv = np.concatenate([
-                np.zeros(midpoint, dtype=int),
-                np.ones(len(X_second), dtype=int),
-            ])
+            y_adv = np.concatenate(
+                [
+                    np.zeros(midpoint, dtype=int),
+                    np.ones(len(X_second), dtype=int),
+                ]
+            )
 
             # Shuffle to avoid any ordering bias
             from sklearn.utils import shuffle
+
             X_adv, y_adv = shuffle(X_adv, y_adv, random_state=self.random_state)
 
             # Train quick RF to discriminate
@@ -1358,16 +1479,22 @@ class RobustPredictionSystem:
                 n_jobs=-1,
             )
 
-            cv_scores = cross_val_score(adv_model, X_adv, y_adv, cv=3, scoring='roc_auc')
+            cv_scores = cross_val_score(
+                adv_model, X_adv, y_adv, cv=3, scoring="roc_auc"
+            )
             auroc = float(np.mean(cv_scores))
 
             # Fit on full data for feature importance
             adv_model.fit(X_adv, y_adv)
             drift_importances = {}
-            if hasattr(adv_model, 'feature_importances_'):
+            if hasattr(adv_model, "feature_importances_"):
                 fi = adv_model.feature_importances_
                 for i, imp in enumerate(fi):
-                    fname = self._feature_names[i] if i < len(self._feature_names) else f"f{i}"
+                    fname = (
+                        self._feature_names[i]
+                        if i < len(self._feature_names)
+                        else f"f{i}"
+                    )
                     drift_importances[fname] = float(imp)
 
             sorted_drift = sorted(drift_importances.items(), key=lambda x: -x[1])[:10]
@@ -1517,8 +1644,12 @@ class RobustPredictionSystem:
         for name_i, name_j, r in redundant_pairs:
             if name_i in remaining and name_j in remaining:
                 # Prune the one with worse Brier
-                brier_i = self._model_diagnostics.get(name_i, ModelDiagnostics(name=name_i)).oos_brier
-                brier_j = self._model_diagnostics.get(name_j, ModelDiagnostics(name=name_j)).oos_brier
+                brier_i = self._model_diagnostics.get(
+                    name_i, ModelDiagnostics(name=name_i)
+                ).oos_brier
+                brier_j = self._model_diagnostics.get(
+                    name_j, ModelDiagnostics(name=name_j)
+                ).oos_brier
                 if brier_i <= brier_j:
                     pruned.append(name_j)
                     self._weights.pop(name_j, None)
@@ -1533,9 +1664,11 @@ class RobustPredictionSystem:
             # Sort by Brier, keep best
             sorted_remaining = sorted(
                 remaining,
-                key=lambda n: self._model_diagnostics.get(n, ModelDiagnostics(name=n)).oos_brier,
+                key=lambda n: (
+                    self._model_diagnostics.get(n, ModelDiagnostics(name=n)).oos_brier
+                ),
             )
-            to_prune = sorted_remaining[self.pruning_keep_top_n:]
+            to_prune = sorted_remaining[self.pruning_keep_top_n :]
             pruned.extend(to_prune)
 
         self._pruned_models = pruned
@@ -1582,16 +1715,19 @@ class RobustPredictionSystem:
             from sklearn.inspection import permutation_importance
 
             result = permutation_importance(
-                self, X, y,
+                self,
+                X,
+                y,
                 n_repeats=n_repeats,
                 random_state=self.random_state,
                 n_jobs=-1,
-                scoring='neg_brier_score',
+                scoring="neg_brier_score",
             )
 
             importances = {
-                self._feature_names[i] if i < len(self._feature_names) else f"f{i}":
-                float(result.importances_mean[i])
+                self._feature_names[i]
+                if i < len(self._feature_names)
+                else f"f{i}": float(result.importances_mean[i])
                 for i in range(len(result.importances_mean))
             }
 
@@ -1655,10 +1791,12 @@ class RobustPredictionSystem:
                 # Train a single LogisticRegression as fast proxy
                 try:
                     from sklearn.linear_model import LogisticRegression
+
                     boot_model = LogisticRegression(
-                        C=1.0, max_iter=1000,
+                        C=1.0,
+                        max_iter=1000,
                         random_state=self.random_state + b,
-                        class_weight='balanced',
+                        class_weight="balanced",
                     )
                     boot_model.fit(X_boot, y_boot)
                     preds = boot_model.predict_proba(X)[:, 1]
@@ -1720,9 +1858,9 @@ class RobustPredictionSystem:
                 X_cal = np.clip(oos_probs, 0.001, 0.999)
 
                 # Try isotonic
-                if self.calibration_method in ('isotonic', 'auto'):
+                if self.calibration_method in ("isotonic", "auto"):
                     try:
-                        iso = IsotonicRegression(out_of_bounds='clip')
+                        iso = IsotonicRegression(out_of_bounds="clip")
                         iso.fit(X_cal, oos_targets)
                         cal_probs = iso.transform(X_cal)
                         cal_probs = np.clip(cal_probs, 0.001, 0.999)
@@ -1730,16 +1868,20 @@ class RobustPredictionSystem:
                         self._calibration_models[model_name] = iso
                         continue  # Skip Platt if isotonic succeeded
                     except Exception:
-                        if self.calibration_method == 'isotonic':
+                        if self.calibration_method == "isotonic":
                             raise  # Re-raise if isotonic was explicitly requested
 
                 # Fallback: Platt scaling (sigmoid)
-                if self.calibration_method in ('platt', 'auto'):
+                if self.calibration_method in ("platt", "auto"):
                     from sklearn.calibration import CalibratedClassifierCV
                     from sklearn.linear_model import LogisticRegression
 
-                    cal = LogisticRegression(C=1.0, max_iter=1000, random_state=self.random_state)
-                    calibrator = CalibratedClassifierCV(estimator=cal, method="sigmoid", cv=3)
+                    cal = LogisticRegression(
+                        C=1.0, max_iter=1000, random_state=self.random_state
+                    )
+                    calibrator = CalibratedClassifierCV(
+                        estimator=cal, method="sigmoid", cv=3
+                    )
 
                     X_cal_2d = X_cal.reshape(-1, 1)
                     if len(np.unique(oos_targets)) >= 2:
@@ -1768,9 +1910,12 @@ class RobustPredictionSystem:
             return {
                 "auroc": round(self._adversarial_auroc, 4),
                 "health": (
-                    "critical" if self._adversarial_auroc > 0.90
-                    else "warning" if self._adversarial_auroc > 0.75
-                    else "minor" if self._adversarial_auroc > 0.60
+                    "critical"
+                    if self._adversarial_auroc > 0.90
+                    else "warning"
+                    if self._adversarial_auroc > 0.75
+                    else "minor"
+                    if self._adversarial_auroc > 0.60
                     else "stable"
                 ),
             }
@@ -1922,7 +2067,8 @@ class MarketInefficiencySystem:
             logger.info("Training classification head (home_win prediction)...")
 
         self._classifier.fit(
-            X, y_binary,
+            X,
+            y_binary,
             feature_names=self._feature_names,
             verbose=verbose,
         )
@@ -1979,9 +2125,6 @@ class MarketInefficiencySystem:
 
         All trained on market_error target.
         """
-        import warnings
-        from sklearn.linear_model import Ridge
-        from sklearn.ensemble import RandomForestRegressor
         from sklearn.metrics import mean_absolute_error, r2_score
 
         n = len(X)
@@ -2058,7 +2201,9 @@ class MarketInefficiencySystem:
                 else:
                     fold_errors.append(train_mae)
 
-                reg_models.append((name, model, fold_errors[-1] if fold_errors else 1.0))
+                reg_models.append(
+                    (name, model, fold_errors[-1] if fold_errors else 1.0)
+                )
 
             except Exception as e:
                 logger.debug(f"Error regressor {name} failed: {e}")
@@ -2072,15 +2217,17 @@ class MarketInefficiencySystem:
         total_inv_error = sum(1.0 / max(e, 0.001) for _, _, e in reg_models)
         weighted_models = []
         for name, model, error in reg_models:
-            w = (1.0 / max(error, 0.001)) / total_inv_error if total_inv_error > 0 else 1.0 / len(reg_models)
+            w = (
+                (1.0 / max(error, 0.001)) / total_inv_error
+                if total_inv_error > 0
+                else 1.0 / len(reg_models)
+            )
             weighted_models.append((name, model, w))
 
         self._error_regressor = weighted_models
 
         if verbose:
-            weights_str = ", ".join(
-                f"{n}={w:.2f}" for n, _, w in weighted_models
-            )
+            weights_str = ", ".join(f"{n}={w:.2f}" for n, _, w in weighted_models)
             logger.info(
                 f"Market error regressor built: {len(reg_models)} models "
                 f"(weights: {weights_str})"
@@ -2088,7 +2235,6 @@ class MarketInefficiencySystem:
 
     def _get_regressor_specs(self) -> list[tuple[str, type, dict]]:
         """Generate model specifications for market error regression."""
-        from sklearn.linear_model import Ridge
         from sklearn.ensemble import RandomForestRegressor
 
         specs = []
@@ -2103,6 +2249,7 @@ class MarketInefficiencySystem:
         # 2. XGBoost Regressor
         try:
             from xgboost import XGBRegressor
+
             xgb_params = {
                 "n_estimators": 300,
                 "max_depth": 5,
@@ -2121,6 +2268,7 @@ class MarketInefficiencySystem:
         # 3. LightGBM Regressor
         try:
             from lightgbm import LGBMRegressor
+
             lgb_params = {
                 "n_estimators": 300,
                 "max_depth": -1,
@@ -2245,10 +2393,13 @@ class MarketInefficiencySystem:
             # error predictions drive the blend.
             error_ratio = np.abs(predicted_errors) / max(self._error_std, 0.01)
             blend_ratio = np.clip(
-                np.minimum(error_ratio ** 1.5, 1.0),
-                0.05, 0.80,
+                np.minimum(error_ratio**1.5, 1.0),
+                0.05,
+                0.80,
             )
-            blended = (1.0 - blend_ratio) * classifier_home + blend_ratio * error_adjusted
+            blended = (
+                1.0 - blend_ratio
+            ) * classifier_home + blend_ratio * error_adjusted
 
             return np.column_stack([1.0 - blended, blended])
 
@@ -2303,11 +2454,16 @@ class MarketInefficiencySystem:
 
             # v6.0 — ADAPTIVE BLEND (same logic as predict_proba)
             error_ratio = abs(predicted_error) / max(self._error_std, 0.01)
-            blend_ratio = float(np.clip(
-                min(error_ratio ** 1.5, 1.0),
-                0.05, 0.80,
-            ))
-            blended = (1.0 - blend_ratio) * classifier_home + blend_ratio * error_adjusted
+            blend_ratio = float(
+                np.clip(
+                    min(error_ratio**1.5, 1.0),
+                    0.05,
+                    0.80,
+                )
+            )
+            blended = (
+                1.0 - blend_ratio
+            ) * classifier_home + blend_ratio * error_adjusted
 
             final_prob = float(np.clip(blended, 0.001, 0.999))
 
@@ -2328,11 +2484,13 @@ class MarketInefficiencySystem:
             classifier_result.model_probs["blended"] = round(final_prob, 4)
 
             # Update confidence: more confident when error signal is strong
-            error_signal_strength = min(abs(predicted_error) / 0.10, 1.0)  # 10% error = full signal
+            error_signal_strength = min(
+                abs(predicted_error) / 0.10, 1.0
+            )  # 10% error = full signal
             confidence_boost = error_signal_strength * 0.15  # Max +0.15 boost
-            classifier_result.confidence_score = float(np.clip(
-                classifier_result.confidence_score + confidence_boost, 0.0, 1.0
-            ))
+            classifier_result.confidence_score = float(
+                np.clip(classifier_result.confidence_score + confidence_boost, 0.0, 1.0)
+            )
 
             # Update confidence label
             cs = classifier_result.confidence_score
@@ -2424,15 +2582,18 @@ def compute_statistical_significance(
 
     # One-sided p-value: P(win_rate > null_hypothesis)
     from scipy.stats import norm
+
     p_value = float(1.0 - norm.cdf(z_score))
 
     # Confidence interval (Wilson score)
     z = 1.96  # 95% CI
     denominator = 1.0 + z**2 / n
     centre = (win_rate + z**2 / (2.0 * n)) / denominator
-    margin = z * math.sqrt(
-        (win_rate * (1.0 - win_rate) / n + z**2 / (4.0 * n**2))
-    ) / denominator
+    margin = (
+        z
+        * math.sqrt((win_rate * (1.0 - win_rate) / n + z**2 / (4.0 * n**2)))
+        / denominator
+    )
     ci_lower = max(0.0, centre - margin)
     ci_upper = min(1.0, centre + margin)
 

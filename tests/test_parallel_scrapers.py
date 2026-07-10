@@ -23,7 +23,6 @@ from __future__ import annotations
 import time
 from unittest.mock import patch, MagicMock
 
-import pytest
 
 # Module path prefix for string-based patches on engine.py internals
 _ENG = "betting_intel.live.engine"
@@ -35,6 +34,7 @@ _ENG = "betting_intel.live.engine"
 def _make_engine():
     """Create a fresh LivePredictionEngine with cache cleared for test isolation."""
     from betting_intel.live.engine import LivePredictionEngine
+
     eng = LivePredictionEngine()
     eng.clear_cache()
     # Bypass the TheOddsAPI path so we always reach the scraper logic
@@ -85,8 +85,14 @@ class TestBothScrapersReturnData:
         espn_games = [_raw_game("Celtics", "Lakers")]
         dk_games = [_raw_game("Knicks", "Nets")]
 
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=espn_games), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games):
+        with (
+            patch.object(
+                eng._odds_fetcher, "_fetch_stealth_scraper", return_value=espn_games
+            ),
+            patch.object(
+                eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games
+            ),
+        ):
             result = eng._fetch_realtime_odds()
 
         assert len(result) == 2
@@ -101,8 +107,14 @@ class TestBothScrapersReturnData:
         dk_games = [dict(game)]
         dk_games[0]["bookmakers"] = [{"key": "dk_bmk", "markets": []}]
 
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=espn_games), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games):
+        with (
+            patch.object(
+                eng._odds_fetcher, "_fetch_stealth_scraper", return_value=espn_games
+            ),
+            patch.object(
+                eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games
+            ),
+        ):
             result = eng._fetch_realtime_odds()
 
         assert len(result) == 1
@@ -110,8 +122,10 @@ class TestBothScrapersReturnData:
 
     def test_both_return_empty(self):
         eng = _make_engine()
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=[]), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=[]):
+        with (
+            patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=[]),
+            patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=[]),
+        ):
             result = eng._fetch_realtime_odds()
         assert result == []
 
@@ -120,8 +134,14 @@ class TestBothScrapersReturnData:
         espn_games = [_raw_game("Celtics", "Lakers"), _raw_game("Bulls", "Heat")]
         dk_games = [_raw_game("Spurs", "Mavs")]
 
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=espn_games), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games):
+        with (
+            patch.object(
+                eng._odds_fetcher, "_fetch_stealth_scraper", return_value=espn_games
+            ),
+            patch.object(
+                eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games
+            ),
+        ):
             result = eng._fetch_realtime_odds()
 
         assert len(result) == 3
@@ -139,8 +159,12 @@ class TestOneScraperEmpty:
         eng = _make_engine()
         espn_games = [_raw_game("Celtics", "Lakers")]
 
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=espn_games), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=[]):
+        with (
+            patch.object(
+                eng._odds_fetcher, "_fetch_stealth_scraper", return_value=espn_games
+            ),
+            patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=[]),
+        ):
             result = eng._fetch_realtime_odds()
 
         assert len(result) == 1
@@ -150,16 +174,22 @@ class TestOneScraperEmpty:
         eng = _make_engine()
         dk_games = [_raw_game("Celtics", "Lakers")]
 
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=[]), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games):
+        with (
+            patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=[]),
+            patch.object(
+                eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games
+            ),
+        ):
             result = eng._fetch_realtime_odds()
 
         assert len(result) == 1
 
     def test_both_empty_returns_empty_list(self):
         eng = _make_engine()
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=[]), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=[]):
+        with (
+            patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=[]),
+            patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=[]),
+        ):
             result = eng._fetch_realtime_odds()
         assert result == []
 
@@ -185,8 +215,10 @@ class TestTimeoutBehavior:
             time.sleep(1.0)
             return [_raw_game()]
 
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", wraps=_slow), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", wraps=_slow):
+        with (
+            patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", wraps=_slow),
+            patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", wraps=_slow),
+        ):
             start = time.time()
             result = eng._fetch_realtime_odds()
             elapsed = time.time() - start
@@ -205,8 +237,12 @@ class TestTimeoutBehavior:
 
         dk_games = [_raw_game("Celtics", "Lakers")]
 
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", wraps=_slow), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games):
+        with (
+            patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", wraps=_slow),
+            patch.object(
+                eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games
+            ),
+        ):
             start = time.time()
             result = eng._fetch_realtime_odds()
             elapsed = time.time() - start
@@ -225,8 +261,12 @@ class TestTimeoutBehavior:
 
         espn_games = [_raw_game("Celtics", "Lakers")]
 
-        with patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", wraps=_slow), \
-             patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=espn_games):
+        with (
+            patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", wraps=_slow),
+            patch.object(
+                eng._odds_fetcher, "_fetch_stealth_scraper", return_value=espn_games
+            ),
+        ):
             start = time.time()
             result = eng._fetch_realtime_odds()
             elapsed = time.time() - start
@@ -246,8 +286,10 @@ class TestTimeoutBehavior:
             time.sleep(5.0)  # Would block 5s if wait=True
             return [_raw_game()]
 
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", wraps=_slow), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", wraps=_slow):
+        with (
+            patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", wraps=_slow),
+            patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", wraps=_slow),
+        ):
             start = time.time()
             result = eng._fetch_realtime_odds()
             elapsed = time.time() - start
@@ -280,8 +322,14 @@ class TestLateFinishingScraper:
             time.sleep(0.1)
             return [_raw_game("Knicks", "Nets")]
 
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", wraps=_slightly_late), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games):
+        with (
+            patch.object(
+                eng._odds_fetcher, "_fetch_stealth_scraper", wraps=_slightly_late
+            ),
+            patch.object(
+                eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games
+            ),
+        ):
             start = time.time()
             result = eng._fetch_realtime_odds()
             elapsed = time.time() - start
@@ -310,8 +358,16 @@ class TestExceptionHandling:
 
         dk_games = [_raw_game("Celtics", "Lakers")]
 
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", side_effect=ImportError("stealth_scraper not installed")), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games):
+        with (
+            patch.object(
+                eng._odds_fetcher,
+                "_fetch_stealth_scraper",
+                side_effect=ImportError("stealth_scraper not installed"),
+            ),
+            patch.object(
+                eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games
+            ),
+        ):
             result = eng._fetch_realtime_odds()
 
         assert len(result) == 1
@@ -323,8 +379,16 @@ class TestExceptionHandling:
 
         espn_games = [_raw_game("Celtics", "Lakers")]
 
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=espn_games), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", side_effect=ImportError("draftkings_scraper not installed")):
+        with (
+            patch.object(
+                eng._odds_fetcher, "_fetch_stealth_scraper", return_value=espn_games
+            ),
+            patch.object(
+                eng._odds_fetcher,
+                "_fetch_draftkings_odds",
+                side_effect=ImportError("draftkings_scraper not installed"),
+            ),
+        ):
             result = eng._fetch_realtime_odds()
 
         assert len(result) == 1
@@ -333,8 +397,18 @@ class TestExceptionHandling:
         """Both scrapers unavailable → empty list."""
         eng = _make_engine()
 
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", side_effect=ImportError("not available")), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", side_effect=ImportError("not available")):
+        with (
+            patch.object(
+                eng._odds_fetcher,
+                "_fetch_stealth_scraper",
+                side_effect=ImportError("not available"),
+            ),
+            patch.object(
+                eng._odds_fetcher,
+                "_fetch_draftkings_odds",
+                side_effect=ImportError("not available"),
+            ),
+        ):
             result = eng._fetch_realtime_odds()
 
         assert result == []
@@ -345,8 +419,16 @@ class TestExceptionHandling:
 
         dk_games = [_raw_game("Celtics", "Lakers")]
 
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", side_effect=RuntimeError("ESPN API changed")), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games):
+        with (
+            patch.object(
+                eng._odds_fetcher,
+                "_fetch_stealth_scraper",
+                side_effect=RuntimeError("ESPN API changed"),
+            ),
+            patch.object(
+                eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games
+            ),
+        ):
             result = eng._fetch_realtime_odds()
 
         assert len(result) == 1
@@ -374,8 +456,10 @@ class TestCacheInteraction:
             eng._last_odds_fetch = time.time()  # Now (fresh, within TTL)
 
         # If cache is used, scrapers should NOT be called
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper") as mock_espn, \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds") as mock_dk:
+        with (
+            patch.object(eng._odds_fetcher, "_fetch_stealth_scraper") as mock_espn,
+            patch.object(eng._odds_fetcher, "_fetch_draftkings_odds") as mock_dk,
+        ):
             result = eng._fetch_realtime_odds()
 
         mock_espn.assert_not_called()
@@ -393,8 +477,12 @@ class TestCacheInteraction:
 
         dk_games = [_raw_game("Knicks", "Nets")]
 
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=[]), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games):
+        with (
+            patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=[]),
+            patch.object(
+                eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games
+            ),
+        ):
             result = eng._fetch_realtime_odds()
 
         # Should replace stale cache with fresh data
@@ -407,8 +495,12 @@ class TestCacheInteraction:
 
         dk_games = [_raw_game("Celtics", "Lakers")]
 
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=[]), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games):
+        with (
+            patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=[]),
+            patch.object(
+                eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games
+            ),
+        ):
             result = eng._fetch_realtime_odds()
 
         assert len(result) == 1
@@ -420,8 +512,12 @@ class TestCacheInteraction:
 
         dk_games = [_raw_game("Celtics", "Lakers")]
 
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=[]), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games):
+        with (
+            patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=[]),
+            patch.object(
+                eng._odds_fetcher, "_fetch_draftkings_odds", return_value=dk_games
+            ),
+        ):
             result = eng._fetch_realtime_odds()
 
         # Now the cache should hold the same data
@@ -433,8 +529,10 @@ class TestCacheInteraction:
         """When both scrapers return nothing, cache should be empty."""
         eng = _make_engine()
 
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=[]), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=[]):
+        with (
+            patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=[]),
+            patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=[]),
+        ):
             result = eng._fetch_realtime_odds()
 
         with eng._lock:
@@ -459,8 +557,10 @@ class TestScraperMethodIndependence:
             time.sleep(5.0)
             return [_raw_game()]
 
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper") as mock_espn, \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", wraps=_slow_dk):
+        with (
+            patch.object(eng._odds_fetcher, "_fetch_stealth_scraper") as mock_espn,
+            patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", wraps=_slow_dk),
+        ):
             mock_espn.return_value = [_raw_game("Celtics", "Lakers")]
             result = eng._fetch_realtime_odds()
 
@@ -474,8 +574,10 @@ class TestScraperMethodIndependence:
             time.sleep(5.0)
             return [_raw_game()]
 
-        with patch.object(eng._odds_fetcher, "_fetch_draftkings_odds") as mock_dk, \
-             patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", wraps=_slow_espn):
+        with (
+            patch.object(eng._odds_fetcher, "_fetch_draftkings_odds") as mock_dk,
+            patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", wraps=_slow_espn),
+        ):
             mock_dk.return_value = [_raw_game("Celtics", "Lakers")]
             result = eng._fetch_realtime_odds()
 
@@ -485,8 +587,14 @@ class TestScraperMethodIndependence:
     def test_both_methods_called(self):
         """Both scraper methods should be called (each at least once)."""
         eng = _make_engine()
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=[]) as mock_espn, \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=[]) as mock_dk:
+        with (
+            patch.object(
+                eng._odds_fetcher, "_fetch_stealth_scraper", return_value=[]
+            ) as mock_espn,
+            patch.object(
+                eng._odds_fetcher, "_fetch_draftkings_odds", return_value=[]
+            ) as mock_dk,
+        ):
             eng._fetch_realtime_odds()
         mock_espn.assert_called_once()
         mock_dk.assert_called_once()
@@ -512,13 +620,17 @@ class TestThreadSafety:
             return [_raw_game()]
 
         # First call: both time out (eng._scraper_timeout = 0.5)
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", wraps=_slow), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", wraps=_slow):
+        with (
+            patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", wraps=_slow),
+            patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", wraps=_slow),
+        ):
             eng._fetch_realtime_odds()
 
         # Second call should work (lock was released)
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=[]), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=[]):
+        with (
+            patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", return_value=[]),
+            patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=[]),
+        ):
             result = eng._fetch_realtime_odds()
 
         assert result == []
@@ -532,6 +644,7 @@ class TestThreadSafety:
 
         # Set a cached snapshot
         from betting_intel.live.engine import LivePredictionSnapshot
+
         snap = LivePredictionSnapshot()
         with eng._lock:
             eng._snapshot = snap
@@ -550,8 +663,10 @@ class TestThreadSafety:
             s = eng.get_snapshot(force_refresh=False)
             results.append(s is snap)
 
-        with patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", wraps=_slow_espn), \
-             patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=[]):
+        with (
+            patch.object(eng._odds_fetcher, "_fetch_stealth_scraper", wraps=_slow_espn),
+            patch.object(eng._odds_fetcher, "_fetch_draftkings_odds", return_value=[]),
+        ):
             t1 = threading.Thread(target=lambda: eng.get_snapshot(force_refresh=True))
             t2 = threading.Thread(target=_call_get)
             t1.start()

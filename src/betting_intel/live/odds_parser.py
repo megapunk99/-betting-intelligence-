@@ -83,7 +83,8 @@ class OddsParser:
             return []
 
         from betting_intel.live.sport_configs import (
-            league_from_sport_key, sport_key_to_group,
+            league_from_sport_key,
+            sport_key_to_group,
         )
 
         games: list[LiveGame] = []
@@ -101,7 +102,12 @@ class OddsParser:
                 if not home_full or not away_full:
                     continue
 
-                sport_key = event.get("_sport_config_key", event.get("sport_key", "basketball_nba")) or "basketball_nba"
+                sport_key = (
+                    event.get(
+                        "_sport_config_key", event.get("sport_key", "basketball_nba")
+                    )
+                    or "basketball_nba"
+                )
                 league_name = league_from_sport_key(sport_key)
                 sport_group = sport_key_to_group(sport_key)
 
@@ -115,7 +121,9 @@ class OddsParser:
                 # Filter out games that have already started.
                 # A 15-minute buffer allows games that just tipped off to still appear.
                 try:
-                    commence_dt = datetime.fromisoformat(commence_time.replace("Z", "+00:00"))
+                    commence_dt = datetime.fromisoformat(
+                        commence_time.replace("Z", "+00:00")
+                    )
                     if commence_dt < now_utc - timedelta(minutes=15):
                         continue
                 except (ValueError, TypeError):
@@ -205,10 +213,12 @@ class OddsParser:
                 consensus_under_odds = self.median_or_none(under_odds_values)
 
                 game = LiveGame(
-                    game_id=str(event.get(
-                        "id",
-                        f"{sport_key}_{home_short}_{away_short}_{game_date}",
-                    )),
+                    game_id=str(
+                        event.get(
+                            "id",
+                            f"{sport_key}_{home_short}_{away_short}_{game_date}",
+                        )
+                    ),
                     sport_key=sport_key,
                     league=league_name,
                     sport_group=sport_group,

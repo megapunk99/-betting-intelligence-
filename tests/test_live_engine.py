@@ -15,8 +15,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -26,7 +25,7 @@ _ENG = "betting_intel.live.engine"
 _CFG = "betting_intel.live.sport_configs"
 _DAT = "betting_intel.data.odds_fetcher"
 _TRK = "betting_intel.analytics.tracker"
-_DK  = "betting_intel.data.draftkings_scraper"
+_DK = "betting_intel.data.draftkings_scraper"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -73,6 +72,7 @@ def sample_game() -> dict:
 def live_game():
     """A minimal LiveGame instance for tests."""
     from betting_intel.live.engine import LiveGame
+
     return LiveGame(
         game_id="g1",
         sport_key="basketball_nba",
@@ -92,6 +92,7 @@ def live_game():
 def engine():
     """Create a fresh LivePredictionEngine for each test."""
     from betting_intel.live.engine import LivePredictionEngine
+
     return LivePredictionEngine()
 
 
@@ -115,28 +116,46 @@ class TestLiveGame:
 
     def test_commence_datetime_bad_string_returns_none(self):
         from betting_intel.live.engine import LiveGame
+
         game = LiveGame(
-            game_id="bad", sport_key="nba", home_team="A", away_team="B",
-            home_team_short="A", away_team_short="B",
-            commence_time="not-a-date", game_date="",
+            game_id="bad",
+            sport_key="nba",
+            home_team="A",
+            away_team="B",
+            home_team_short="A",
+            away_team_short="B",
+            commence_time="not-a-date",
+            game_date="",
         )
         assert game.commence_datetime is None
 
     def test_commence_datetime_empty_string_returns_none(self):
         from betting_intel.live.engine import LiveGame
+
         game = LiveGame(
-            game_id="empty", sport_key="nba", home_team="A", away_team="B",
-            home_team_short="A", away_team_short="B",
-            commence_time="", game_date="",
+            game_id="empty",
+            sport_key="nba",
+            home_team="A",
+            away_team="B",
+            home_team_short="A",
+            away_team_short="B",
+            commence_time="",
+            game_date="",
         )
         assert game.commence_datetime is None
 
     def test_commence_datetime_z_suffix(self):
         from betting_intel.live.engine import LiveGame
+
         game = LiveGame(
-            game_id="z", sport_key="nba", home_team="A", away_team="B",
-            home_team_short="A", away_team_short="B",
-            commence_time="2025-06-12T20:00:00Z", game_date="2025-06-12",
+            game_id="z",
+            sport_key="nba",
+            home_team="A",
+            away_team="B",
+            home_team_short="A",
+            away_team_short="B",
+            commence_time="2025-06-12T20:00:00Z",
+            game_date="2025-06-12",
         )
         dt = game.commence_datetime
         assert dt is not None
@@ -158,19 +177,31 @@ class TestLiveGame:
 
     def test_matchup_empty_teams(self):
         from betting_intel.live.engine import LiveGame
+
         game = LiveGame(
-            game_id="e", sport_key="nba", home_team="", away_team="",
-            home_team_short="", away_team_short="",
-            commence_time="", game_date="",
+            game_id="e",
+            sport_key="nba",
+            home_team="",
+            away_team="",
+            home_team_short="",
+            away_team_short="",
+            commence_time="",
+            game_date="",
         )
         assert game.matchup == " @ "
 
     def test_game_date_defaults(self):
         from betting_intel.live.engine import LiveGame
+
         game = LiveGame(
-            game_id="d", sport_key="nba", home_team="A", away_team="B",
-            home_team_short="A", away_team_short="B",
-            commence_time="2025-06-12T20:00:00Z", game_date="2025-06-12",
+            game_id="d",
+            sport_key="nba",
+            home_team="A",
+            away_team="B",
+            home_team_short="A",
+            away_team_short="B",
+            commence_time="2025-06-12T20:00:00Z",
+            game_date="2025-06-12",
         )
         assert game.league == "NBA"
         assert game.is_live is False
@@ -187,6 +218,7 @@ class TestLivePredictionSnapshot:
 
     def test_empty_snapshot_defaults(self):
         from betting_intel.live.engine import LivePredictionSnapshot
+
         snap = LivePredictionSnapshot()
         assert snap.n_live == 0
         assert snap.n_today == 0
@@ -198,20 +230,29 @@ class TestLivePredictionSnapshot:
 
     def test_empty_snapshot_chart_data(self):
         from betting_intel.live.engine import LivePredictionSnapshot
+
         snap = LivePredictionSnapshot()
         cd = snap.chart_data
         assert cd["n_total"] == 0
         assert cd["edges"] == []
-        assert cd["confidence_breakdown"] == {"high": 0, "medium": 0, "low": 0, "neutral": 0}
+        assert cd["confidence_breakdown"] == {
+            "high": 0,
+            "medium": 0,
+            "low": 0,
+            "neutral": 0,
+        }
         assert cd["direction_breakdown"] == {"over": 0, "under": 0, "neutral": 0}
 
     def test_snapshot_with_games_counts_correctly(self, live_game):
         from betting_intel.live.engine import LivePredictionSnapshot
+
         live_game.is_live = True
         live_game.is_today = True
         live_game.edge_pct = 0.03
         snap = LivePredictionSnapshot(
-            live_games=[live_game], today_games=[live_game], next_two_days=[live_game],
+            live_games=[live_game],
+            today_games=[live_game],
+            next_two_days=[live_game],
         )
         assert snap.n_live == 1
         assert snap.n_today == 1
@@ -219,6 +260,7 @@ class TestLivePredictionSnapshot:
 
     def test_snapshot_chart_data_includes_edges(self, live_game):
         from betting_intel.live.engine import LivePredictionSnapshot
+
         live_game.edge_pct = 0.04
         live_game.direction = "over"
         live_game.confidence = "medium"
@@ -232,12 +274,14 @@ class TestLivePredictionSnapshot:
 
     def test_snapshot_chart_data_skips_zero_edge(self, live_game):
         from betting_intel.live.engine import LivePredictionSnapshot
+
         live_game.edge_pct = 0.0
         snap = LivePredictionSnapshot(next_two_days=[live_game])
         assert snap.chart_data["edges"] == []
 
     def test_snapshot_chart_data_skips_none_edge(self, live_game):
         from betting_intel.live.engine import LivePredictionSnapshot
+
         live_game.edge_pct = None
         snap = LivePredictionSnapshot(next_two_days=[live_game])
         assert snap.chart_data["edges"] == []
@@ -245,6 +289,7 @@ class TestLivePredictionSnapshot:
     def test_snapshot_chart_data_confidence_breakdown(self, live_game):
         from betting_intel.live.engine import LivePredictionSnapshot
         from copy import deepcopy
+
         g1, g2, g3 = (deepcopy(live_game) for _ in range(3))
         g1.edge_pct, g1.confidence = 0.05, "high"
         g2.game_id, g2.edge_pct, g2.confidence = "g2", 0.03, "medium"
@@ -258,6 +303,7 @@ class TestLivePredictionSnapshot:
     def test_snapshot_chart_data_direction_breakdown(self, live_game):
         from betting_intel.live.engine import LivePredictionSnapshot
         from copy import deepcopy
+
         g1, g2, g3 = (deepcopy(live_game) for _ in range(3))
         g1.edge_pct, g1.direction = 0.05, "over"
         g2.game_id, g2.edge_pct, g2.direction = "g2", 0.04, "under"
@@ -269,6 +315,7 @@ class TestLivePredictionSnapshot:
 
     def test_to_dict_excludes_chart_data(self, live_game):
         from betting_intel.live.engine import LivePredictionSnapshot
+
         live_game.edge_pct = 0.05
         snap = LivePredictionSnapshot(next_two_days=[live_game])
         d = snap.to_dict()
@@ -278,12 +325,14 @@ class TestLivePredictionSnapshot:
 
     def test_to_dict_includes_game_dicts(self, live_game):
         from betting_intel.live.engine import LivePredictionSnapshot
+
         snap = LivePredictionSnapshot(today_games=[live_game])
         d = snap.to_dict()
         assert d["today_games"][0]["game_id"] == "g1"
 
     def test_serialization_roundtrip_json(self, live_game):
         from betting_intel.live.engine import LivePredictionSnapshot
+
         live_game.edge_pct = 0.04
         snap = LivePredictionSnapshot(next_two_days=[live_game])
         d = snap.to_dict()
@@ -293,10 +342,13 @@ class TestLivePredictionSnapshot:
 
     def test_multiple_games_in_multiple_categories(self, live_game):
         from betting_intel.live.engine import LivePredictionSnapshot
+
         live_game.is_live = True
         live_game.is_today = True
         snap = LivePredictionSnapshot(
-            live_games=[live_game], today_games=[live_game], next_two_days=[live_game],
+            live_games=[live_game],
+            today_games=[live_game],
+            next_two_days=[live_game],
         )
         assert snap.n_live == 1
         assert snap.n_today == 1
@@ -316,7 +368,8 @@ class TestLivePredictionEngine:
     """Tests for the LivePredictionEngine — state, caching, odds merging."""
 
     def test_engine_imports(self):
-        from betting_intel.live.engine import LivePredictionEngine, LiveGame, LivePredictionSnapshot
+        from betting_intel.live.engine import LivePredictionEngine
+
         assert LivePredictionEngine is not None
 
     def test_engine_initialization(self, engine):
@@ -327,18 +380,26 @@ class TestLivePredictionEngine:
 
     def test_engine_initialization_with_custom_params(self):
         from betting_intel.live.engine import LivePredictionEngine
+
         eng = LivePredictionEngine(odds_api_key="test-key-123", refresh_interval=120)
         assert eng._odds_api_key == "test-key-123"
         assert eng._refresh_interval == 120
 
     def test_engine_initialization_default_refresh_interval(self):
-        from betting_intel.live.engine import LivePredictionEngine, PREDICTION_REFRESH_INTERVAL
+        from betting_intel.live.engine import (
+            LivePredictionEngine,
+            PREDICTION_REFRESH_INTERVAL,
+        )
+
         assert LivePredictionEngine()._refresh_interval == PREDICTION_REFRESH_INTERVAL
 
     # ── Properties ───────────────────────────────────────────────
 
     def test_robust_system_summary_not_initialized(self, engine):
-        assert engine.robust_system_summary == {"fitted": False, "status": "not_initialized"}
+        assert engine.robust_system_summary == {
+            "fitted": False,
+            "status": "not_initialized",
+        }
 
     def test_robust_system_summary_not_fitted(self, engine):
         engine._robust_system = MagicMock()
@@ -364,15 +425,19 @@ class TestLivePredictionEngine:
     def test_kelly_staker_property(self, engine):
         assert engine.kelly_staker.bankroll == 10000.0
 
-    @pytest.mark.parametrize("key,expected", [
-        ("valid-key-123", True),
-        ("", False),
-        ("your-api-key-here", False),
-        ("REPLACE_ME_WITH_YOUR_ODDS_API_KEY", False),
-        (None, False),
-    ])
+    @pytest.mark.parametrize(
+        "key,expected",
+        [
+            ("valid-key-123", True),
+            ("", False),
+            ("your-api-key-here", False),
+            ("REPLACE_ME_WITH_YOUR_ODDS_API_KEY", False),
+            (None, False),
+        ],
+    )
     def test_has_valid_api_key(self, key, expected):
         from betting_intel.live.engine import LivePredictionEngine
+
         eng = LivePredictionEngine(odds_api_key=key)
         assert eng._has_valid_api_key() == expected
 
@@ -381,6 +446,7 @@ class TestLivePredictionEngine:
 
     def test_has_cached_data_true_after_snapshot(self, engine, live_game):
         from betting_intel.live.engine import LivePredictionSnapshot
+
         snap = LivePredictionSnapshot(next_two_days=[live_game])
         with engine._lock:
             engine._snapshot = snap
@@ -402,6 +468,7 @@ class TestLivePredictionEngine:
 
     def test_get_snapshot_returns_cached(self, engine, live_game):
         from betting_intel.live.engine import LivePredictionSnapshot
+
         cached = LivePredictionSnapshot(next_two_days=[live_game])
         with engine._lock:
             engine._snapshot = cached
@@ -418,6 +485,7 @@ class TestLivePredictionEngine:
     @patch(f"{_ENG}.LivePredictionEngine._build_snapshot")
     def test_get_snapshot_refresh_stores_result(self, mock_build, engine, live_game):
         from betting_intel.live.engine import LivePredictionSnapshot
+
         new_snap = LivePredictionSnapshot(next_two_days=[live_game])
         mock_build.return_value = new_snap
         result = engine.get_snapshot(force_refresh=True)
@@ -426,8 +494,11 @@ class TestLivePredictionEngine:
             assert engine._snapshot is new_snap
 
     @patch(f"{_ENG}.LivePredictionEngine._build_snapshot")
-    def test_get_snapshot_refresh_failure_returns_cached(self, mock_build, engine, live_game):
+    def test_get_snapshot_refresh_failure_returns_cached(
+        self, mock_build, engine, live_game
+    ):
         from betting_intel.live.engine import LivePredictionSnapshot
+
         cached = LivePredictionSnapshot(next_two_days=[live_game])
         with engine._lock:
             engine._snapshot = cached
@@ -436,7 +507,9 @@ class TestLivePredictionEngine:
         assert snap is cached
 
     @patch(f"{_ENG}.LivePredictionEngine._build_snapshot")
-    def test_get_snapshot_refresh_failure_no_cache_returns_empty(self, mock_build, engine):
+    def test_get_snapshot_refresh_failure_no_cache_returns_empty(
+        self, mock_build, engine
+    ):
         mock_build.side_effect = RuntimeError("API down")
         snap = engine.get_snapshot(force_refresh=True)
         assert snap.n_total == 0
@@ -444,19 +517,27 @@ class TestLivePredictionEngine:
     # ── Convenience getters ──────────────────────────────────────
 
     def test_get_live_games_delegates(self, engine):
-        with patch.object(engine, "get_snapshot", return_value=MagicMock(live_games=["g1"])):
+        with patch.object(
+            engine, "get_snapshot", return_value=MagicMock(live_games=["g1"])
+        ):
             assert engine.get_live_games() == ["g1"]
 
     def test_get_today_games_delegates(self, engine):
-        with patch.object(engine, "get_snapshot", return_value=MagicMock(today_games=["g1"])):
+        with patch.object(
+            engine, "get_snapshot", return_value=MagicMock(today_games=["g1"])
+        ):
             assert engine.get_today_games() == ["g1"]
 
     def test_get_tomorrow_games_delegates(self, engine):
-        with patch.object(engine, "get_snapshot", return_value=MagicMock(tomorrow_games=["g1"])):
+        with patch.object(
+            engine, "get_snapshot", return_value=MagicMock(tomorrow_games=["g1"])
+        ):
             assert engine.get_tomorrow_games() == ["g1"]
 
     def test_get_next_two_days_delegates(self, engine):
-        with patch.object(engine, "get_snapshot", return_value=MagicMock(next_two_days=["g1", "g2"])):
+        with patch.object(
+            engine, "get_snapshot", return_value=MagicMock(next_two_days=["g1", "g2"])
+        ):
             assert engine.get_next_two_days() == ["g1", "g2"]
 
     # ── refresh_now ──────────────────────────────────────────────
@@ -470,6 +551,7 @@ class TestLivePredictionEngine:
 
     def test_clear_cache_resets_state(self, engine, live_game):
         from betting_intel.live.engine import LivePredictionSnapshot
+
         snap = LivePredictionSnapshot(next_two_days=[live_game])
         with engine._model_lock:
             engine._robust_system = MagicMock()
@@ -510,10 +592,20 @@ class TestLivePredictionEngine:
         assert result[0]["home_team"] == "C"
 
     def test_merge_odds_sources_same_matchup_merges_bookmakers(self, engine):
-        espn = [{"home_team": "Lakers", "away_team": "Celtics",
-                 "bookmakers": [{"key": "espn_bmk", "markets": []}]}]
-        dk = [{"home_team": "Lakers", "away_team": "Celtics",
-               "bookmakers": [{"key": "dk_bmk", "markets": []}]}]
+        espn = [
+            {
+                "home_team": "Lakers",
+                "away_team": "Celtics",
+                "bookmakers": [{"key": "espn_bmk", "markets": []}],
+            }
+        ]
+        dk = [
+            {
+                "home_team": "Lakers",
+                "away_team": "Celtics",
+                "bookmakers": [{"key": "dk_bmk", "markets": []}],
+            }
+        ]
         result = engine._merge_odds_sources(espn, dk)
         assert len(result[0]["bookmakers"]) == 2
         assert result[0]["bookmakers"][0]["key"] == "espn_bmk"
@@ -564,7 +656,9 @@ class TestLivePredictionEngine:
 
     def test_parse_games_filters_old_games(self, engine, sample_game):
         old = dict(sample_game)
-        old["commence_time"] = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
+        old["commence_time"] = (
+            datetime.now(timezone.utc) - timedelta(hours=6)
+        ).isoformat()
         assert engine._parse_games([old]) == []
 
     def test_parse_games_bad_commence_time_no_crash(self, engine, sample_game):
@@ -577,9 +671,13 @@ class TestLivePredictionEngine:
     def test_parse_games_recent_game_included(self, engine, sample_game):
         recent = dict(sample_game)
         # Game tipped off 5 minutes ago — within the 15-minute buffer so it's included
-        recent["commence_time"] = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
-        with patch(f"{_DAT}.ODDS_TO_SHORT_NAME",
-                   {"Boston Celtics": "BOS", "Los Angeles Lakers": "LAL"}):
+        recent["commence_time"] = (
+            datetime.now(timezone.utc) - timedelta(minutes=5)
+        ).isoformat()
+        with patch(
+            f"{_DAT}.ODDS_TO_SHORT_NAME",
+            {"Boston Celtics": "BOS", "Los Angeles Lakers": "LAL"},
+        ):
             result = engine._parse_games([recent])
         # Short names now come from SportConfig.team_name_map (not ODDS_TO_SHORT_NAME)
         assert result[0].home_team_short == "Celtics"
@@ -587,8 +685,10 @@ class TestLivePredictionEngine:
     # ── _build_snapshot ──────────────────────────────────────────
 
     def test_build_snapshot_empty_odds(self, engine):
-        with patch.object(engine, "_fetch_realtime_odds", return_value=[]), \
-             patch.object(engine, "_auto_resolve_completed_games", return_value=0):
+        with (
+            patch.object(engine, "_fetch_realtime_odds", return_value=[]),
+            patch.object(engine, "_auto_resolve_completed_games", return_value=0),
+        ):
             snap = engine._build_snapshot()
         # When no real odds are available, show honest empty state
         assert snap.n_total == 0
@@ -596,12 +696,18 @@ class TestLivePredictionEngine:
 
     def test_build_snapshot_with_games(self, engine, sample_game):
         game = dict(sample_game)
-        game["commence_time"] = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
-        with patch.object(engine, "_fetch_realtime_odds", return_value=[game]), \
-             patch.object(engine, "_auto_resolve_completed_games", return_value=0), \
-             patch(f"{_DAT}.ODDS_TO_SHORT_NAME",
-                   {"Boston Celtics": "BOS", "Los Angeles Lakers": "LAL"}), \
-             patch.object(engine, "_predict_games", return_value=None):
+        game["commence_time"] = (
+            datetime.now(timezone.utc) - timedelta(minutes=5)
+        ).isoformat()
+        with (
+            patch.object(engine, "_fetch_realtime_odds", return_value=[game]),
+            patch.object(engine, "_auto_resolve_completed_games", return_value=0),
+            patch(
+                f"{_DAT}.ODDS_TO_SHORT_NAME",
+                {"Boston Celtics": "BOS", "Los Angeles Lakers": "LAL"},
+            ),
+            patch.object(engine, "_predict_games", return_value=None),
+        ):
             snap = engine._build_snapshot()
         assert snap.n_total >= 1
         assert snap.fresh_odds is True
@@ -638,21 +744,25 @@ class TestLivePredictionWorker:
 
     def test_worker_imports(self):
         from betting_intel.live.engine import LivePredictionWorker
+
         assert LivePredictionWorker is not None
 
     def test_worker_initialization(self, engine):
         from betting_intel.live.engine import LivePredictionWorker
+
         worker = LivePredictionWorker(engine)
         assert worker.engine is engine
         assert worker._running is False
 
     def test_worker_refresh_interval(self, engine):
         from betting_intel.live.engine import LivePredictionWorker
+
         worker = LivePredictionWorker(engine)
         assert worker._refresh_interval == engine._refresh_interval
 
     def test_worker_stop_while_not_running(self, engine):
         from betting_intel.live.engine import LivePredictionWorker
+
         worker = LivePredictionWorker(engine)
         worker.stop()
         assert worker._running is False
@@ -668,16 +778,19 @@ class TestEngineEdgeCases:
 
     def test_engine_with_all_defaults(self):
         from betting_intel.live.engine import LivePredictionEngine
+
         eng = LivePredictionEngine()
         assert eng._odds_api_key is not None
 
     def test_engine_with_none_key(self):
         from betting_intel.live.engine import LivePredictionEngine
+
         eng = LivePredictionEngine(odds_api_key=None)
         assert eng._odds_api_key is not None
 
     def test_multiple_engine_instances_no_shared_state(self):
         from betting_intel.live.engine import LivePredictionEngine
+
         e1, e2 = LivePredictionEngine(), LivePredictionEngine()
         with e1._lock:
             e1._last_refresh = 42.0
@@ -686,15 +799,24 @@ class TestEngineEdgeCases:
     def test_snapshot_live_today_tomorrow_counts(self, live_game):
         from betting_intel.live.engine import LivePredictionSnapshot
         from copy import deepcopy
+
         live = deepcopy(live_game)
-        live.is_live = True; live.is_today = True; live.edge_pct = 0.05
+        live.is_live = True
+        live.is_today = True
+        live.edge_pct = 0.05
         today = deepcopy(live_game)
-        today.game_id = "g2"; today.is_today = True; today.edge_pct = 0.03
+        today.game_id = "g2"
+        today.is_today = True
+        today.edge_pct = 0.03
         tomorrow = deepcopy(live_game)
-        tomorrow.game_id = "g3"; tomorrow.is_tomorrow = True; tomorrow.edge_pct = 0.04
+        tomorrow.game_id = "g3"
+        tomorrow.is_tomorrow = True
+        tomorrow.edge_pct = 0.04
         snap = LivePredictionSnapshot(
-            live_games=[live], today_games=[live, today],
-            tomorrow_games=[tomorrow], next_two_days=[live, today, tomorrow],
+            live_games=[live],
+            today_games=[live, today],
+            tomorrow_games=[tomorrow],
+            next_two_days=[live, today, tomorrow],
         )
         assert snap.n_live == 1 and snap.n_today == 2
         assert snap.n_tomorrow == 1 and snap.n_total == 3
@@ -702,6 +824,7 @@ class TestEngineEdgeCases:
 
     def test_to_dict_chart_data_excluded_snap_preserved(self, live_game):
         from betting_intel.live.engine import LivePredictionSnapshot
+
         snap = LivePredictionSnapshot(next_two_days=[live_game])
         assert "chart_data" not in snap.to_dict()
         assert snap.chart_data is not None
@@ -714,13 +837,19 @@ class TestEngineEdgeCases:
         unknown["away_team"] = "Team B"
         unknown["_sport_config_key"] = "basketball_unknown"
 
-        with patch(f"{_CFG}.sport_key_to_group", return_value="Basketball"), \
-             patch(f"{_CFG}.SPORT_KEY_TO_CONFIG",
-                   {"basketball_unknown": MagicMock(
-                       display_name="Unknown",
-                       team_name_map={},
-                       get_short_name=lambda n: n.split()[-1],
-                   )}):
+        with (
+            patch(f"{_CFG}.sport_key_to_group", return_value="Basketball"),
+            patch(
+                f"{_CFG}.SPORT_KEY_TO_CONFIG",
+                {
+                    "basketball_unknown": MagicMock(
+                        display_name="Unknown",
+                        team_name_map={},
+                        get_short_name=lambda n: n.split()[-1],
+                    )
+                },
+            ),
+        ):
             result = engine._parse_games([unknown])
         assert isinstance(result, list)
 

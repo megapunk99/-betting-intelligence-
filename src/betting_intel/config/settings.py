@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from functools import lru_cache
 
@@ -50,9 +49,9 @@ class Settings(BaseSettings):
     # ── API Schedule (daily morning fetch to minimize usage) ──────────
     # Controls when TheOddsAPI is automatically called.
     # Default: once per day at 6:00 AM local time.
-    daily_fetch_enabled: bool = True          # Enable daily morning fetch
-    daily_fetch_hour: int = 6                  # Hour (0-23) for the daily fetch
-    daily_fetch_timezone: str = "local"       # "local" or "utc"
+    daily_fetch_enabled: bool = True  # Enable daily morning fetch
+    daily_fetch_hour: int = 6  # Hour (0-23) for the daily fetch
+    daily_fetch_timezone: str = "local"  # "local" or "utc"
 
     # ── Telegram Notifications ────────────────────────────────────────
     telegram_bot_token: str = ""

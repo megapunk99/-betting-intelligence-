@@ -15,9 +15,7 @@ Usage:
         print(f"  ML range: {g.consensus.home_ml_low} to {g.consensus.home_ml_high}")
 """
 
-import os
 import json
-import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field, asdict
@@ -31,6 +29,7 @@ warnings.filterwarnings("ignore")
 
 try:
     import requests
+
     REQUESTS_AVAILABLE = True
 except ImportError:
     REQUESTS_AVAILABLE = False
@@ -46,6 +45,7 @@ from betting_intel.config import ODDS_API_KEY, ODDS_API_BASE_URL, CACHE_DIR
 @dataclass
 class BookOdds:
     """Odds from a single sportsbook for a single game."""
+
     book_key: str
     book_title: str
     last_update: str
@@ -74,8 +74,8 @@ class ConsensusOdds:
     """
 
     # ── Moneyline Consensus ─────────────────────────────────────────
-    home_ml_consensus: Optional[float] = None   # median home moneyline
-    away_ml_consensus: Optional[float] = None   # median away moneyline
+    home_ml_consensus: Optional[float] = None  # median home moneyline
+    away_ml_consensus: Optional[float] = None  # median away moneyline
     home_ml_n_books: int = 0
     away_ml_n_books: int = 0
     home_ml_low: Optional[float] = None
@@ -96,7 +96,7 @@ class ConsensusOdds:
     best_away_ml_book: str = ""
 
     # ── Totals Consensus ───────────────────────────────────────────
-    total_consensus: Optional[float] = None     # median total line
+    total_consensus: Optional[float] = None  # median total line
     total_n_books: int = 0
     total_low: Optional[float] = None
     total_high: Optional[float] = None
@@ -109,7 +109,7 @@ class ConsensusOdds:
     best_total_book: str = ""
 
     # ── Spread Consensus ───────────────────────────────────────────
-    spread_consensus: Optional[float] = None    # median home spread
+    spread_consensus: Optional[float] = None  # median home spread
     spread_n_books: int = 0
     spread_low: Optional[float] = None
     spread_high: Optional[float] = None
@@ -154,7 +154,9 @@ def _max_ignore_none(values: list) -> Optional[float]:
     return max(clean) if clean else None
 
 
-def _best_ml(home_or_away: str, values: list, books: list) -> Tuple[Optional[float], str]:
+def _best_ml(
+    home_or_away: str, values: list, books: list
+) -> Tuple[Optional[float], str]:
     """
     Find the best moneyline price for a side.
     For the team we're betting ON, we want the highest (least negative / most positive) price.
@@ -202,11 +204,13 @@ def _compute_moneyline_consensus(books: List[BookOdds]) -> Dict:
     con_home = consensus["home_ml_consensus"]
     con_away = consensus["away_ml_consensus"]
     if con_home is not None and con_away is not None:
+
         def ml_to_prob(odds):
             if odds > 0:
                 return 100.0 / (odds + 100.0)
             else:
                 return abs(odds) / (abs(odds) + 100.0)
+
         home_p = ml_to_prob(con_home)
         away_p = ml_to_prob(con_away)
         total_p = home_p + away_p
@@ -219,17 +223,18 @@ def _compute_moneyline_consensus(books: List[BookOdds]) -> Dict:
 
 def _compute_totals_consensus(books: List[BookOdds]) -> Dict:
     """Aggregate totals across all books."""
-    overs = [b.total_over for b in books]
-    unders = [b.total_under for b in books]
     over_odds = [b.total_over_odds for b in books]
     under_odds = [b.total_under_odds for b in books]
-    titles = [b.book_title for b in books]
 
     # The total line per book: average of over and under (should be same point)
     per_book_totals = []
     valid_books = []
     for i, b in enumerate(books):
-        if b.total_over is not None and b.total_under is not None and b.total_over == b.total_under:
+        if (
+            b.total_over is not None
+            and b.total_under is not None
+            and b.total_over == b.total_under
+        ):
             per_book_totals.append(float(b.total_over))
             valid_books.append(b.book_title)
 
@@ -356,6 +361,7 @@ class OddsGame:
     def compute_implied_probs(self):
         """Compute vig-free implied win probabilities from CONSENSUS lines."""
         if self.home_moneyline and self.away_moneyline:
+
             def moneyline_to_prob(odds):
                 if odds > 0:
                     return 100 / (odds + 100)
@@ -387,11 +393,17 @@ class OddsGame:
             return "No consensus data"
         c = self.consensus
         lines = []
-        lines.append(f"ML: {c.home_ml_n_books} books (range {c.home_ml_low} to {c.home_ml_high})")
+        lines.append(
+            f"ML: {c.home_ml_n_books} books (range {c.home_ml_low} to {c.home_ml_high})"
+        )
         if c.total_n_books:
-            lines.append(f"Total: {c.total_n_books} books (range {c.total_low} to {c.total_high})")
+            lines.append(
+                f"Total: {c.total_n_books} books (range {c.total_low} to {c.total_high})"
+            )
         if c.spread_n_books:
-            lines.append(f"Spread: {c.spread_n_books} books (range {c.spread_low} to {c.spread_high})")
+            lines.append(
+                f"Spread: {c.spread_n_books} books (range {c.spread_low} to {c.spread_high})"
+            )
         return " | ".join(lines)
 
     def __str__(self) -> str:
@@ -399,7 +411,11 @@ class OddsGame:
         time_str = dt.strftime("%a %I:%M %p ET") if dt else self.commence_time
         total_str = f"O/U {self.market_total:.1f}" if self.market_total else "No total"
         n_books = self.consensus.home_ml_n_books if self.consensus else 0
-        spread_str = f"Spread: {self.home_team_short} {self.home_spread:+.0f}" if self.home_spread is not None else ""
+        spread_str = (
+            f"Spread: {self.home_team_short} {self.home_spread:+.0f}"
+            if self.home_spread is not None
+            else ""
+        )
         return f"{self.matchup:45s} | {time_str:20s} | {total_str:12s} | {spread_str} | {n_books} books"
 
 
@@ -587,19 +603,41 @@ ODDS_TO_SHORT_NAME: Dict[str, str] = {
     "Seattle Seahawks": "Seahawks",
 }
 
-SHORT_TO_ODDS_NAME: Dict[str, str] = {short: full for full, short in ODDS_TO_SHORT_NAME.items()}
+SHORT_TO_ODDS_NAME: Dict[str, str] = {
+    short: full for full, short in ODDS_TO_SHORT_NAME.items()
+}
 
 SHORT_NAME_TO_TEAM_ID: Dict[str, int] = {
-    "Hawks": 1610612737, "Celtics": 1610612738, "Nets": 1610612751,
-    "Hornets": 1610612766, "Bulls": 1610612741, "Cavaliers": 1610612739,
-    "Mavericks": 1610612742, "Nuggets": 1610612743, "Pistons": 1610612765,
-    "Warriors": 1610612744, "Rockets": 1610612745, "Pacers": 1610612754,
-    "Clippers": 1610612746, "Lakers": 1610612747, "Grizzlies": 1610612763,
-    "Heat": 1610612748, "Bucks": 1610612749, "Timberwolves": 1610612750,
-    "Pelicans": 1610612740, "Knicks": 1610612752, "Thunder": 1610612760,
-    "Magic": 1610612753, "76ers": 1610612755, "Suns": 1610612756,
-    "Trail Blazers": 1610612757, "Kings": 1610612758, "Spurs": 1610612759,
-    "Raptors": 1610612761, "Jazz": 1610612762, "Wizards": 1610612764,
+    "Hawks": 1610612737,
+    "Celtics": 1610612738,
+    "Nets": 1610612751,
+    "Hornets": 1610612766,
+    "Bulls": 1610612741,
+    "Cavaliers": 1610612739,
+    "Mavericks": 1610612742,
+    "Nuggets": 1610612743,
+    "Pistons": 1610612765,
+    "Warriors": 1610612744,
+    "Rockets": 1610612745,
+    "Pacers": 1610612754,
+    "Clippers": 1610612746,
+    "Lakers": 1610612747,
+    "Grizzlies": 1610612763,
+    "Heat": 1610612748,
+    "Bucks": 1610612749,
+    "Timberwolves": 1610612750,
+    "Pelicans": 1610612740,
+    "Knicks": 1610612752,
+    "Thunder": 1610612760,
+    "Magic": 1610612753,
+    "76ers": 1610612755,
+    "Suns": 1610612756,
+    "Trail Blazers": 1610612757,
+    "Kings": 1610612758,
+    "Spurs": 1610612759,
+    "Raptors": 1610612761,
+    "Jazz": 1610612762,
+    "Wizards": 1610612764,
 }
 
 
@@ -635,9 +673,13 @@ class OddsAPIClient:
         self.cache_ttl = timedelta(minutes=cache_ttl_minutes)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-        if not self.api_key or self.api_key == "" or self.api_key == "your-api-key-here":
+        if (
+            not self.api_key
+            or self.api_key == ""
+            or self.api_key == "your-api-key-here"
+        ):
             print("  [!] No OddsAPI key set. Set ODDS_API_KEY in config.py or env.")
-            print(f"     Get a free key at: https://the-odds-api.com/\n")
+            print("     Get a free key at: https://the-odds-api.com/\n")
             self._configured = False
         else:
             self._configured = True
@@ -671,11 +713,15 @@ class OddsAPIClient:
         if not self._configured:
             return []
 
-        cache_key = f"odds_{sport}_{markets.replace(',', '_')}_{regions.replace(',', '_')}"
+        cache_key = (
+            f"odds_{sport}_{markets.replace(',', '_')}_{regions.replace(',', '_')}"
+        )
         if use_cache:
             cached = self._load_cache(cache_key)
             if cached is not None:
-                print(f"  [OddsAPI] Using cached odds from {len(cached)} games (TTL: {self.cache_ttl})")
+                print(
+                    f"  [OddsAPI] Using cached odds from {len(cached)} games (TTL: {self.cache_ttl})"
+                )
                 return cached
 
         url = f"{self.base_url}/v4/sports/{sport}/odds"
@@ -688,7 +734,9 @@ class OddsAPIClient:
         }
 
         try:
-            print(f"  [OddsAPI] Fetching {sport.upper()} odds from regions: {regions}...")
+            print(
+                f"  [OddsAPI] Fetching {sport.upper()} odds from regions: {regions}..."
+            )
             resp = requests.get(url, params=params, timeout=15)
             resp.raise_for_status()
 
@@ -704,7 +752,9 @@ class OddsAPIClient:
             return games
 
         except ImportError:
-            print("  [OddsAPI] 'requests' library not installed. Install with: pip install requests")
+            print(
+                "  [OddsAPI] 'requests' library not installed. Install with: pip install requests"
+            )
             return []
         except requests.exceptions.RequestException as e:
             print(f"  [OddsAPI] API request failed: {e}")
@@ -714,17 +764,27 @@ class OddsAPIClient:
                 return stale
             return []
 
-    def get_upcoming_games(self, sport: str = "basketball_nba", **kwargs) -> List[OddsGame]:
+    def get_upcoming_games(
+        self, sport: str = "basketball_nba", **kwargs
+    ) -> List[OddsGame]:
         """Alias for get_upcoming_games_with_odds."""
         return self.get_upcoming_games_with_odds(sport=sport, **kwargs)
 
-    def get_game_by_matchup(self, home_team: str, away_team: str, **kwargs) -> Optional[OddsGame]:
+    def get_game_by_matchup(
+        self, home_team: str, away_team: str, **kwargs
+    ) -> Optional[OddsGame]:
         """Find odds for a specific matchup."""
         games = self.get_upcoming_games_with_odds(**kwargs)
         for g in games:
-            if home_team.lower() in g.home_team.lower() and away_team.lower() in g.away_team.lower():
+            if (
+                home_team.lower() in g.home_team.lower()
+                and away_team.lower() in g.away_team.lower()
+            ):
                 return g
-            if home_team.lower() in g.away_team.lower() and away_team.lower() in g.home_team.lower():
+            if (
+                home_team.lower() in g.away_team.lower()
+                and away_team.lower() in g.home_team.lower()
+            ):
                 return g
         return None
 
@@ -745,7 +805,9 @@ class OddsAPIClient:
     #  INTERNAL: Parse & Normalize
     # ═══════════════════════════════════════════════════════════════════
 
-    def _parse_odds_response(self, data: list, ignore_live: bool = True) -> List[OddsGame]:
+    def _parse_odds_response(
+        self, data: list, ignore_live: bool = True
+    ) -> List[OddsGame]:
         """Parse the raw JSON response into OddsGame objects with multi-book data."""
         games = []
         now_utc = datetime.now(timezone.utc)
@@ -754,7 +816,9 @@ class OddsAPIClient:
             if ignore_live:
                 commence_str = event.get("commence_time", "")
                 try:
-                    commence = datetime.fromisoformat(commence_str.replace("Z", "+00:00"))
+                    commence = datetime.fromisoformat(
+                        commence_str.replace("Z", "+00:00")
+                    )
                     if commence < now_utc:
                         continue
                 except Exception:
@@ -762,8 +826,12 @@ class OddsAPIClient:
 
             home = event.get("home_team", "?")
             away = event.get("away_team", "?")
-            home_short = ODDS_TO_SHORT_NAME.get(home, home.split()[-1] if " " in home else home)
-            away_short = ODDS_TO_SHORT_NAME.get(away, away.split()[-1] if " " in away else away)
+            home_short = ODDS_TO_SHORT_NAME.get(
+                home, home.split()[-1] if " " in home else home
+            )
+            away_short = ODDS_TO_SHORT_NAME.get(
+                away, away.split()[-1] if " " in away else away
+            )
 
             game = OddsGame(
                 id=event.get("id", ""),
@@ -857,13 +925,15 @@ class OddsAPIClient:
                             book_odds.total_under_odds = price
 
             # Only add if this book actually has odds
-            has_any = any([
-                book_odds.home_moneyline is not None,
-                book_odds.away_moneyline is not None,
-                book_odds.home_spread is not None,
-                book_odds.away_spread is not None,
-                book_odds.total_over is not None,
-            ])
+            has_any = any(
+                [
+                    book_odds.home_moneyline is not None,
+                    book_odds.away_moneyline is not None,
+                    book_odds.home_spread is not None,
+                    book_odds.away_spread is not None,
+                    book_odds.total_over is not None,
+                ]
+            )
             if has_any:
                 per_book_data.append(book_odds)
 
@@ -891,7 +961,9 @@ class OddsAPIClient:
     def _cache_path(self, key: str) -> Path:
         return self.cache_dir / f"{key}.json"
 
-    def _load_cache(self, key: str, ignore_ttl: bool = False) -> Optional[List[OddsGame]]:
+    def _load_cache(
+        self, key: str, ignore_ttl: bool = False
+    ) -> Optional[List[OddsGame]]:
         """Load cached odds if not expired."""
         cache_path = self._cache_path(key)
         if not cache_path.exists():
@@ -952,15 +1024,23 @@ class OddsAPIClient:
             print(f"  [OddsAPI] Unknown team IDs for {home_short} vs {away_short}")
             return None
 
-        home_games = historical_df[
-            (historical_df.get("TEAM_ID_home") == home_id) |
-            (historical_df.get("TEAM_ID_away") == home_id)
-        ].sort_values("GAME_DATE").tail(20)
+        home_games = (
+            historical_df[
+                (historical_df.get("TEAM_ID_home") == home_id)
+                | (historical_df.get("TEAM_ID_away") == home_id)
+            ]
+            .sort_values("GAME_DATE")
+            .tail(20)
+        )
 
-        away_games = historical_df[
-            (historical_df.get("TEAM_ID_home") == away_id) |
-            (historical_df.get("TEAM_ID_away") == away_id)
-        ].sort_values("GAME_DATE").tail(20)
+        away_games = (
+            historical_df[
+                (historical_df.get("TEAM_ID_home") == away_id)
+                | (historical_df.get("TEAM_ID_away") == away_id)
+            ]
+            .sort_values("GAME_DATE")
+            .tail(20)
+        )
 
         if len(home_games) < 5 or len(away_games) < 5:
             return None
@@ -968,13 +1048,17 @@ class OddsAPIClient:
         last_home = home_games.iloc[-1]
         last_away = away_games.iloc[-1]
 
-        recent_home_home = historical_df[
-            (historical_df["TEAM_ID_home"] == home_id)
-        ].sort_values("GAME_DATE").tail(10)
+        recent_home_home = (
+            historical_df[(historical_df["TEAM_ID_home"] == home_id)]
+            .sort_values("GAME_DATE")
+            .tail(10)
+        )
 
-        recent_away_away = historical_df[
-            (historical_df["TEAM_ID_away"] == away_id)
-        ].sort_values("GAME_DATE").tail(10)
+        recent_away_away = (
+            historical_df[(historical_df["TEAM_ID_away"] == away_id)]
+            .sort_values("GAME_DATE")
+            .tail(10)
+        )
 
         if len(recent_home_home) < 3 or len(recent_away_away) < 3:
             recent_home_home = home_games.tail(5)
@@ -983,7 +1067,10 @@ class OddsAPIClient:
         best_match = None
         for idx in range(len(historical_df) - 1, max(0, len(historical_df) - 500), -1):
             row = historical_df.iloc[idx]
-            if row.get("TEAM_ID_home") == home_id and row.get("TEAM_ID_away") == away_id:
+            if (
+                row.get("TEAM_ID_home") == home_id
+                and row.get("TEAM_ID_away") == away_id
+            ):
                 best_match = row
                 break
 
@@ -1040,7 +1127,11 @@ def display_odds_card(games: List[OddsGame], title: str = "UPCOMING NBA GAMES"):
     print(f"{'=' * 100}")
 
     for i, g in enumerate(games, 1):
-        dt_str = g.commence_datetime.strftime("%a %b %d, %I:%M %p ET") if g.commence_datetime else "TBD"
+        dt_str = (
+            g.commence_datetime.strftime("%a %b %d, %I:%M %p ET")
+            if g.commence_datetime
+            else "TBD"
+        )
         total_str = f"{g.market_total:.1f}" if g.market_total else "N/A"
         spread_str = f"{g.home_spread:+.0f}" if g.home_spread is not None else "N/A"
         ml_str = f"{format_american_odds(g.home_moneyline)} / {format_american_odds(g.away_moneyline)}"
@@ -1048,7 +1139,9 @@ def display_odds_card(games: List[OddsGame], title: str = "UPCOMING NBA GAMES"):
 
         print(f"\n  [{i}] {g.away_team} @ {g.home_team}")
         print(f"       {dt_str}")
-        print(f"       Moneyline: {ml_str:30s} | Spread: {spread_str:>4s} | Total: {total_str}")
+        print(
+            f"       Moneyline: {ml_str:30s} | Spread: {spread_str:>4s} | Total: {total_str}"
+        )
         if g.implied_home_win_prob:
             print(f"       Implied Home Win: {g.implied_home_win_prob:.1%}")
         if book_summary:

@@ -16,6 +16,7 @@ ARCHITECTURE:
   5. Cascade to Q1-Q4 and 1H-2H using NBA-specific quarter ratios
   6. Cache to disk so dashboard works during API/network outages
 """
+
 from __future__ import annotations
 
 import json
@@ -34,46 +35,133 @@ logger = logging.getLogger(__name__)
 
 # ── League Constants ──────────────────────────────────────────────────────
 # NBA
-NBA_TEAMS = {"Hawks","Celtics","Nets","Hornets","Bulls","Cavaliers","Mavericks",
-             "Nuggets","Pistons","Warriors","Rockets","Pacers","Clippers","Lakers",
-             "Grizzlies","Heat","Bucks","Timberwolves","Pelicans","Knicks","Thunder",
-             "Magic","76ers","Suns","Trail Blazers","Kings","Spurs","Raptors","Jazz","Wizards"}
+NBA_TEAMS = {
+    "Hawks",
+    "Celtics",
+    "Nets",
+    "Hornets",
+    "Bulls",
+    "Cavaliers",
+    "Mavericks",
+    "Nuggets",
+    "Pistons",
+    "Warriors",
+    "Rockets",
+    "Pacers",
+    "Clippers",
+    "Lakers",
+    "Grizzlies",
+    "Heat",
+    "Bucks",
+    "Timberwolves",
+    "Pelicans",
+    "Knicks",
+    "Thunder",
+    "Magic",
+    "76ers",
+    "Suns",
+    "Trail Blazers",
+    "Kings",
+    "Spurs",
+    "Raptors",
+    "Jazz",
+    "Wizards",
+}
 
-NBA_QUARTER_RATIOS   = {"q1": 0.242, "q2": 0.251, "q3": 0.253, "q4": 0.254, "h1": 0.493, "h2": 0.507}
-NBA_HOME_ADVANTAGE   = 2.3    # pts added for home court
-NBA_TOTAL_MIN        = 200.0
-NBA_TOTAL_MAX        = 260.0
+NBA_QUARTER_RATIOS = {
+    "q1": 0.242,
+    "q2": 0.251,
+    "q3": 0.253,
+    "q4": 0.254,
+    "h1": 0.493,
+    "h2": 0.507,
+}
+NBA_HOME_ADVANTAGE = 2.3  # pts added for home court
+NBA_TOTAL_MIN = 200.0
+NBA_TOTAL_MAX = 260.0
 
 # NCAAB — NCAA Division I men's college basketball.
 # Lower scoring than NBA (~145 avg total). Higher home court advantage (~4 pts).
 # NCAAB plays two 20-minute halves, but quarter ratios are approximated
 # by splitting each half equally (for dashboard display consistency).
-NCAAB_QUARTER_RATIOS = {"q1": 0.230, "q2": 0.235, "q3": 0.260, "q4": 0.275, "h1": 0.465, "h2": 0.535}
-NCAAB_HOME_ADVANTAGE = 4.0    # pts added for home court (college crowds matter more)
-NCAAB_TOTAL_MIN      = 110.0
-NCAAB_TOTAL_MAX      = 190.0
+NCAAB_QUARTER_RATIOS = {
+    "q1": 0.230,
+    "q2": 0.235,
+    "q3": 0.260,
+    "q4": 0.275,
+    "h1": 0.465,
+    "h2": 0.535,
+}
+NCAAB_HOME_ADVANTAGE = 4.0  # pts added for home court (college crowds matter more)
+NCAAB_TOTAL_MIN = 110.0
+NCAAB_TOTAL_MAX = 190.0
 
 # Euroleague — Top European club competition.
 # Lower scoring than NBA (~160 avg total). Higher home court advantage (~4 pts)
 # due to hostile European arenas and travel fatigue. 10-minute quarters.
-EUROLEAGUE_QUARTER_RATIOS = {"q1": 0.240, "q2": 0.248, "q3": 0.252, "q4": 0.260, "h1": 0.488, "h2": 0.512}
+EUROLEAGUE_QUARTER_RATIOS = {
+    "q1": 0.240,
+    "q2": 0.248,
+    "q3": 0.252,
+    "q4": 0.260,
+    "h1": 0.488,
+    "h2": 0.512,
+}
 EUROLEAGUE_HOME_ADVANTAGE = 4.5  # pts added for home court (European arenas are loud)
-EUROLEAGUE_TOTAL_MIN      = 150.0
-EUROLEAGUE_TOTAL_MAX      = 180.0
+EUROLEAGUE_TOTAL_MIN = 150.0
+EUROLEAGUE_TOTAL_MAX = 180.0
 
 # NFL — National Football League.
 # Low scoring (~45 total points). 4 quarters, ~12 mins each.
 # Home field advantage is ~1.75 pts (smaller than basketball).
 # Quarter distribution: slightly more scoring in 2nd & 4th quarters.
-NFL_TEAMS = {"Bills","Dolphins","Patriots","Jets","Ravens","Bengals","Browns","Steelers",
-             "Texans","Colts","Jaguars","Titans","Broncos","Chiefs","Raiders","Chargers",
-             "Cowboys","Giants","Eagles","Commanders","Bears","Lions","Packers","Vikings",
-             "Falcons","Panthers","Saints","Buccaneers","Cardinals","Rams","49ers","Seahawks"}
+NFL_TEAMS = {
+    "Bills",
+    "Dolphins",
+    "Patriots",
+    "Jets",
+    "Ravens",
+    "Bengals",
+    "Browns",
+    "Steelers",
+    "Texans",
+    "Colts",
+    "Jaguars",
+    "Titans",
+    "Broncos",
+    "Chiefs",
+    "Raiders",
+    "Chargers",
+    "Cowboys",
+    "Giants",
+    "Eagles",
+    "Commanders",
+    "Bears",
+    "Lions",
+    "Packers",
+    "Vikings",
+    "Falcons",
+    "Panthers",
+    "Saints",
+    "Buccaneers",
+    "Cardinals",
+    "Rams",
+    "49ers",
+    "Seahawks",
+}
 
-NFL_QUARTER_RATIOS   = {"q1": 0.23, "q2": 0.27, "q3": 0.23, "q4": 0.27, "h1": 0.50, "h2": 0.50}
-NFL_HOME_ADVANTAGE   = 1.75  # pts added for home field (modern NFL ~1-2 pts)
-NFL_TOTAL_MIN        = 30.0
-NFL_TOTAL_MAX        = 60.0
+NFL_QUARTER_RATIOS = {
+    "q1": 0.23,
+    "q2": 0.27,
+    "q3": 0.23,
+    "q4": 0.27,
+    "h1": 0.50,
+    "h2": 0.50,
+}
+NFL_HOME_ADVANTAGE = 1.75  # pts added for home field (modern NFL ~1-2 pts)
+NFL_TOTAL_MIN = 30.0
+NFL_TOTAL_MAX = 60.0
+
 
 # ── Per-league config lookup ───────────────────────────────────────────
 def _league_config(league: str) -> dict:
@@ -111,6 +199,7 @@ def _league_config(league: str) -> dict:
         "default_stat_base": 228.0,
     }
 
+
 # ESPN API team name → short name map.
 # Uses sport_configs.py as the single source of truth for all sports.
 # ESPN-specific API name variants are added as overrides.
@@ -126,8 +215,8 @@ ESPN_TO_SHORT: dict[str, str] = {}
 ESPN_TO_SHORT.update(ALL_TEAM_NAME_MAP)
 ESPN_TO_SHORT.update(_ESPN_ALIASES)
 
-ESPN_TIMEOUT   = 6     # seconds per HTTP request
-MAX_DAYS_SCAN  = 14    # how many days ahead to scan ESPN
+ESPN_TIMEOUT = 6  # seconds per HTTP request
+MAX_DAYS_SCAN = 14  # how many days ahead to scan ESPN
 
 
 class PredictionCache:
@@ -135,7 +224,11 @@ class PredictionCache:
 
     def __init__(self, path: Optional[Path] = None):
         if path is None:
-            path = Path(__file__).resolve().parent.parent.parent.parent / "data" / "prediction_cache.json"
+            path = (
+                Path(__file__).resolve().parent.parent.parent.parent
+                / "data"
+                / "prediction_cache.json"
+            )
         self._path = path
         self._cache: dict = {}
 
@@ -145,8 +238,10 @@ class PredictionCache:
                 with open(self._path) as f:
                     self._cache = json.load(f)
                 age = time.time() - self._cache.get("_cached_at", 0)
-                logger.info(f"Cache loaded: {len(self._cache.get('predictions', []))} preds, "
-                            f"{age/60:.0f} min old")
+                logger.info(
+                    f"Cache loaded: {len(self._cache.get('predictions', []))} preds, "
+                    f"{age / 60:.0f} min old"
+                )
         except Exception as e:
             logger.warning(f"Cache load failed: {e}")
             self._cache = {}
@@ -154,8 +249,11 @@ class PredictionCache:
 
     def save(self, predictions: list[dict], fresh: bool = False) -> bool:
         try:
-            if fresh or not self._cache.get("predictions") or \
-               time.time() - self._cache.get("_cached_at", 0) > 600:
+            if (
+                fresh
+                or not self._cache.get("predictions")
+                or time.time() - self._cache.get("_cached_at", 0) > 600
+            ):
                 self._cache = {"predictions": predictions, "_cached_at": time.time()}
                 self._path.parent.mkdir(parents=True, exist_ok=True)
                 with open(self._path, "w") as f:
@@ -215,15 +313,24 @@ class FutureGamePredictor:
         if not self._loaded:
             logger.warning("Predictor not loaded — falling back to cache")
             cached = self._cache.get_cached()
-            return [p for p in cached if p.get("game_date", "")[:10] >= today_str][:num_games]
+            return [p for p in cached if p.get("game_date", "")[:10] >= today_str][
+                :num_games
+            ]
 
         # TIER 1: Real upcoming games from ESPN (NBA + NCAAB)
         all_predictions = []
         fresh = False
 
-        for league_key, league_label in [("nba", "NBA"), ("ncaab", "NCAAB"), ("euroleague", "Euroleague"), ("nfl", "NFL")]:
+        for league_key, league_label in [
+            ("nba", "NBA"),
+            ("ncaab", "NCAAB"),
+            ("euroleague", "Euroleague"),
+            ("nfl", "NFL"),
+        ]:
             try:
-                preds, was_fresh = self._fetch_and_predict(num_games, league_key, league_label)
+                preds, was_fresh = self._fetch_and_predict(
+                    num_games, league_key, league_label
+                )
                 all_predictions.extend(preds)
                 if was_fresh:
                     fresh = True
@@ -245,20 +352,27 @@ class FutureGamePredictor:
 
         # Save to cache
         if all_predictions:
-            future_only = [p for p in all_predictions if p.get("game_date", "")[:10] >= today_str]
+            future_only = [
+                p for p in all_predictions if p.get("game_date", "")[:10] >= today_str
+            ]
             if len(future_only) < len(all_predictions):
-                logger.debug(f"Filtered out {len(all_predictions) - len(future_only)} past predictions")
+                logger.debug(
+                    f"Filtered out {len(all_predictions) - len(future_only)} past predictions"
+                )
             self._cache.save(future_only, fresh=fresh)
 
-        results = [p for p in all_predictions if p.get("game_date", "")[:10] >= today_str][:num_games]
+        results = [
+            p for p in all_predictions if p.get("game_date", "")[:10] >= today_str
+        ][:num_games]
         # Sort by date, then by league
         results.sort(key=lambda p: (p.get("game_date", ""), p.get("league", "")))
         return results
 
     # ── Tier 1: ESPN Fetch + Predict ─────────────────────────────────
 
-    def _fetch_and_predict(self, num_games: int, league_key: str = "nba",
-                           league_label: str = "NBA") -> tuple[list[dict], bool]:
+    def _fetch_and_predict(
+        self, num_games: int, league_key: str = "nba", league_label: str = "NBA"
+    ) -> tuple[list[dict], bool]:
         """Fetch real games for a league from ESPN and predict them."""
         matchups = self._fetch_real_games(num_games, league_key, league_label)
         if not matchups:
@@ -275,19 +389,25 @@ class FutureGamePredictor:
             logger.info(f"Generated {len(predictions)} {league_label} predictions")
             return predictions, True
 
-        logger.warning(f"ESPN returned {len(matchups)} {league_label} games but all predictions failed")
+        logger.warning(
+            f"ESPN returned {len(matchups)} {league_label} games but all predictions failed"
+        )
         return [], False
 
     # ── ESPN Schedule Fetching ───────────────────────────────────────
 
-    def _fetch_real_games(self, num_games: int, league_key: str = "nba",
-                          league_label: str = "NBA") -> list[tuple[str, str, Optional[str]]]:
+    def _fetch_real_games(
+        self, num_games: int, league_key: str = "nba", league_label: str = "NBA"
+    ) -> list[tuple[str, str, Optional[str]]]:
         """Scan ESPN scoreboard for the next 14 days.
 
         Returns real scheduled games for the specified league.
         Each step is logged so you can see WHY it returns empty.
         """
-        from betting_intel.data.espn_hoops import ESPN_SCOREBOARD_URL, LEAGUE_TO_ESPN_PATH
+        from betting_intel.data.espn_hoops import (
+            ESPN_SCOREBOARD_URL,
+            LEAGUE_TO_ESPN_PATH,
+        )
         import requests
 
         session = requests.Session()
@@ -309,12 +429,17 @@ class FutureGamePredictor:
             check_date = (today + timedelta(days=offset)).strftime("%Y%m%d")
 
             try:
-                resp = session.get(url, params={"dates": check_date, "limit": 100},
-                                   timeout=ESPN_TIMEOUT)
+                resp = session.get(
+                    url,
+                    params={"dates": check_date, "limit": 100},
+                    timeout=ESPN_TIMEOUT,
+                )
                 if resp.status_code == 404:
                     continue
                 if resp.status_code != 200:
-                    logger.debug(f"ESPN {resp.status_code} for {league_key} {check_date}")
+                    logger.debug(
+                        f"ESPN {resp.status_code} for {league_key} {check_date}"
+                    )
                     continue
 
                 for ev in resp.json().get("events", []):
@@ -323,7 +448,9 @@ class FutureGamePredictor:
                         continue
 
                     # Skip completed/in-progress
-                    status = (comps[0].get("status", {}).get("type", {}).get("name", "") or "").upper()
+                    status = (
+                        comps[0].get("status", {}).get("type", {}).get("name", "") or ""
+                    ).upper()
                     if "FINAL" in status or "IN_PROGRESS" in status:
                         continue
 
@@ -346,12 +473,18 @@ class FutureGamePredictor:
                     # Fuzzy match
                     if not home_short:
                         for full, s in ESPN_TO_SHORT.items():
-                            if full.lower() in home_name.lower() or home_name.lower() in full.lower():
+                            if (
+                                full.lower() in home_name.lower()
+                                or home_name.lower() in full.lower()
+                            ):
                                 home_short = s
                                 break
                     if not away_short:
                         for full, s in ESPN_TO_SHORT.items():
-                            if full.lower() in away_name.lower() or away_name.lower() in full.lower():
+                            if (
+                                full.lower() in away_name.lower()
+                                or away_name.lower() in full.lower()
+                            ):
                                 away_short = s
                                 break
 
@@ -401,6 +534,7 @@ class FutureGamePredictor:
         # 1. Load NBA data from SQLite
         try:
             from betting_intel.data.loader import NBADataLoader
+
             loader = NBADataLoader()
             raw_df = loader.load_game_logs()
             if raw_df is not None and not raw_df.empty:
@@ -409,7 +543,9 @@ class FutureGamePredictor:
                 if not raw_nba.empty:
                     nba_avgs = raw_nba.groupby("TEAM_NAME")["PTS"].mean().to_dict()
                     self._team_pts_avg.update(nba_avgs)
-                    logger.info(f"NBA: {len(raw_nba)} rows, {len(nba_avgs)} team averages")
+                    logger.info(
+                        f"NBA: {len(raw_nba)} rows, {len(nba_avgs)} team averages"
+                    )
                     loaded_any = True
                     # Try to load ML model with NBA data
                     self._try_load_model(raw_nba, loader)
@@ -419,12 +555,15 @@ class FutureGamePredictor:
         # 2. Load NCAAB data from ESPN API
         try:
             from betting_intel.data.loader import NCAABDataLoader
+
             ncaab_loader = NCAABDataLoader()
             ncaab_df = ncaab_loader.load_game_logs()
             if ncaab_df is not None and not ncaab_df.empty:
                 ncaab_avgs = ncaab_df.groupby("TEAM_NAME")["PTS"].mean().to_dict()
                 self._team_pts_avg.update(ncaab_avgs)
-                logger.info(f"NCAAB: {len(ncaab_df)} rows, {len(ncaab_avgs)} team averages")
+                logger.info(
+                    f"NCAAB: {len(ncaab_df)} rows, {len(ncaab_avgs)} team averages"
+                )
                 loaded_any = True
         except Exception as e:
             logger.debug(f"NCAAB data loading skipped: {e}")
@@ -432,6 +571,7 @@ class FutureGamePredictor:
         # 3. Load Euroleague data from ESPN API
         try:
             from betting_intel.data.espn_hoops import ESPNLeagueSource
+
             source = ESPNLeagueSource()
             euro_df = source.load_historical("euroleague", seasons=[2025, 2024])
             if euro_df is not None and not euro_df.empty:
@@ -444,7 +584,9 @@ class FutureGamePredictor:
                     vals = [v for v in [ha, aa] if v and v > 0]
                     if vals:
                         self._team_pts_avg[team] = float(sum(vals)) / len(vals)
-                logger.info(f"Euroleague: {len(euro_df)} rows, {len(euro_df['home_team'].unique())} teams")
+                logger.info(
+                    f"Euroleague: {len(euro_df)} rows, {len(euro_df['home_team'].unique())} teams"
+                )
                 loaded_any = True
         except Exception as e:
             logger.debug(f"Euroleague data loading skipped: {e}")
@@ -452,6 +594,7 @@ class FutureGamePredictor:
         # 4. Load NFL data from ESPN API
         try:
             from betting_intel.data.espn_hoops import ESPNLeagueSource
+
             source = ESPNLeagueSource()
             nfl_df = source.load_historical("nfl", seasons=[2025, 2024])
             if nfl_df is not None and not nfl_df.empty:
@@ -464,7 +607,9 @@ class FutureGamePredictor:
                     vals = [v for v in [ha, aa] if v and v > 0]
                     if vals:
                         self._team_pts_avg[team] = float(sum(vals)) / len(vals)
-                logger.info(f"NFL: {len(nfl_df)} rows, {len(nfl_df['home_team'].unique())} teams")
+                logger.info(
+                    f"NFL: {len(nfl_df)} rows, {len(nfl_df['home_team'].unique())} teams"
+                )
                 loaded_any = True
         except Exception as e:
             logger.debug(f"NFL data loading skipped: {e}")
@@ -488,10 +633,16 @@ class FutureGamePredictor:
             try:
                 data = safe_joblib_load(str(self._model_path))
             except ModelIntegrityError:
-                logger.warning("No hash file for model %s — loading without verification", self._model_path)
+                logger.warning(
+                    "No hash file for model %s — loading without verification",
+                    self._model_path,
+                )
                 data = safe_joblib_load(str(self._model_path), verify=False)
-            self._model = data.get("model") or data.get("ensemble") or (
-                data if hasattr(data, "predict") else None)
+            self._model = (
+                data.get("model")
+                or data.get("ensemble")
+                or (data if hasattr(data, "predict") else None)
+            )
             if self._model is None:
                 return
 
@@ -510,13 +661,17 @@ class FutureGamePredictor:
                 self._feature_cols_from_model = feature_cols
                 self._compute_model_baseline(fd, feature_cols)
                 if self._model_baseline:
-                    logger.info(f"ML model loaded: {len(feature_cols)} features, "
-                                f"baseline={self._model_baseline:.1f}")
+                    logger.info(
+                        f"ML model loaded: {len(feature_cols)} features, "
+                        f"baseline={self._model_baseline:.1f}"
+                    )
         except Exception as e:
             logger.warning(f"ML model skipped (not critical): {e}")
             self._model = None
 
-    def _compute_model_baseline(self, df: pd.DataFrame, feature_cols: list[str]) -> None:
+    def _compute_model_baseline(
+        self, df: pd.DataFrame, feature_cols: list[str]
+    ) -> None:
         """Compute the model's average prediction on training data.
 
         Only predictions in range 100-350 are accepted — garbage filtered out.
@@ -533,8 +688,14 @@ class FutureGamePredictor:
         for idx in indices:
             row = df.iloc[idx]
             try:
-                feat = np.array([[float(row.get(c, 0.0)) if pd.notna(row.get(c, 0.0)) else 0.0
-                                  for c in feature_cols]]).astype(np.float32)
+                feat = np.array(
+                    [
+                        [
+                            float(row.get(c, 0.0)) if pd.notna(row.get(c, 0.0)) else 0.0
+                            for c in feature_cols
+                        ]
+                    ]
+                ).astype(np.float32)
                 result = self._model.predict(feat)
                 p = float(np.asarray(result).flatten()[0])
                 if 100 < p < 350:
@@ -545,12 +706,20 @@ class FutureGamePredictor:
         if len(preds) >= 10:
             self._model_baseline = float(np.mean(preds))
         else:
-            logger.info(f"Model produced only {len(preds)} valid predictions — not enough for baseline")
+            logger.info(
+                f"Model produced only {len(preds)} valid predictions — not enough for baseline"
+            )
 
     # ── Single Game Prediction ──────────────────────────────────────
 
-    def _predict_game(self, home_team: str, away_team: str, game_date_str: str,
-                       league_key: str = "nba", league_label: str = "NBA") -> Optional[dict[str, Any]]:
+    def _predict_game(
+        self,
+        home_team: str,
+        away_team: str,
+        game_date_str: str,
+        league_key: str = "nba",
+        league_label: str = "NBA",
+    ) -> Optional[dict[str, Any]]:
         """Predict one game using the stat baseline method.
 
         ALWAYS produces correct-range totals because stat_baseline is the foundation.
@@ -597,10 +766,14 @@ class FutureGamePredictor:
             edge_pct = round((predicted_total - market_total) / max(market_total, 1), 4)
             direction = "over" if edge_pct > 0 else "under"
             abs_e = abs(edge_pct)
-            confidence = "high" if abs_e > 0.05 else ("medium" if abs_e >= 0.02 else "low")
+            confidence = (
+                "high" if abs_e > 0.05 else ("medium" if abs_e >= 0.02 else "low")
+            )
 
             # ── Quarter projections ─────────────────────────────
-            quarters = self._project_quarters(predicted_total, market_total, hp, ap, league_key)
+            quarters = self._project_quarters(
+                predicted_total, market_total, hp, ap, league_key
+            )
             best_q = self._find_best_quarter(quarters, direction)
 
             return {
@@ -618,20 +791,29 @@ class FutureGamePredictor:
                 "direction": direction,
                 "confidence": confidence,
                 "model_mae": "N/A",
-                "home_score": quarters.get("home_score", round(predicted_total * 0.51, 1)),
-                "away_score": quarters.get("away_score", round(predicted_total * 0.49, 1)),
+                "home_score": quarters.get(
+                    "home_score", round(predicted_total * 0.51, 1)
+                ),
+                "away_score": quarters.get(
+                    "away_score", round(predicted_total * 0.49, 1)
+                ),
                 "best_quarter": best_q["quarter"],
                 "best_quarter_edge": best_q["edge"],
                 "best_quarter_direction": best_q["direction"],
                 "recommended_quarter": best_q["quarter"],
                 "recommended_direction": best_q["direction"],
-                **{f"{p}_{s}": quarters.get(f"{p}_{s}") for p in ["q1","q2","q3","q4","h1","h2"]
-                   for s in ["home","away","total","market","edge"]
-                   if quarters.get(f"{p}_{s}") is not None},
+                **{
+                    f"{p}_{s}": quarters.get(f"{p}_{s}")
+                    for p in ["q1", "q2", "q3", "q4", "h1", "h2"]
+                    for s in ["home", "away", "total", "market", "edge"]
+                    if quarters.get(f"{p}_{s}") is not None
+                },
             }
 
         except Exception as e:
-            logger.error(f"Prediction failed for {home_team} vs {away_team}: {e}", exc_info=True)
+            logger.error(
+                f"Prediction failed for {home_team} vs {away_team}: {e}", exc_info=True
+            )
             return None
 
     # ── Model Prediction (with validation) ─────────────────────────
@@ -649,10 +831,9 @@ class FutureGamePredictor:
 
         # Direct matchup lookup
         for h, a in [(home, away), (away, home)]:
-            mask = (
-                df[home_col].astype(str).str.strip().str.lower().eq(h.lower().strip())
-                & df[away_col].astype(str).str.strip().str.lower().eq(a.lower().strip())
-            )
+            mask = df[home_col].astype(str).str.strip().str.lower().eq(
+                h.lower().strip()
+            ) & df[away_col].astype(str).str.strip().str.lower().eq(a.lower().strip())
             if mask.any():
                 return self._predict_one_row(df[mask].iloc[-1])
 
@@ -660,33 +841,50 @@ class FutureGamePredictor:
         return self._predict_combined(home, away, df, home_col, away_col)
 
     def _predict_one_row(self, row: pd.Series) -> Optional[float]:
-        feature_cols = getattr(self._model, "feature_cols_", None) or \
-                       getattr(self, "_feature_cols_from_model", None) or []
+        feature_cols = (
+            getattr(self._model, "feature_cols_", None)
+            or getattr(self, "_feature_cols_from_model", None)
+            or []
+        )
         if not feature_cols:
             return None
         try:
-            feat = np.array([[float(row.get(c, 0.0)) if pd.notna(row.get(c, 0.0)) else 0.0
-                              for c in feature_cols]]).astype(np.float32)
+            feat = np.array(
+                [
+                    [
+                        float(row.get(c, 0.0)) if pd.notna(row.get(c, 0.0)) else 0.0
+                        for c in feature_cols
+                    ]
+                ]
+            ).astype(np.float32)
             result = self._model.predict(feat)
             return float(np.asarray(result).flatten()[0])
         except Exception:
             return None
 
-    def _predict_combined(self, home: str, away: str, df: pd.DataFrame,
-                          home_col: str, away_col: str) -> Optional[float]:
+    def _predict_combined(
+        self, home: str, away: str, df: pd.DataFrame, home_col: str, away_col: str
+    ) -> Optional[float]:
         def avg_of(team: str, suffix: str, n: int = 15) -> pd.Series:
             c = home_col if suffix == "_home" else away_col
             mask = df[c].astype(str).str.strip().str.lower().eq(team.lower().strip())
             s = df[mask].tail(n)
-            return s.select_dtypes(include=[np.number]).mean() if not s.empty else pd.Series(dtype=float)
+            return (
+                s.select_dtypes(include=[np.number]).mean()
+                if not s.empty
+                else pd.Series(dtype=float)
+            )
 
         ha = avg_of(home, "_home")
         aa = avg_of(away, "_away")
         if ha.empty or aa.empty:
             return None
 
-        feature_cols = getattr(self._model, "feature_cols_", None) or \
-                       getattr(self, "_feature_cols_from_model", None) or []
+        feature_cols = (
+            getattr(self._model, "feature_cols_", None)
+            or getattr(self, "_feature_cols_from_model", None)
+            or []
+        )
         if not feature_cols:
             return None
 
@@ -700,7 +898,9 @@ class FutureGamePredictor:
                     fd[c] = float(aa.get(c, 0.0))
                 elif cl.endswith("_diff"):
                     b = c.replace("_diff", "")
-                    fd[c] = float(ha.get(f"{b}_home", 0.0)) - float(aa.get(f"{b}_away", 0.0))
+                    fd[c] = float(ha.get(f"{b}_home", 0.0)) - float(
+                        aa.get(f"{b}_away", 0.0)
+                    )
                 else:
                     fd[c] = float(df[c].mean()) if c in df.columns else 0.0
             except (ValueError, TypeError):
@@ -716,8 +916,9 @@ class FutureGamePredictor:
     # ── Quarter Projection ─────────────────────────────────────────
 
     @staticmethod
-    def _project_quarters(predicted: float, market: float, hp: float, ap: float,
-                          league: str) -> dict[str, float]:
+    def _project_quarters(
+        predicted: float, market: float, hp: float, ap: float, league: str
+    ) -> dict[str, float]:
         cfg = _league_config(league)
         ratios = cfg["quarter_ratios"]
         hpct = 0.51
@@ -737,16 +938,29 @@ class FutureGamePredictor:
             hq, aq = round(hs * rt, 1), round(aws * rt, 1)
             qt = round(hq + aq, 1)
             mqt = round(mhs * rt + maws * rt, 1)
-            r.update({f"{q}_home": hq, f"{q}_away": aq, f"{q}_total": qt,
-                      f"{q}_market": mqt, f"{q}_edge": round((qt - mqt) / max(mqt, 1), 4)})
+            r.update(
+                {
+                    f"{q}_home": hq,
+                    f"{q}_away": aq,
+                    f"{q}_total": qt,
+                    f"{q}_market": mqt,
+                    f"{q}_edge": round((qt - mqt) / max(mqt, 1), 4),
+                }
+            )
 
         for hh in ["h1", "h2"]:
             rt = ratios[hh]
             ht = round(hs * rt + aws * rt, 1)
             mht = round(mhs * rt + maws * rt, 1)
-            r.update({f"{hh}_home": round(hs * rt, 1), f"{hh}_away": round(aws * rt, 1),
-                      f"{hh}_total": ht, f"{hh}_market": mht,
-                      f"{hh}_edge": round((ht - mht) / max(mht, 1), 4)})
+            r.update(
+                {
+                    f"{hh}_home": round(hs * rt, 1),
+                    f"{hh}_away": round(aws * rt, 1),
+                    f"{hh}_total": ht,
+                    f"{hh}_market": mht,
+                    f"{hh}_edge": round((ht - mht) / max(mht, 1), 4),
+                }
+            )
 
         r["home_score"] = round(hs, 1)
         r["away_score"] = round(aws, 1)
@@ -754,13 +968,20 @@ class FutureGamePredictor:
 
     @staticmethod
     def _find_best_quarter(q: dict, direction: str) -> dict:
-        best = {"quarter": "FULL", "edge": round(abs(q.get("q1_edge", 0)) * 100, 1), "direction": direction}
+        best = {
+            "quarter": "FULL",
+            "edge": round(abs(q.get("q1_edge", 0)) * 100, 1),
+            "direction": direction,
+        }
         for period in ["q1", "q2", "q3", "q4", "h1", "h2"]:
             e = q.get(f"{period}_edge", 0.0)
             ae = abs(e) * 100
             if ae > best["edge"]:
-                best = {"quarter": period.upper(), "edge": round(ae, 1),
-                        "direction": "over" if e > 0 else "under"}
+                best = {
+                    "quarter": period.upper(),
+                    "edge": round(ae, 1),
+                    "direction": "over" if e > 0 else "under",
+                }
         return best
 
     def to_livegame_dict(self, pred: dict) -> dict:
@@ -796,21 +1017,29 @@ def format_prediction_card(pred: dict) -> str:
     for q in ["q1", "q2", "q3", "q4"]:
         t = pred.get(f"{q}_total", 0)
         if t:
-            lines.append(f"    {q.upper()}: {t} (mkt: {pred.get(f'{q}_market', 0)}, "
-                         f"edge: {pred.get(f'{q}_edge', 0):+.1%})")
+            lines.append(
+                f"    {q.upper()}: {t} (mkt: {pred.get(f'{q}_market', 0)}, "
+                f"edge: {pred.get(f'{q}_edge', 0):+.1%})"
+            )
     for h, lb in [("h1", "1st Half"), ("h2", "2nd Half")]:
         t = pred.get(f"{h}_total", 0)
         if t:
-            lines.append(f"    {lb}: {t} (mkt: {pred.get(f'{h}_market', 0)}, "
-                         f"edge: {pred.get(f'{h}_edge', 0):+.1%})")
-    lines.append(f"  >> Best: {pred.get('best_quarter', 'FULL')} "
-                 f"{pred.get('best_quarter_direction', '?').upper()} "
-                 f"(edge: {pred.get('best_quarter_edge', 0):.1f}%)")
+            lines.append(
+                f"    {lb}: {t} (mkt: {pred.get(f'{h}_market', 0)}, "
+                f"edge: {pred.get(f'{h}_edge', 0):+.1%})"
+            )
+    lines.append(
+        f"  >> Best: {pred.get('best_quarter', 'FULL')} "
+        f"{pred.get('best_quarter_direction', '?').upper()} "
+        f"(edge: {pred.get('best_quarter_edge', 0):.1f}%)"
+    )
     return "\n".join(lines)
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+    )
     p = FutureGamePredictor()
     if p.load():
         for pr in p.predict_upcoming_games(10):

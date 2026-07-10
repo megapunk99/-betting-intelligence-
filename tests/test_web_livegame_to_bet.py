@@ -10,7 +10,7 @@ Tests cover:
 
 from __future__ import annotations
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -35,6 +35,7 @@ def mock_sport_key_to_group():
 def live_game_class():
     """Import the real LiveGame dataclass."""
     from betting_intel.live.engine import LiveGame
+
     return LiveGame
 
 
@@ -67,6 +68,7 @@ class TestStakePropagation:
     def test_stake_defaults_to_zero(self, mock_sport_key_to_group, base_game):
         """LiveGame without stake_dollars set → output has 0.0."""
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["stake_dollars"] == 0.0
 
@@ -74,6 +76,7 @@ class TestStakePropagation:
         """LiveGame with stake_dollars=250.0 → output has 250.0."""
         base_game.stake_dollars = 250.0
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["stake_dollars"] == 250.0
 
@@ -81,6 +84,7 @@ class TestStakePropagation:
         """Large Kelly stake (e.g. $1,234.56) is preserved precisely."""
         base_game.stake_dollars = 1234.56
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["stake_dollars"] == 1234.56
 
@@ -88,6 +92,7 @@ class TestStakePropagation:
         """Explicit stake_dollars=0.0 → output 0.0 (no bet recommended)."""
         base_game.stake_dollars = 0.0
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["stake_dollars"] == 0.0
 
@@ -95,57 +100,67 @@ class TestStakePropagation:
         """None stake_dollars → output 0.0 (or 0 guard)."""
         base_game.stake_dollars = None
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["stake_dollars"] == 0.0
 
     def test_stake_from_dict(self, mock_sport_key_to_group):
         """Plain dict with stake_dollars → value is preserved."""
         from web.app import _livegame_to_bet
-        result = _livegame_to_bet({
-            "game_id": "g1",
-            "sport_key": "basketball_nba",
-            "home_team": "BOS",
-            "away_team": "LAL",
-            "home_team_short": "BOS",
-            "away_team_short": "LAL",
-            "game_date": "2025-06-15",
-            "commence_time": "2025-06-15T19:00:00Z",
-            "stake_dollars": 312.50,
-            "league": "NBA",
-        })
+
+        result = _livegame_to_bet(
+            {
+                "game_id": "g1",
+                "sport_key": "basketball_nba",
+                "home_team": "BOS",
+                "away_team": "LAL",
+                "home_team_short": "BOS",
+                "away_team_short": "LAL",
+                "game_date": "2025-06-15",
+                "commence_time": "2025-06-15T19:00:00Z",
+                "stake_dollars": 312.50,
+                "league": "NBA",
+            }
+        )
         assert result["stake_dollars"] == 312.50
 
     def test_stake_zero_from_dict(self, mock_sport_key_to_group):
         """Plain dict with stake_dollars=0 → output 0."""
         from web.app import _livegame_to_bet
-        result = _livegame_to_bet({
-            "game_id": "g1",
-            "sport_key": "basketball_nba",
-            "home_team": "BOS",
-            "away_team": "LAL",
-            "home_team_short": "BOS",
-            "away_team_short": "LAL",
-            "game_date": "2025-06-15",
-            "commence_time": "2025-06-15T19:00:00Z",
-            "stake_dollars": 0.0,
-            "league": "NBA",
-        })
+
+        result = _livegame_to_bet(
+            {
+                "game_id": "g1",
+                "sport_key": "basketball_nba",
+                "home_team": "BOS",
+                "away_team": "LAL",
+                "home_team_short": "BOS",
+                "away_team_short": "LAL",
+                "game_date": "2025-06-15",
+                "commence_time": "2025-06-15T19:00:00Z",
+                "stake_dollars": 0.0,
+                "league": "NBA",
+            }
+        )
         assert result["stake_dollars"] == 0.0
 
     def test_stake_dict_missing_key(self, mock_sport_key_to_group):
         """Plain dict without stake_dollars key → output 0.0."""
         from web.app import _livegame_to_bet
-        result = _livegame_to_bet({
-            "game_id": "g1",
-            "sport_key": "basketball_nba",
-            "home_team": "BOS",
-            "away_team": "LAL",
-            "home_team_short": "BOS",
-            "away_team_short": "LAL",
-            "game_date": "2025-06-15",
-            "commence_time": "2025-06-15T19:00:00Z",
-            "league": "NBA",
-        })
+
+        result = _livegame_to_bet(
+            {
+                "game_id": "g1",
+                "sport_key": "basketball_nba",
+                "home_team": "BOS",
+                "away_team": "LAL",
+                "home_team_short": "BOS",
+                "away_team_short": "LAL",
+                "game_date": "2025-06-15",
+                "commence_time": "2025-06-15T19:00:00Z",
+                "league": "NBA",
+            }
+        )
         assert result["stake_dollars"] == 0.0
 
 
@@ -161,6 +176,7 @@ class TestClearPickDetection:
         """edge_pct = 0.05 > 0.03 → is_clear_pick = True."""
         base_game.edge_pct = 0.05
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["is_clear_pick"] is True
 
@@ -168,6 +184,7 @@ class TestClearPickDetection:
         """edge_pct = 0.02 < 0.03 → is_clear_pick = False."""
         base_game.edge_pct = 0.02
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["is_clear_pick"] is False
 
@@ -175,6 +192,7 @@ class TestClearPickDetection:
         """edge_pct = -0.05 → abs(-0.05) = 0.05 > 0.03 → is_clear_pick = True."""
         base_game.edge_pct = -0.05
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["is_clear_pick"] is True
 
@@ -182,6 +200,7 @@ class TestClearPickDetection:
         """edge_pct = -0.02 → abs(-0.02) = 0.02 < 0.03 → is_clear_pick = False."""
         base_game.edge_pct = -0.02
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["is_clear_pick"] is False
 
@@ -189,6 +208,7 @@ class TestClearPickDetection:
         """edge_pct = 0.03 → abs(0.03) = 0.03, NOT > 0.03 → is_clear_pick = False."""
         base_game.edge_pct = 0.03
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["is_clear_pick"] is False
 
@@ -196,13 +216,17 @@ class TestClearPickDetection:
         """edge_pct = 0.0301 → abs(0.0301) > 0.03 → is_clear_pick = True."""
         base_game.edge_pct = 0.0301
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["is_clear_pick"] is True
 
-    def test_clear_pick_none_edge_defaults_false(self, mock_sport_key_to_group, base_game):
+    def test_clear_pick_none_edge_defaults_false(
+        self, mock_sport_key_to_group, base_game
+    ):
         """edge_pct = None → edge_pct resolves to 0.0 → is_clear_pick = False."""
         base_game.edge_pct = None
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["is_clear_pick"] is False
 
@@ -210,41 +234,48 @@ class TestClearPickDetection:
         """edge_pct = 0.0 → is_clear_pick = False."""
         base_game.edge_pct = 0.0
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["is_clear_pick"] is False
 
     def test_clear_pick_from_dict(self, mock_sport_key_to_group):
         """Plain dict with edge_pct=0.07 → is_clear_pick = True."""
         from web.app import _livegame_to_bet
-        result = _livegame_to_bet({
-            "game_id": "g1",
-            "sport_key": "basketball_nba",
-            "home_team": "BOS",
-            "away_team": "LAL",
-            "home_team_short": "BOS",
-            "away_team_short": "LAL",
-            "game_date": "2025-06-15",
-            "commence_time": "2025-06-15T19:00:00Z",
-            "edge_pct": 0.07,
-            "league": "NBA",
-        })
+
+        result = _livegame_to_bet(
+            {
+                "game_id": "g1",
+                "sport_key": "basketball_nba",
+                "home_team": "BOS",
+                "away_team": "LAL",
+                "home_team_short": "BOS",
+                "away_team_short": "LAL",
+                "game_date": "2025-06-15",
+                "commence_time": "2025-06-15T19:00:00Z",
+                "edge_pct": 0.07,
+                "league": "NBA",
+            }
+        )
         assert result["is_clear_pick"] is True
 
     def test_not_clear_pick_from_dict(self, mock_sport_key_to_group):
         """Plain dict with edge_pct=0.01 → is_clear_pick = False."""
         from web.app import _livegame_to_bet
-        result = _livegame_to_bet({
-            "game_id": "g1",
-            "sport_key": "basketball_nba",
-            "home_team": "BOS",
-            "away_team": "LAL",
-            "home_team_short": "BOS",
-            "away_team_short": "LAL",
-            "game_date": "2025-06-15",
-            "commence_time": "2025-06-15T19:00:00Z",
-            "edge_pct": 0.01,
-            "league": "NBA",
-        })
+
+        result = _livegame_to_bet(
+            {
+                "game_id": "g1",
+                "sport_key": "basketball_nba",
+                "home_team": "BOS",
+                "away_team": "LAL",
+                "home_team_short": "BOS",
+                "away_team_short": "LAL",
+                "game_date": "2025-06-15",
+                "commence_time": "2025-06-15T19:00:00Z",
+                "edge_pct": 0.01,
+                "league": "NBA",
+            }
+        )
         assert result["is_clear_pick"] is False
 
 
@@ -261,6 +292,7 @@ class TestCombinedBehavior:
         base_game.edge_pct = 0.06
         base_game.stake_dollars = 435.0
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["is_clear_pick"] is True
         assert result["stake_dollars"] == 435.0
@@ -270,6 +302,7 @@ class TestCombinedBehavior:
         base_game.edge_pct = 0.01
         base_game.stake_dollars = 0.0
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["is_clear_pick"] is False
         assert result["stake_dollars"] == 0.0
@@ -279,6 +312,7 @@ class TestCombinedBehavior:
         base_game.edge_pct = 0.08
         base_game.stake_dollars = 0.0
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["is_clear_pick"] is True  # edge says clear pick
         assert result["stake_dollars"] == 0.0  # Kelly says no stake
@@ -296,6 +330,7 @@ class TestFieldPreservation:
         """edge_pct=0.04 → output edge_pct=0.04."""
         base_game.edge_pct = 0.04
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["edge_pct"] == 0.04
 
@@ -303,6 +338,7 @@ class TestFieldPreservation:
         """edge_pct=-0.03 → output edge_pct=-0.03."""
         base_game.edge_pct = -0.03
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["edge_pct"] == -0.03
 
@@ -310,6 +346,7 @@ class TestFieldPreservation:
         """confidence='high' → output confidence='high' and edge_confidence='high'."""
         base_game.confidence = "high"
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["confidence"] == "high"
         assert result["edge_confidence"] == "high"
@@ -317,6 +354,7 @@ class TestFieldPreservation:
     def test_confidence_defaults_low(self, mock_sport_key_to_group, base_game):
         """No confidence set → output confidence='low'."""
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["confidence"] == "low"
 
@@ -324,12 +362,14 @@ class TestFieldPreservation:
         """confidence=None → output confidence='low'."""
         base_game.confidence = None
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["confidence"] == "low"
 
     def test_league_defaults_to_nba(self, mock_sport_key_to_group, base_game):
         """league default is NBA."""
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["league"] == "NBA"
 
@@ -337,6 +377,7 @@ class TestFieldPreservation:
         """Basketball sport_group → bet_type='moneyline', bet_type_display='ML Edge'."""
         mock_sport_key_to_group.return_value = "Basketball"
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         # bet_type is always "moneyline" regardless of sport group
         assert result["bet_type"] == "moneyline"
@@ -351,6 +392,7 @@ class TestFieldPreservation:
         base_game.sport_group = "Other"
         base_game.sport_key = "tennis_atp"
         from web.app import _livegame_to_bet
+
         result = _livegame_to_bet(base_game)
         assert result["bet_type"] == "moneyline"
         assert result["bet_type_display"] == "Moneyline"
@@ -368,17 +410,20 @@ class TestDictPath:
     def test_basic_dict(self, mock_sport_key_to_group):
         """Minimal dict produces valid output."""
         from web.app import _livegame_to_bet
-        result = _livegame_to_bet({
-            "game_id": "d1",
-            "sport_key": "basketball_nba",
-            "home_team": "Home",
-            "away_team": "Away",
-            "home_team_short": "HOM",
-            "away_team_short": "AWY",
-            "game_date": "2025-06-15",
-            "commence_time": "2025-06-15T19:00:00Z",
-            "league": "NBA",
-        })
+
+        result = _livegame_to_bet(
+            {
+                "game_id": "d1",
+                "sport_key": "basketball_nba",
+                "home_team": "Home",
+                "away_team": "Away",
+                "home_team_short": "HOM",
+                "away_team_short": "AWY",
+                "game_date": "2025-06-15",
+                "commence_time": "2025-06-15T19:00:00Z",
+                "league": "NBA",
+            }
+        )
         assert result["game_id"] == "d1"
         assert result["matchup"] == "AWY @ HOM"
         assert result["is_clear_pick"] is False
@@ -387,32 +432,38 @@ class TestDictPath:
     def test_dict_team_shorts_via_matchup(self, mock_sport_key_to_group):
         """Dict without team shorts falls back to matchup parsing."""
         from web.app import _livegame_to_bet
-        result = _livegame_to_bet({
-            "game_id": "d2",
-            "sport_key": "basketball_nba",
-            "home_team": "Celtics",
-            "away_team": "Lakers",
-            "game_date": "2025-06-15",
-            "commence_time": "2025-06-15T19:00:00Z",
-            "matchup": "Lakers @ Celtics",
-            "league": "NBA",
-        })
+
+        result = _livegame_to_bet(
+            {
+                "game_id": "d2",
+                "sport_key": "basketball_nba",
+                "home_team": "Celtics",
+                "away_team": "Lakers",
+                "game_date": "2025-06-15",
+                "commence_time": "2025-06-15T19:00:00Z",
+                "matchup": "Lakers @ Celtics",
+                "league": "NBA",
+            }
+        )
         assert result["matchup"] == "Lakers @ Celtics"
 
     def test_dict_missing_optional_fields(self, mock_sport_key_to_group):
         """Dict missing optional fields should not crash."""
         from web.app import _livegame_to_bet
-        result = _livegame_to_bet({
-            "game_id": "d3",
-            "sport_key": "basketball_nba",
-            "home_team": "X",
-            "away_team": "Y",
-            "home_team_short": "X",
-            "away_team_short": "Y",
-            "game_date": "2025-06-15",
-            "commence_time": "2025-06-15T19:00:00Z",
-            "league": "NBA",
-        })
+
+        result = _livegame_to_bet(
+            {
+                "game_id": "d3",
+                "sport_key": "basketball_nba",
+                "home_team": "X",
+                "away_team": "Y",
+                "home_team_short": "X",
+                "away_team_short": "Y",
+                "game_date": "2025-06-15",
+                "commence_time": "2025-06-15T19:00:00Z",
+                "league": "NBA",
+            }
+        )
         assert result["game_id"] == "d3"
         # These should all be None or defaults without crashing
         assert result["market_total"] is None
@@ -423,33 +474,39 @@ class TestDictPath:
     def test_dict_clear_pick(self, mock_sport_key_to_group):
         """Dict with edge_pct > 0.03 → is_clear_pick=True."""
         from web.app import _livegame_to_bet
-        result = _livegame_to_bet({
-            "game_id": "d4",
-            "sport_key": "basketball_nba",
-            "home_team": "X",
-            "away_team": "Y",
-            "home_team_short": "X",
-            "away_team_short": "Y",
-            "game_date": "2025-06-15",
-            "commence_time": "2025-06-15T19:00:00Z",
-            "edge_pct": 0.04,
-            "league": "NBA",
-        })
+
+        result = _livegame_to_bet(
+            {
+                "game_id": "d4",
+                "sport_key": "basketball_nba",
+                "home_team": "X",
+                "away_team": "Y",
+                "home_team_short": "X",
+                "away_team_short": "Y",
+                "game_date": "2025-06-15",
+                "commence_time": "2025-06-15T19:00:00Z",
+                "edge_pct": 0.04,
+                "league": "NBA",
+            }
+        )
         assert result["is_clear_pick"] is True
 
     def test_dict_with_stake(self, mock_sport_key_to_group):
         """Dict with stake_dollars → value is preserved."""
         from web.app import _livegame_to_bet
-        result = _livegame_to_bet({
-            "game_id": "d5",
-            "sport_key": "basketball_nba",
-            "home_team": "X",
-            "away_team": "Y",
-            "home_team_short": "X",
-            "away_team_short": "Y",
-            "game_date": "2025-06-15",
-            "commence_time": "2025-06-15T19:00:00Z",
-            "stake_dollars": 100.0,
-            "league": "NBA",
-        })
+
+        result = _livegame_to_bet(
+            {
+                "game_id": "d5",
+                "sport_key": "basketball_nba",
+                "home_team": "X",
+                "away_team": "Y",
+                "home_team_short": "X",
+                "away_team_short": "Y",
+                "game_date": "2025-06-15",
+                "commence_time": "2025-06-15T19:00:00Z",
+                "stake_dollars": 100.0,
+                "league": "NBA",
+            }
+        )
         assert result["stake_dollars"] == 100.0

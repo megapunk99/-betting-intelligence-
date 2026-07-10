@@ -17,8 +17,8 @@ import logging
 import math
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import Any, Optional, Callable
+from datetime import datetime
+from typing import Optional
 
 import numpy as np
 
@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DriftAlert:
     """An alert generated when concept drift is detected."""
+
     metric: str
     severity: str  # "info", "warning", "critical"
     message: str
@@ -44,6 +45,7 @@ class DriftAlert:
 @dataclass
 class DriftReport:
     """Comprehensive drift analysis report."""
+
     total_alerts: int = 0
     critical_alerts: list[DriftAlert] = field(default_factory=list)
     warning_alerts: list[DriftAlert] = field(default_factory=list)
@@ -180,12 +182,15 @@ class DriftMonitor:
 
         # Set reference statistics if not yet set
         if self._reference_pred_mean is None and n_predictions >= self.reference_window:
-            ref_preds = list(self._predictions)[:self.reference_window]
+            ref_preds = list(self._predictions)[: self.reference_window]
             self._reference_pred_mean = float(np.mean(ref_preds))
             self._reference_pred_std = max(float(np.std(ref_preds)), 0.001)
 
-        if self._reference_performance is None and len(self._performance_history) >= self.reference_window:
-            ref_perf = list(self._performance_history)[:self.reference_window]
+        if (
+            self._reference_performance is None
+            and len(self._performance_history) >= self.reference_window
+        ):
+            ref_perf = list(self._performance_history)[: self.reference_window]
             self._reference_performance = float(np.mean(ref_perf))
 
         # Run all checks
@@ -235,10 +240,14 @@ class DriftMonitor:
         # Determine overall health
         if report.critical_alerts:
             report.model_health = "critical"
-            report.recommendation = "URGENT: Model retraining recommended — significant drift detected"
+            report.recommendation = (
+                "URGENT: Model retraining recommended — significant drift detected"
+            )
         elif report.warning_alerts:
             report.model_health = "degraded"
-            report.recommendation = "Model may need retraining — monitor performance closely"
+            report.recommendation = (
+                "Model may need retraining — monitor performance closely"
+            )
         elif report.info_alerts:
             report.model_health = "healthy"
             report.recommendation = "Minor drift detected — no action required"
@@ -253,7 +262,7 @@ class DriftMonitor:
 
     def _check_prediction_drift(self) -> Optional[DriftAlert]:
         """Check if recent prediction distribution differs from reference."""
-        recent = list(self._predictions)[-self.window_size:]
+        recent = list(self._predictions)[-self.window_size :]
         if len(recent) < 50:
             return None
 
@@ -267,7 +276,7 @@ class DriftMonitor:
         # Use KS statistic for distribution comparison
         from scipy.stats import ks_2samp
 
-        reference = list(self._predictions)[:self.reference_window]
+        reference = list(self._predictions)[: self.reference_window]
         try:
             ks_stat, ks_p = ks_2samp(reference, recent)
         except Exception:
@@ -298,7 +307,7 @@ class DriftMonitor:
 
     def _check_performance_drift(self) -> Optional[DriftAlert]:
         """Check if recent accuracy differs from reference."""
-        recent = list(self._performance_history)[-self.window_size:]
+        recent = list(self._performance_history)[-self.window_size :]
         if len(recent) < 50:
             return None
 
@@ -306,7 +315,11 @@ class DriftMonitor:
         perf_diff = recent_perf - self._reference_performance
 
         if abs(perf_diff) > self.performance_threshold:
-            severity = "critical" if abs(perf_diff) > 2 * self.performance_threshold else "warning"
+            severity = (
+                "critical"
+                if abs(perf_diff) > 2 * self.performance_threshold
+                else "warning"
+            )
             direction = "improving" if perf_diff > 0 else "degrading"
 
             return DriftAlert(
@@ -331,8 +344,8 @@ class DriftMonitor:
 
     def _check_brier_drift(self) -> Optional[DriftAlert]:
         """Check if recent Brier score has degraded significantly."""
-        recent = list(self._brier_history)[-self.window_size:]
-        reference = list(self._brier_history)[:self.reference_window]
+        recent = list(self._brier_history)[-self.window_size :]
+        reference = list(self._brier_history)[: self.reference_window]
 
         if len(recent) < 50 or len(reference) < 50:
             return None
@@ -364,7 +377,6 @@ class DriftMonitor:
 
     def _check_feature_drift(self) -> Optional[DriftAlert]:
         """Check if feature distribution has drifted."""
-        from scipy.stats import ks_2samp
 
         n_features = self._feature_samples[0].shape[-1]
         n_recent = min(100, len(self._feature_samples))
@@ -374,14 +386,22 @@ class DriftMonitor:
         max_ks = 0.0
 
         for i in range(min(n_features, 20)):  # Check up to 20 features
-            feature_values = recent_features[:, i] if recent_features.ndim > 1 else recent_features
+            feature_values = (
+                recent_features[:, i] if recent_features.ndim > 1 else recent_features
+            )
 
             if len(feature_values) < 20:
                 continue
 
             # Simple test: compare variance of recent vs overall
-            overall_mean = float(np.mean([s[i] if len(np.atleast_1d(s).shape) > 0 else s
-                                          for s in list(self._feature_samples)]))
+            overall_mean = float(
+                np.mean(
+                    [
+                        s[i] if len(np.atleast_1d(s).shape) > 0 else s
+                        for s in list(self._feature_samples)
+                    ]
+                )
+            )
             recent_mean = float(np.mean(feature_values))
             diff = abs(recent_mean - overall_mean) / max(abs(overall_mean), 0.001)
 
@@ -424,17 +444,16 @@ class DriftMonitor:
         if len(common_features) < 5:
             return None
 
-        recent_ranks = {f: i for i, (f, _) in enumerate(
-            sorted(recent.items(), key=lambda x: -abs(x[1]))
-        )}
-        older_ranks = {f: i for i, (f, _) in enumerate(
-            sorted(older.items(), key=lambda x: -abs(x[1]))
-        )}
+        recent_ranks = {
+            f: i
+            for i, (f, _) in enumerate(sorted(recent.items(), key=lambda x: -abs(x[1])))
+        }
+        older_ranks = {
+            f: i
+            for i, (f, _) in enumerate(sorted(older.items(), key=lambda x: -abs(x[1])))
+        }
 
-        rank_diffs = [
-            abs(recent_ranks[f] - older_ranks[f])
-            for f in common_features
-        ]
+        rank_diffs = [abs(recent_ranks[f] - older_ranks[f]) for f in common_features]
         avg_rank_shift = float(np.mean(rank_diffs))
 
         if avg_rank_shift > 3:  # Average rank shifted by >3 positions
@@ -464,10 +483,18 @@ class DriftMonitor:
         return {
             "n_predictions_tracked": len(self._predictions),
             "n_alerts": len(self._alerts),
-            "reference_pred_mean": round(self._reference_pred_mean, 4) if self._reference_pred_mean else None,
-            "reference_performance": round(self._reference_performance, 4) if self._reference_performance else None,
-            "last_check": self._last_check_time.isoformat() if self._last_check_time else None,
-            "health": self.check_drift(force=True).model_health if len(self._predictions) >= 100 else "insufficient_data",
+            "reference_pred_mean": round(self._reference_pred_mean, 4)
+            if self._reference_pred_mean
+            else None,
+            "reference_performance": round(self._reference_performance, 4)
+            if self._reference_performance
+            else None,
+            "last_check": self._last_check_time.isoformat()
+            if self._last_check_time
+            else None,
+            "health": self.check_drift(force=True).model_health
+            if len(self._predictions) >= 100
+            else "insufficient_data",
         }
 
     def reset(self):

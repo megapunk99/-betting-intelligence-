@@ -27,15 +27,13 @@ from __future__ import annotations
 
 import argparse
 import logging
-import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import pandas as pd
 
 from betting_intel.data.espn_hoops import ESPNLeagueSource
-from betting_intel.live.sport_configs import SPORT_KEY_TO_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +87,6 @@ class HistoricalScraper:
         self._espn = ESPNLeagueSource()
 
         # Session for TheOddsAPI scores calls
-        import urllib.request
         self._scores_session = None  # Lazy init
         self._odds_api_key: str = ""  # Set when fetching from TheOddsAPI
 
@@ -245,7 +242,9 @@ class HistoricalScraper:
 
         results = {}
         for league, league_seasons in seasons.items():
-            df = self.scrape_seasons(league, league_seasons, use_scores_api=use_scores_api)
+            df = self.scrape_seasons(
+                league, league_seasons, use_scores_api=use_scores_api
+            )
             if df is not None and not df.empty:
                 results[league] = df
                 self._save_to_csv(league, df)
@@ -316,9 +315,7 @@ class HistoricalScraper:
 
     # ── TheOddsAPI /scores endpoint ────────────────────────────────────────
 
-    def _fetch_theoddsapi_scores(
-        self, league: str, days_back: int = 3
-    ) -> pd.DataFrame:
+    def _fetch_theoddsapi_scores(self, league: str, days_back: int = 3) -> pd.DataFrame:
         """Fetch completed game scores from TheOddsAPI /scores endpoint.
 
         Uses the free-tier /scores endpoint which costs 1 credit per call
@@ -381,16 +378,20 @@ class HistoricalScraper:
                 away_team = game.get("away_team", "")
                 start_time = game.get("commence_time", "")[:10]
 
-                records.append({
-                    "game_id": game.get("id", f"{sport_key}_{start_time}_{home_team}_{away_team}"),
-                    "date": start_time,
-                    "home_team": home_team,
-                    "away_team": away_team,
-                    "home_score": int(home_score),
-                    "away_score": int(away_score),
-                    "total_points": int(home_score) + int(away_score),
-                    "home_win": 1 if int(home_score) > int(away_score) else 0,
-                })
+                records.append(
+                    {
+                        "game_id": game.get(
+                            "id", f"{sport_key}_{start_time}_{home_team}_{away_team}"
+                        ),
+                        "date": start_time,
+                        "home_team": home_team,
+                        "away_team": away_team,
+                        "home_score": int(home_score),
+                        "away_score": int(away_score),
+                        "total_points": int(home_score) + int(away_score),
+                        "home_win": 1 if int(home_score) > int(away_score) else 0,
+                    }
+                )
 
             logger.info(
                 f"TheOddsAPI scores: {len(records)} completed games for {sport_key} "
@@ -445,7 +446,9 @@ class HistoricalScraper:
         logger.info(f"  Saved {len(df)} rows → {path}")
         return path
 
-    def load_training_csv(self, filename: str = "historical_training_data.csv") -> pd.DataFrame:
+    def load_training_csv(
+        self, filename: str = "historical_training_data.csv"
+    ) -> pd.DataFrame:
         """Load previously saved training data from CSV."""
         path = self.data_dir / filename
         if not path.exists():
@@ -477,31 +480,31 @@ def main():
         description="Historical Data Scraper — build training datasets from free sources"
     )
     parser.add_argument(
-        "--league", "-l",
+        "--league",
+        "-l",
         choices=["nba", "ncaab", "euroleague", "nfl", "epl"],
         default="nba",
-        help="Sports league to scrape"
+        help="Sports league to scrape",
     )
     parser.add_argument(
-        "--seasons", "-s", type=int, nargs="+",
-        help="Season years to scrape (e.g. 2024 2025)"
+        "--seasons",
+        "-s",
+        type=int,
+        nargs="+",
+        help="Season years to scrape (e.g. 2024 2025)",
     )
     parser.add_argument(
-        "--days-back", "-d", type=int,
-        help="Scrape recent N days instead of full seasons"
+        "--days-back",
+        "-d",
+        type=int,
+        help="Scrape recent N days instead of full seasons",
     )
     parser.add_argument(
-        "--all", "-a", action="store_true",
-        help="Scrape ALL supported sports"
+        "--all", "-a", action="store_true", help="Scrape ALL supported sports"
     )
+    parser.add_argument("--output", "-o", type=str, default="", help="Output CSV path")
     parser.add_argument(
-        "--output", "-o", type=str,
-        default="",
-        help="Output CSV path"
-    )
-    parser.add_argument(
-        "--verbose", "-v", action="store_true",
-        help="Enable verbose logging"
+        "--verbose", "-v", action="store_true", help="Enable verbose logging"
     )
 
     args = parser.parse_args()
@@ -517,8 +520,12 @@ def main():
     if args.all:
         logger.info("Scraping ALL supported sports...")
         results = scraper.scrape_all_sports(
-            seasons={league: args.seasons for league in ["nba", "ncaab", "euroleague", "nfl", "epl"]}
-            if args.seasons else None,
+            seasons={
+                league: args.seasons
+                for league in ["nba", "ncaab", "euroleague", "nfl", "epl"]
+            }
+            if args.seasons
+            else None,
         )
         output_path = scraper.save_training_data(
             results,

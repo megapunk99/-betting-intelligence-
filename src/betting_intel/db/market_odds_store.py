@@ -33,7 +33,6 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-import numpy as np
 import pandas as pd
 
 from betting_intel.db.connection import DatabaseManager
@@ -119,8 +118,12 @@ class MarketOddsStore:
         """
         try:
             # Compute implied probabilities at write time
-            home_implied = _american_to_implied(home_ml) if home_ml is not None else None
-            away_implied = _american_to_implied(away_ml) if away_ml is not None else None
+            home_implied = (
+                _american_to_implied(home_ml) if home_ml is not None else None
+            )
+            away_implied = (
+                _american_to_implied(away_ml) if away_ml is not None else None
+            )
             vig_free = (
                 _remove_vig(home_implied, away_implied)
                 if home_implied is not None and away_implied is not None
@@ -137,8 +140,12 @@ class MarketOddsStore:
                     sport_key=sport_key,
                     home_team=home_team,
                     away_team=away_team,
-                    home_team_short=home_team_short or home_team.split()[-1] if " " in home_team else home_team,
-                    away_team_short=away_team_short or away_team.split()[-1] if " " in away_team else away_team,
+                    home_team_short=home_team_short or home_team.split()[-1]
+                    if " " in home_team
+                    else home_team,
+                    away_team_short=away_team_short or away_team.split()[-1]
+                    if " " in away_team
+                    else away_team,
                     home_ml=home_ml,
                     away_ml=away_ml,
                     spread=spread,
@@ -159,7 +166,9 @@ class MarketOddsStore:
                 return True
             except Exception:
                 session.rollback()
-                logger.debug(f"Failed to log odds snapshot for {game_id}", exc_info=True)
+                logger.debug(
+                    f"Failed to log odds snapshot for {game_id}", exc_info=True
+                )
                 return False
             finally:
                 session.close()
@@ -359,7 +368,10 @@ class MarketOddsStore:
             return None
 
         except Exception:
-            logger.debug(f"Failed to get market prob for {home_team} vs {away_team}", exc_info=True)
+            logger.debug(
+                f"Failed to get market prob for {home_team} vs {away_team}",
+                exc_info=True,
+            )
             return None
         finally:
             session.close()
@@ -424,11 +436,7 @@ class MarketOddsStore:
 
         session = self._db.get_session()
         try:
-            return (
-                session.query(MarketOdds.game_id)
-                .distinct()
-                .count()
-            )
+            return session.query(MarketOdds.game_id).distinct().count()
         except Exception:
             return 0
         finally:
@@ -508,7 +516,10 @@ class MarketOddsStore:
             return (opening, closing)
 
         except Exception:
-            logger.debug(f"Failed to get opening/closing probs for {home_team} vs {away_team}", exc_info=True)
+            logger.debug(
+                f"Failed to get opening/closing probs for {home_team} vs {away_team}",
+                exc_info=True,
+            )
             return (None, None)
         finally:
             session.close()

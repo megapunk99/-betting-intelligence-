@@ -33,10 +33,9 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
-from datetime import datetime, timezone, timedelta
-from typing import Any, Optional
+from datetime import datetime, timezone
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +119,9 @@ class StealthBrowser:
 
         # Cooldown: don't launch browser too often
         if (now - cls._last_playwright_launch) < PLAYWRIGHT_COOLDOWN:
-            logger.warning("StealthScraper: Playwright cooldown active, returning empty")
+            logger.warning(
+                "StealthScraper: Playwright cooldown active, returning empty"
+            )
             return cls._cache or []
 
         games = cls._scrape_via_playwright(timeout=timeout)
@@ -152,7 +153,9 @@ class StealthBrowser:
         """
         import urllib.request
 
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
 
         try:
             # Step 1: Get today's schedule
@@ -185,7 +188,9 @@ class StealthBrowser:
                 competition_id = game.get("_espn_comp_id")
                 if event_id and competition_id:
                     try:
-                        odds = cls._fetch_espn_detail_odds(event_id, competition_id, timeout)
+                        odds = cls._fetch_espn_detail_odds(
+                            event_id, competition_id, timeout
+                        )
                         if odds:
                             # Merge odds into the game dict (TheOddsAPI format)
                             cls._merge_odds_into_game(game, odds)
@@ -199,14 +204,17 @@ class StealthBrowser:
 
             # Filter: only include games with at least some odds data
             valid_games = [
-                g for g in parsed_games
+                g
+                for g in parsed_games
                 if g.get("bookmakers") and len(g["bookmakers"]) > 0
             ]
 
             return valid_games
 
         except urllib.error.HTTPError as e:
-            logger.warning(f"ESPN HTTP {e.code}: {e.read().decode('utf-8', errors='replace')[:200]}")
+            logger.warning(
+                f"ESPN HTTP {e.code}: {e.read().decode('utf-8', errors='replace')[:200]}"
+            )
             return []
         except urllib.error.URLError as e:
             logger.warning(f"ESPN connection failed: {e}")
@@ -300,34 +308,52 @@ class StealthBrowser:
             away_spread_odds = item.get("awayTeamOdds", {}).get("spreadOdds")
             home_spread_odds = item.get("homeTeamOdds", {}).get("spreadOdds")
 
-            parsed_odds.append({
-                "key": f"espn_{provider_id}",
-                "title": provider,
-                "last_update": datetime.now().isoformat(),
-                "markets": [
-                    {
-                        "key": "h2h",
-                        "outcomes": [
-                            {"name": "", "price": home_ml},
-                            {"name": "", "price": away_ml},
-                        ],
-                    },
-                    {
-                        "key": "spreads",
-                        "outcomes": [
-                            {"name": "", "point": spread, "price": home_spread_odds},
-                            {"name": "", "point": -spread if spread else None, "price": away_spread_odds},
-                        ],
-                    },
-                    {
-                        "key": "totals",
-                        "outcomes": [
-                            {"name": "Over", "point": over_under, "price": over_odds_val},
-                            {"name": "Under", "point": over_under, "price": under_odds_val},
-                        ],
-                    },
-                ],
-            })
+            parsed_odds.append(
+                {
+                    "key": f"espn_{provider_id}",
+                    "title": provider,
+                    "last_update": datetime.now().isoformat(),
+                    "markets": [
+                        {
+                            "key": "h2h",
+                            "outcomes": [
+                                {"name": "", "price": home_ml},
+                                {"name": "", "price": away_ml},
+                            ],
+                        },
+                        {
+                            "key": "spreads",
+                            "outcomes": [
+                                {
+                                    "name": "",
+                                    "point": spread,
+                                    "price": home_spread_odds,
+                                },
+                                {
+                                    "name": "",
+                                    "point": -spread if spread else None,
+                                    "price": away_spread_odds,
+                                },
+                            ],
+                        },
+                        {
+                            "key": "totals",
+                            "outcomes": [
+                                {
+                                    "name": "Over",
+                                    "point": over_under,
+                                    "price": over_odds_val,
+                                },
+                                {
+                                    "name": "Under",
+                                    "point": over_under,
+                                    "price": under_odds_val,
+                                },
+                            ],
+                        },
+                    ],
+                }
+            )
 
         return parsed_odds
 
@@ -336,8 +362,12 @@ class StealthBrowser:
         """Merge ESPN odds into a game dict, matching team names to outcome names."""
         home_full = game.get("home_team", "")
         away_full = game.get("away_team", "")
-        home_short = ESPN_TEAM_SHORT.get(home_full, home_full.split()[-1] if " " in home_full else home_full)
-        away_short = ESPN_TEAM_SHORT.get(away_full, away_full.split()[-1] if " " in away_full else away_full)
+        home_short = ESPN_TEAM_SHORT.get(
+            home_full, home_full.split()[-1] if " " in home_full else home_full
+        )
+        away_short = ESPN_TEAM_SHORT.get(
+            away_full, away_full.split()[-1] if " " in away_full else away_full
+        )
 
         for bookmaker in odds_list:
             for market in bookmaker.get("markets", []):
@@ -394,10 +424,13 @@ class StealthBrowser:
                 # Apply stealth if available
                 try:
                     from playwright_stealth import Stealth
+
                     Stealth().apply_stealth_sync(context)
                     logger.debug("Stealth plugin applied to Playwright page")
                 except ImportError:
-                    logger.debug("playwright-stealth not available, launching without stealth")
+                    logger.debug(
+                        "playwright-stealth not available, launching without stealth"
+                    )
 
                 # Intercept JSON API responses
                 api_responses: list[dict] = []
@@ -491,7 +524,9 @@ class StealthBrowser:
                     # If no embedded odds, try fetching from core API
                     if not game["bookmakers"] and event_id and comp_id:
                         try:
-                            odds_list = cls._fetch_espn_detail_odds(event_id, comp_id, 10)
+                            odds_list = cls._fetch_espn_detail_odds(
+                                event_id, comp_id, 10
+                            )
                             if odds_list:
                                 cls._merge_odds_into_game(game, odds_list)
                         except Exception:
@@ -542,7 +577,11 @@ class StealthBrowser:
                     "key": "spreads",
                     "outcomes": [
                         {"name": home_full, "point": spread, "price": home_spread_odds},
-                        {"name": away_full, "point": -spread if spread else None, "price": away_spread_odds},
+                        {
+                            "name": away_full,
+                            "point": -spread if spread else None,
+                            "price": away_spread_odds,
+                        },
                     ],
                 },
                 {

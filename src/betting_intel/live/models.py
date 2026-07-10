@@ -9,15 +9,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
-from typing import Any, Optional
-
-from betting_intel.config import ODDS_CACHE_TTL_SECONDS
+from typing import Optional
 
 
 # ── Thresholds ────────────────────────────────────────────────────────────
-PREDICTION_REFRESH_INTERVAL = 60   # Re-generate predictions every 60s
-LIVE_GAME_LEEWAY_MINUTES = 60      # Game is "live" if started within 60 min of now
-MIN_EDGE_THRESHOLD = 0.03          # No recommendations below 3% edge
+PREDICTION_REFRESH_INTERVAL = 60  # Re-generate predictions every 60s
+LIVE_GAME_LEEWAY_MINUTES = 60  # Game is "live" if started within 60 min of now
+MIN_EDGE_THRESHOLD = 0.03  # No recommendations below 3% edge
+ODDS_CACHE_TTL_SECONDS = 300  # Refresh odds every 5 minutes (re-exported from config)
 # Note: TheOddsAPI daily fetch schedule is configured in config/settings.py
 # via daily_fetch_hour (default 6 AM) and daily_fetch_enabled (default True).
 # The OddsFetcher checks the schedule in _is_time_for_daily_fetch().
@@ -25,9 +24,11 @@ MIN_EDGE_THRESHOLD = 0.03          # No recommendations below 3% edge
 
 # ── Data Models ───────────────────────────────────────────────────────────
 
+
 @dataclass
 class LiveGame:
     """A single game — live or upcoming — with real market data."""
+
     game_id: str
     sport_key: str
     home_team: str
@@ -35,7 +36,7 @@ class LiveGame:
     home_team_short: str
     away_team_short: str
     commence_time: str  # ISO 8601
-    game_date: str      # YYYY-MM-DD
+    game_date: str  # YYYY-MM-DD
 
     # League / sport identification
     league: str = "NBA"
@@ -62,15 +63,15 @@ class LiveGame:
 
     # ML predictions — moneyline edge (filled by MarketInefficiencySystem)
     predicted_total: Optional[float] = None  # home_win_prob (0-1) from robust system
-    edge_pct: Optional[float] = None         # predicted market error for moneyline
-    direction: Optional[str] = None           # "home" or "away"
-    confidence: Optional[str] = None          # "high", "medium", "low", "neutral"
+    edge_pct: Optional[float] = None  # predicted market error for moneyline
+    direction: Optional[str] = None  # "home" or "away"
+    confidence: Optional[str] = None  # "high", "medium", "low", "neutral"
 
     # ML predictions — totals edge (filled by TotalsRegressor)
     total_prediction: Optional[float] = None  # predicted total points (e.g. 225.5)
-    total_edge_pct: Optional[float] = None    # edge on the total (positive = over)
-    total_direction: Optional[str] = None     # "over" or "under" or "neutral"
-    total_confidence: Optional[str] = None    # "high", "medium", "low"
+    total_edge_pct: Optional[float] = None  # edge on the total (positive = over)
+    total_direction: Optional[str] = None  # "over" or "under" or "neutral"
+    total_confidence: Optional[str] = None  # "high", "medium", "low"
 
     # Quarter & Half projections
     q1_home: Optional[float] = None
@@ -96,11 +97,13 @@ class LiveGame:
     stake_dollars: float = 0.0
 
     # Feature importance (how the model arrived at this prediction)
-    feature_importance: Optional[dict[str, float]] = None  # {human_readable_name: importance_weight}
+    feature_importance: Optional[dict[str, float]] = (
+        None  # {human_readable_name: importance_weight}
+    )
 
     # Bet recommendations
-    recommended_quarter: Optional[str] = None   # e.g. "Q1", "Q2", "1H"
-    recommended_direction: Optional[str] = None # "over" or "under"
+    recommended_quarter: Optional[str] = None  # e.g. "Q1", "Q2", "1H"
+    recommended_direction: Optional[str] = None  # "over" or "under"
 
     # Timestamps
     odds_fetched_at: Optional[str] = None
@@ -124,6 +127,7 @@ class LiveGame:
 @dataclass
 class LivePredictionSnapshot:
     """Complete snapshot of all live + upcoming predictions."""
+
     live_games: list[LiveGame] = field(default_factory=list)
     today_games: list[LiveGame] = field(default_factory=list)
     tomorrow_games: list[LiveGame] = field(default_factory=list)
@@ -144,7 +148,9 @@ class LivePredictionSnapshot:
     n_arbitrage: int = 0
 
     # Fields to exclude from serialization (chart_data, internal state)
-    _exclude_from_dict: set = field(default_factory=lambda: {"chart_data", "_exclude_from_dict"})
+    _exclude_from_dict: set = field(
+        default_factory=lambda: {"chart_data", "_exclude_from_dict"}
+    )
 
     def __post_init__(self):
         self.n_live = len(self.live_games)
@@ -156,7 +162,12 @@ class LivePredictionSnapshot:
 
     def _build_chart_data(self) -> dict:
         edges = []
-        confidence_counts: dict[str, int] = {"high": 0, "medium": 0, "low": 0, "neutral": 0}
+        confidence_counts: dict[str, int] = {
+            "high": 0,
+            "medium": 0,
+            "low": 0,
+            "neutral": 0,
+        }
         over_count = 0
         under_count = 0
         neutral_count = 0
@@ -165,19 +176,21 @@ class LivePredictionSnapshot:
             d = g.to_dict()
             edge_pct = d.get("edge_pct")
             if edge_pct is not None and edge_pct != 0:
-                edges.append({
-                    "matchup": g.matchup,
-                    "edge_pct": round(edge_pct * 100, 1),
-                    "predicted_total": d.get("predicted_total"),
-                    "market_total": d.get("market_total"),
-                    "is_live": d.get("is_live", False),
-                    "confidence": d.get("confidence", "low"),
-                    "home_team": d.get("home_team_short", ""),
-                    "away_team": d.get("away_team_short", ""),
-                    "spread": d.get("spread"),
-                    "n_books_ml": d.get("n_books_ml", 0),
-                    "direction": d.get("direction", "neutral"),
-                })
+                edges.append(
+                    {
+                        "matchup": g.matchup,
+                        "edge_pct": round(edge_pct * 100, 1),
+                        "predicted_total": d.get("predicted_total"),
+                        "market_total": d.get("market_total"),
+                        "is_live": d.get("is_live", False),
+                        "confidence": d.get("confidence", "low"),
+                        "home_team": d.get("home_team_short", ""),
+                        "away_team": d.get("away_team_short", ""),
+                        "spread": d.get("spread"),
+                        "n_books_ml": d.get("n_books_ml", 0),
+                        "direction": d.get("direction", "neutral"),
+                    }
+                )
 
             c = d.get("confidence", "low") or "low"
             if c in confidence_counts:
@@ -224,7 +237,7 @@ class LivePredictionSnapshot:
             "arbitrage_opportunities": self.arbitrage_opportunities,
             "n_arbitrage": self.n_arbitrage,
         }
-        exclude = getattr(self, '_exclude_from_dict', set())
+        exclude = getattr(self, "_exclude_from_dict", set())
         for field_name in exclude:
             d.pop(field_name, None)
         return d

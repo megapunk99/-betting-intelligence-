@@ -7,7 +7,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from betting_intel.api.schemas import PredictionRequest, PredictionResponse
+from betting_intel.api.schemas import PredictionRequest
 from betting_intel.models.persistence import model_registry
 
 router = APIRouter(prefix="/predict", tags=["Prediction"])
@@ -22,6 +22,7 @@ def _get_engine():
     global _live_engine
     if _live_engine is None:
         from betting_intel.live.engine import LivePredictionEngine
+
         _live_engine = LivePredictionEngine()
     return _live_engine
 
@@ -31,6 +32,7 @@ def _get_future_predictor():
     global _future_predictor
     if _future_predictor is None:
         from betting_intel.live.future_predictor import FutureGamePredictor
+
         _future_predictor = FutureGamePredictor()
         _future_predictor.load()
     return _future_predictor
@@ -55,10 +57,13 @@ async def predict_game(request: PredictionRequest):
         all_games = snapshot.next_two_days
 
         for game in all_games:
-            if (game.home_team_short.lower() in request.home_team.lower() or
-                request.home_team.lower() in game.home_team_short.lower()) and \
-               (game.away_team_short.lower() in request.away_team.lower() or
-                request.away_team.lower() in game.away_team_short.lower()):
+            if (
+                game.home_team_short.lower() in request.home_team.lower()
+                or request.home_team.lower() in game.home_team_short.lower()
+            ) and (
+                game.away_team_short.lower() in request.away_team.lower()
+                or request.away_team.lower() in game.away_team_short.lower()
+            ):
                 return {
                     "game_id": game.game_id,
                     "home_team": game.home_team_short,
@@ -89,8 +94,11 @@ async def predict_game(request: PredictionRequest):
         for pred in upcoming:
             home = pred.get("home_team_short", "").lower()
             away = pred.get("away_team_short", "").lower()
-            if (home in request.home_team.lower() or request.home_team.lower() in home) and \
-               (away in request.away_team.lower() or request.away_team.lower() in away):
+            if (
+                home in request.home_team.lower() or request.home_team.lower() in home
+            ) and (
+                away in request.away_team.lower() or request.away_team.lower() in away
+            ):
                 return {
                     **pred,
                     "source": "future_predictor",
@@ -117,8 +125,12 @@ async def list_models():
 
 @router.get("/upcoming")
 async def list_upcoming_predictions(
-    num_games: int = Query(20, description="Number of predictions to return", ge=1, le=50),
-    source: Optional[str] = Query(None, description="Source: 'engine', 'future', or None for both"),
+    num_games: int = Query(
+        20, description="Number of predictions to return", ge=1, le=50
+    ),
+    source: Optional[str] = Query(
+        None, description="Source: 'engine', 'future', or None for both"
+    ),
 ):
     """
     List upcoming game predictions from the LivePredictionEngine + FutureGamePredictor.
@@ -170,7 +182,9 @@ async def list_upcoming_predictions(
     if source is None or source == "future":
         try:
             predictor = _get_future_predictor()
-            results["future_predictor"] = predictor.predict_upcoming_games(num_games=num_games)
+            results["future_predictor"] = predictor.predict_upcoming_games(
+                num_games=num_games
+            )
         except Exception:
             pass
 
@@ -186,8 +200,6 @@ async def list_upcoming_predictions(
     return {
         "n_predictions": len(combined),
         "predictions": combined,
-        "sources": {
-            k: len(v) for k, v in results.items()
-        },
+        "sources": {k: len(v) for k, v in results.items()},
         "generated_at": datetime.now().isoformat(),
     }

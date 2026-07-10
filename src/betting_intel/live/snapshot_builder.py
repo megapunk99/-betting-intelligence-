@@ -17,7 +17,11 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from betting_intel.live.models import LiveGame, LivePredictionSnapshot, LIVE_GAME_LEEWAY_MINUTES
+from betting_intel.live.models import (
+    LiveGame,
+    LivePredictionSnapshot,
+    LIVE_GAME_LEEWAY_MINUTES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +58,7 @@ class SnapshotBuilder:
 
         # Step 1: Log to market odds store
         try:
-            if hasattr(self._market_odds_store, 'log_batch'):
+            if hasattr(self._market_odds_store, "log_batch"):
                 self._market_odds_store.log_batch(all_games, source="engine_refresh")
         except Exception:
             logger.debug("Failed to log odds snapshots (non-critical)", exc_info=True)

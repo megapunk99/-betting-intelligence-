@@ -10,7 +10,7 @@ This package provides a zero-synthetic-data prediction system that:
 
 Usage:
     from betting_intel.live.engine import LivePredictionEngine
-    
+
     engine = LivePredictionEngine()
     live_games = engine.get_live_games()        # Games in progress
     today_games = engine.get_today_games()       # Today's full card

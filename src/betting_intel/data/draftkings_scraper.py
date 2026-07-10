@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -169,8 +169,12 @@ class DraftKingsScraper:
                     games = cls._parse_dk_response(data)
                     if games:
                         return games
-            except (urllib.error.HTTPError, urllib.error.URLError,
-                    json.JSONDecodeError, TimeoutError) as e:
+            except (
+                urllib.error.HTTPError,
+                urllib.error.URLError,
+                json.JSONDecodeError,
+                TimeoutError,
+            ) as e:
                 logger.debug(f"DraftKings HTTP {event_id}: {e}")
                 continue
             except Exception as e:
@@ -221,6 +225,7 @@ class DraftKingsScraper:
                 # Apply stealth to hide automation
                 try:
                     from playwright_stealth import Stealth
+
                     Stealth().apply_stealth_sync(context)
                     logger.debug("Stealth applied to Playwright page")
                 except ImportError:
@@ -234,7 +239,9 @@ class DraftKingsScraper:
                     if "eventgroups" in url and "format=json" in url:
                         try:
                             data = response.json()
-                            if isinstance(data, dict) and cls._is_valid_dk_response(data):
+                            if isinstance(data, dict) and cls._is_valid_dk_response(
+                                data
+                            ):
                                 api_responses.append(data)
                                 logger.debug(f"Captured DK API response: {url}")
                         except Exception:
@@ -356,7 +363,7 @@ class DraftKingsScraper:
             return []
 
         parsed_games: list[dict] = []
-        now_utc = datetime.now(timezone.utc)
+        parsed_games: list[dict] = []
 
         for event in events:
             try:
@@ -447,9 +454,7 @@ class DraftKingsScraper:
         totals_outcomes: list[dict] = []
 
         for category in offer_categories:
-            subcategory_descriptors = category.get(
-                "offerSubcategoryDescriptors", []
-            )
+            subcategory_descriptors = category.get("offerSubcategoryDescriptors", [])
             for descriptor in subcategory_descriptors:
                 subcategory = descriptor.get("offerSubcategory", {})
                 offers = cls._extract_offers(subcategory)
@@ -460,9 +465,7 @@ class DraftKingsScraper:
                     outcomes = offer.get("outcomes", [])
 
                     if market_key == "h2h":
-                        parsed = cls._parse_h2h_outcomes(
-                            outcomes, home_full, away_full
-                        )
+                        parsed = cls._parse_h2h_outcomes(outcomes, home_full, away_full)
                         if parsed:
                             h2h_outcomes.extend(parsed)
 
@@ -552,6 +555,7 @@ class DraftKingsScraper:
             # If point not directly available, parse from label
             if point is None:
                 import re
+
                 # Use split-based approach for team name extraction instead of
                 # regex sub, to handle edge cases like "76ers -3.5" where the
                 # team name contains digits
@@ -564,7 +568,7 @@ class DraftKingsScraper:
                     # Get team name by removing the trailing spread value
                     # Use the stripped version for position matching
                     stripped_label = label.strip()
-                    team_label = stripped_label[:match.start()].strip().rstrip(",;")
+                    team_label = stripped_label[: match.start()].strip().rstrip(",;")
                 else:
                     team_label = label.strip()
             else:
@@ -577,11 +581,13 @@ class DraftKingsScraper:
             price = cls._to_american_odds(odds)
             team_name = cls._match_team_name(team_label, home_full, away_full)
             if team_name and cls._is_reasonable_odds(price):
-                parsed.append({
-                    "name": team_name,
-                    "point": float(point),
-                    "price": price,
-                })
+                parsed.append(
+                    {
+                        "name": team_name,
+                        "point": float(point),
+                        "price": price,
+                    }
+                )
         return parsed
 
     @classmethod

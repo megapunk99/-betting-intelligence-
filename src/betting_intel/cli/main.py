@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import sys
 import json
+import os
 from pathlib import Path
 from datetime import datetime
 
@@ -21,6 +22,7 @@ import click
 
 from betting_intel.config import settings
 import logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -61,7 +63,6 @@ def pipeline_run(output: str | None):
     click.echo(summary)
 
 
-
 # ── Model Commands ────────────────────────────────────────────────────────
 @cli.group()
 def models():
@@ -82,7 +83,9 @@ def models_list():
     click.echo(f"{'Model Name':<20} {'Versions':<10} {'Latest':<25}")
     click.echo("-" * 55)
     for m in all_models:
-        click.echo(f"{m['model_name']:<20} {m['total_versions']:<10} {m['latest_version'] or 'N/A':<25}")
+        click.echo(
+            f"{m['model_name']:<20} {m['total_versions']:<10} {m['latest_version'] or 'N/A':<25}"
+        )
 
 
 @models.command("info")
@@ -143,8 +146,12 @@ def api_test_key():
 
     api_key = os.getenv("ODDS_API_KEY", "")
     if not api_key or api_key in ("your-api-key-here", ""):
-        click.echo(click.style(" No valid ODDS_API_KEY found in .env or environment", fg="red"))
-        click.echo("  Set ODDS_API_KEY in your .env file or as an environment variable.")
+        click.echo(
+            click.style(" No valid ODDS_API_KEY found in .env or environment", fg="red")
+        )
+        click.echo(
+            "  Set ODDS_API_KEY in your .env file or as an environment variable."
+        )
         click.echo("  Get a free key at: https://the-odds-api.com/")
         raise click.Abort()
 
@@ -154,19 +161,27 @@ def api_test_key():
     click.echo("\n  Step 1: Testing /v4/sports endpoint (free, no credit cost)...")
     try:
         url = f"https://api.the-odds-api.com/v4/sports?apiKey={api_key}"
-        req = urllib.request.Request(url, headers={"User-Agent": "betting-intel-cli/1.0"})
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "betting-intel-cli/1.0"}
+        )
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         sports = [s for s in data if s.get("active", False)]
         in_season = [s for s in sports if s.get("has_odds", False)]
-        click.echo(f"   Success! Found {len(data)} total sports, {len(sports)} active, {len(in_season)} with odds")
+        click.echo(
+            f"   Success! Found {len(data)} total sports, {len(sports)} active, {len(in_season)} with odds"
+        )
         for s in in_season[:5]:
             click.echo(f"    - {s['group']:25s} {s['title']}")
         if len(in_season) > 5:
             click.echo(f"    ... and {len(in_season) - 5} more")
     except urllib.error.HTTPError as e:
         if e.code == 401:
-            click.echo(click.style(f"   HTTP 401 — INVALID API KEY: {api_key[:8]}...", fg="red"))
+            click.echo(
+                click.style(
+                    f"   HTTP 401 — INVALID API KEY: {api_key[:8]}...", fg="red"
+                )
+            )
             click.echo("    Check that the key is correct and not expired.")
             click.echo("    Get a new key at: https://the-odds-api.com/")
         else:
@@ -179,7 +194,9 @@ def api_test_key():
     # Test 2: Single odds call for the first active sport (costs 1 credit)
     if in_season:
         sport_key = in_season[0]["key"]
-        click.echo(f"\n  Step 2: Testing /v4/sports/{sport_key}/odds (costs 1 credit)...")
+        click.echo(
+            f"\n  Step 2: Testing /v4/sports/{sport_key}/odds (costs 1 credit)..."
+        )
         try:
             url = (
                 f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds"
@@ -188,7 +205,9 @@ def api_test_key():
                 f"&markets=h2h"
                 f"&oddsFormat=american"
             )
-            req = urllib.request.Request(url, headers={"User-Agent": "betting-intel-cli/1.0"})
+            req = urllib.request.Request(
+                url, headers={"User-Agent": "betting-intel-cli/1.0"}
+            )
             with urllib.request.urlopen(req, timeout=10) as resp:
                 games = json.loads(resp.read().decode("utf-8"))
             remaining = resp.headers.get("x-requests-remaining", "?")
@@ -198,12 +217,16 @@ def api_test_key():
             click.echo(f"    Quota used: {used}")
             if games:
                 g = games[0]
-                click.echo(f"  Sample game: {g.get('away_team', '?')} @ {g.get('home_team', '?')}")
+                click.echo(
+                    f"  Sample game: {g.get('away_team', '?')} @ {g.get('home_team', '?')}"
+                )
         except urllib.error.HTTPError as e:
             if e.code == 401:
-                click.echo(click.style(f"   HTTP 401 — key is invalid for odds calls", fg="red"))
+                click.echo(
+                    click.style("   HTTP 401 — key is invalid for odds calls", fg="red")
+                )
             elif e.code == 429:
-                click.echo(click.style(f"   HTTP 429 — quota exceeded", fg="red"))
+                click.echo(click.style("   HTTP 429 — quota exceeded", fg="red"))
             else:
                 click.echo(click.style(f"   HTTP {e.code}", fg="red"))
         except Exception as e:
@@ -212,12 +235,12 @@ def api_test_key():
     # Summary
     click.echo(f"\n  {'=' * 46}")
     click.echo(f"  Key: {api_key[:8]}...{api_key[-4:]} — appears valid")
-    click.echo(f"  This key will cost ~3 credits/sport for full odds calls")
-    click.echo(f"  -> regions=us, markets=h2h,spreads,totals (per sport)")
-    click.echo(f"  With 500 free credits/month and 1 sport in-season:")
-    click.echo(f"  -> ~166 refreshes/month, or ~5 per day")
-    click.echo(f"  General: https://the-odds-api.com/docs")
-    click.echo(f"  Billing:  https://the-odds-api.com/manage")
+    click.echo("  This key will cost ~3 credits/sport for full odds calls")
+    click.echo("  -> regions=us, markets=h2h,spreads,totals (per sport)")
+    click.echo("  With 500 free credits/month and 1 sport in-season:")
+    click.echo("  -> ~166 refreshes/month, or ~5 per day")
+    click.echo("  General: https://the-odds-api.com/docs")
+    click.echo("  Billing:  https://the-odds-api.com/manage")
     click.echo(f"  {'=' * 46}\n")
 
 
@@ -227,7 +250,6 @@ def api_test_key():
 @click.option("--workers", default=None, type=int, help="Number of workers")
 def api_start(host: str | None, port: int | None, workers: int | None):
     """Start the REST API server."""
-    from betting_intel.api.app import app
     import uvicorn
 
     uvicorn.run(
@@ -247,7 +269,11 @@ def db():
 
 
 @db.command("init")
-@click.option("--direct", is_flag=True, help="Use direct create_tables() instead of Alembic migrations")
+@click.option(
+    "--direct",
+    is_flag=True,
+    help="Use direct create_tables() instead of Alembic migrations",
+)
 def db_init(direct: bool):
     """Initialize the database using Alembic migrations.
 
@@ -267,7 +293,10 @@ def db_init(direct: bool):
     if success:
         click.echo("Migrations applied. Database is up to date.")
     else:
-        click.echo("Migrations failed. Try 'betting-intel db init --direct' as fallback.", err=True)
+        click.echo(
+            "Migrations failed. Try 'betting-intel db init --direct' as fallback.",
+            err=True,
+        )
         raise click.Abort()
 
 
@@ -318,11 +347,17 @@ def web_start(host: str, port: int, reload: bool):
 
     subprocess.run(
         [
-            _sys.executable, "-m", "uvicorn", "web.app:app",
-            "--host", host,
-            "--port", str(port),
+            _sys.executable,
+            "-m",
+            "uvicorn",
+            "web.app:app",
+            "--host",
+            host,
+            "--port",
+            str(port),
             "--reload" if reload else "--no-reload",
-            "--log-level", "info",
+            "--log-level",
+            "info",
         ],
         cwd=settings.project_root,
     )
@@ -336,16 +371,37 @@ def backfill():
 
 
 @backfill.command("market-odds")
-@click.option("--mode", type=click.Choice(["scores", "historical", "stats"]), required=True,
-              help="scores: free-tier game metadata | historical: paid-tier full odds | stats: check DB")
-@click.option("--days-back", type=int, default=3, help="Days back for scores mode (free tier max: 3)")
-@click.option("--start-date", type=str, help="Start date (YYYY-MM-DD) for historical mode")
+@click.option(
+    "--mode",
+    type=click.Choice(["scores", "historical", "stats"]),
+    required=True,
+    help="scores: free-tier game metadata | historical: paid-tier full odds | stats: check DB",
+)
+@click.option(
+    "--days-back",
+    type=int,
+    default=3,
+    help="Days back for scores mode (free tier max: 3)",
+)
+@click.option(
+    "--start-date", type=str, help="Start date (YYYY-MM-DD) for historical mode"
+)
 @click.option("--end-date", type=str, help="End date (YYYY-MM-DD) for historical mode")
-@click.option("--snapshot-interval", type=click.Choice(["daily", "weekly", "monthly"]),
-              default="daily", help="Snapshot frequency for historical mode")
+@click.option(
+    "--snapshot-interval",
+    type=click.Choice(["daily", "weekly", "monthly"]),
+    default="daily",
+    help="Snapshot frequency for historical mode",
+)
 @click.option("--force", is_flag=True, help="Overwrite existing records")
-def backfill_market_odds(mode: str, days_back: int, start_date: str | None,
-                          end_date: str | None, snapshot_interval: str, force: bool):
+def backfill_market_odds(
+    mode: str,
+    days_back: int,
+    start_date: str | None,
+    end_date: str | None,
+    snapshot_interval: str,
+    force: bool,
+):
     """
     Backfill the market_odds table with historical NBA data from TheOddsAPI.
 
@@ -367,7 +423,11 @@ def backfill_market_odds(mode: str, days_back: int, start_date: str | None,
     import sys as _sys
     import subprocess
 
-    script_path = Path(__file__).resolve().parent.parent.parent.parent / "tools" / "backfill_market_odds.py"
+    script_path = (
+        Path(__file__).resolve().parent.parent.parent.parent
+        / "tools"
+        / "backfill_market_odds.py"
+    )
     if not script_path.exists():
         click.echo(f"Error: backfill script not found at {script_path}", err=True)
         raise click.Abort()
@@ -378,7 +438,10 @@ def backfill_market_odds(mode: str, days_back: int, start_date: str | None,
         cmd.extend(["--days-back", str(days_back)])
     elif mode == "historical":
         if not start_date or not end_date:
-            click.echo("Error: --start-date and --end-date required for historical mode", err=True)
+            click.echo(
+                "Error: --start-date and --end-date required for historical mode",
+                err=True,
+            )
             raise click.Abort()
         cmd.extend(["--start-date", start_date, "--end-date", end_date])
         cmd.extend(["--snapshot-interval", snapshot_interval])
@@ -389,8 +452,6 @@ def backfill_market_odds(mode: str, days_back: int, start_date: str | None,
     result = subprocess.run(cmd)
     if result.returncode != 0:
         raise click.Abort()
-
-
 
 
 # ── Player Prop Commands ──────────────────────────────────────────────
@@ -405,7 +466,9 @@ def recommendations():
 @click.argument("away_team")
 @click.option("--league", default="NBA", help="League (NBA only)")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
-def recommendations_player_props(home_team: str, away_team: str, league: str, json_output: bool):
+def recommendations_player_props(
+    home_team: str, away_team: str, league: str, json_output: bool
+):
     """Generate player prop predictions for a specific matchup."""
     from betting_intel.recommendations.player_props import PlayerPropEngine
 
@@ -453,6 +516,7 @@ def analytics_resolve():
     from the NBA database, and computes W/L/PUSH with P&L.
     """
     from betting_intel.analytics.tracker import ResultsTracker
+
     tracker = ResultsTracker()
     n = tracker.resolve_all()
     click.echo(f"Resolved {n} predictions against actual results")
@@ -467,6 +531,7 @@ def analytics_report(save: bool):
     alerts for underperforming strategies.
     """
     from betting_intel.analytics.tracker import ResultsTracker
+
     tracker = ResultsTracker()
     tracker.resolve_all()
     report = tracker.generate_report()
@@ -488,15 +553,30 @@ def analytics_report(save: bool):
         click.echo(f"  {'-' * 70}")
         for s in report.strategies:
             marker = " " if s.is_alerted else "  "
-            roi_str = f"{s.roi:.1%}" if s.roi >= 0 else click.style(f"{s.roi:.1%}", fg="red")
-            pnl_str = f"+${s.total_profit:.0f}" if s.total_profit >= 0 else click.style(f"-${abs(s.total_profit):.0f}", fg="red")
-            click.echo(f"  {marker}{s.strategy_name:<38} {s.n_bets:<6} {s.wins:<6} {pnl_str:<10} {roi_str:<8}")
+            roi_str = (
+                f"{s.roi:.1%}" if s.roi >= 0 else click.style(f"{s.roi:.1%}", fg="red")
+            )
+            pnl_str = (
+                f"+${s.total_profit:.0f}"
+                if s.total_profit >= 0
+                else click.style(f"-${abs(s.total_profit):.0f}", fg="red")
+            )
+            click.echo(
+                f"  {marker}{s.strategy_name:<38} {s.n_bets:<6} {s.wins:<6} {pnl_str:<10} {roi_str:<8}"
+            )
 
     if report.alerted_strategies:
         click.echo()
-        click.echo(click.style(f"    {len(report.alerted_strategies)} STRATEGY ALERT(S) BELOW -5% ROI:", fg="red"))
+        click.echo(
+            click.style(
+                f"    {len(report.alerted_strategies)} STRATEGY ALERT(S) BELOW -5% ROI:",
+                fg="red",
+            )
+        )
         for s in report.alerted_strategies:
-            click.echo(f"      {s.strategy_name}: ROI={s.roi:.1%} ({s.n_bets} bets, P&L=${s.total_profit:.0f})")
+            click.echo(
+                f"      {s.strategy_name}: ROI={s.roi:.1%} ({s.n_bets} bets, P&L=${s.total_profit:.0f})"
+            )
 
     if save:
         path = tracker.save_report(report)
@@ -529,8 +609,12 @@ def analytics_summary():
     click.echo("|--------|-------|")
     click.echo(f"| Total Bets | {report.total_bets} |")
     click.echo(f"| Total Stake | ${report.total_stake:,.2f} |")
-    click.echo(f"| **Total P&L** | **<span style='color:{pnl_color}'>${report.total_profit:+,.2f}</span>** |")
-    click.echo(f"| **Overall ROI** | **<span style='color:{roi_color}'>{report.overall_roi:+.2%}</span>** |")
+    click.echo(
+        f"| **Total P&L** | **<span style='color:{pnl_color}'>${report.total_profit:+,.2f}</span>** |"
+    )
+    click.echo(
+        f"| **Overall ROI** | **<span style='color:{roi_color}'>{report.overall_roi:+.2%}</span>** |"
+    )
     click.echo(f"| Win Rate | {report.overall_win_rate:.1%} |")
     click.echo(f"| Resolved | {report.n_resolved} |")
     click.echo(f"| Unresolved | {report.n_unresolved} |")
@@ -546,7 +630,9 @@ def analytics_summary():
             pnl_color = "green" if s.total_profit >= 0 else "red"
             roi_color = "green" if s.roi >= 0 else "red"
             marker = "[!]" if s.is_alerted else ""
-            click.echo(f"| {marker}{s.strategy_name} | {s.n_bets} | {s.wins} | <span style='color:{pnl_color}'>${s.total_profit:+,.0f}</span> | <span style='color:{roi_color}'>{s.roi:+.1%}</span> |")
+            click.echo(
+                f"| {marker}{s.strategy_name} | {s.n_bets} | {s.wins} | <span style='color:{pnl_color}'>${s.total_profit:+,.0f}</span> | <span style='color:{roi_color}'>{s.roi:+.1%}</span> |"
+            )
         click.echo()
 
     # Alerts
@@ -554,20 +640,34 @@ def analytics_summary():
         click.echo("### Underperforming Strategies")
         click.echo()
         for s in report.alerted_strategies:
-            click.echo(f"- **{s.strategy_name}**: ROI={s.roi:.1%}, {s.n_bets} bets, P&L=${s.total_profit:+,.0f}")
+            click.echo(
+                f"- **{s.strategy_name}**: ROI={s.roi:.1%}, {s.n_bets} bets, P&L=${s.total_profit:+,.0f}"
+            )
         click.echo()
 
     # Daily P&L (last 7 days)
     if report.daily_pnl:
         click.echo("### Last 7 Days P&L")
         click.echo()
-        last_7 = report.daily_pnl[-7:] if len(report.daily_pnl) > 7 else report.daily_pnl
+        last_7 = (
+            report.daily_pnl[-7:] if len(report.daily_pnl) > 7 else report.daily_pnl
+        )
         for day in last_7:
             sign = "+" if day["profit"] >= 0 else ""
             if day["profit"] >= 0:
-                click.echo(click.style(f"[+] {day['date']}: {sign}${day['profit']:,.0f} ({day['n_bets']} bet{'s' if day['n_bets'] != 1 else ''})", fg="green"))
+                click.echo(
+                    click.style(
+                        f"[+] {day['date']}: {sign}${day['profit']:,.0f} ({day['n_bets']} bet{'s' if day['n_bets'] != 1 else ''})",
+                        fg="green",
+                    )
+                )
             else:
-                click.echo(click.style(f"[-] {day['date']}: {sign}${day['profit']:,.0f} ({day['n_bets']} bet{'s' if day['n_bets'] != 1 else ''})", fg="red"))
+                click.echo(
+                    click.style(
+                        f"[-] {day['date']}: {sign}${day['profit']:,.0f} ({day['n_bets']} bet{'s' if day['n_bets'] != 1 else ''})",
+                        fg="red",
+                    )
+                )
         click.echo()
 
     click.echo(f"*Generated {datetime.now().strftime('%Y-%m-%d %H:%M UTC')}*")
@@ -584,6 +684,7 @@ def analytics_dashboard(json_output: bool):
 
     if json_output:
         import json as _json
+
         click.echo(_json.dumps(data, indent=2, default=str))
         return
 
@@ -604,9 +705,12 @@ def analytics_dashboard(json_output: bool):
         click.echo()
         click.echo(click.style(f"    {len(alerted)} ALERT(S):", fg="red"))
         for a in alerted:
-            click.echo(f"      {a['strategy_name']}: ROI={a['roi']:.1%} (${a['total_profit']:.0f})")
+            click.echo(
+                f"      {a['strategy_name']}: ROI={a['roi']:.1%} (${a['total_profit']:.0f})"
+            )
 
     click.echo(f"{'=' * 60}\n")
+
 
 # ── Train Commands ────────────────────────────────────────────────────────
 @cli.group()
@@ -616,26 +720,67 @@ def train():
 
 
 @train.command("pipeline")
-@click.option("--tune", is_flag=True, default=False,
-              help="Run hyperparameter tuning before training (uses Optuna, costs extra time)")
-@click.option("--n-trials", default=30, type=int,
-              help="Number of Optuna trials per model if --tune is set")
-@click.option("--model", "-m", default="all",
-              type=click.Choice(["all", "classifier", "totals", "adversarial", "permutation", "bootstrap"]),
-              help="Which model(s) to train. 'all' trains classifier + totals + all post-hoc analyses.")
-@click.option("--adversarial", is_flag=True, default=False,
-              help="Enable adversarial validation (train/test distribution shift detection)")
-@click.option("--permutation", is_flag=True, default=False,
-              help="Enable permutation feature importance computation")
-@click.option("--bootstrap", is_flag=True, default=False,
-              help="Enable bootstrap uncertainty quantification")
-@click.option("--n-bootstrap", default=50, type=int,
-              help="Number of bootstrap samples if --bootstrap is set")    @click.option("--prune-top", default=0, type=int,
-              help="Keep only top N models in ensemble (0 = keep all)")
-    @click.option("--save/--no-save", default=True,
-              help="Save trained models to the model registry")
-@click.option("--verbose", "-v", is_flag=True, default=False,
-              help="Print detailed training progress")
+@click.option(
+    "--tune",
+    is_flag=True,
+    default=False,
+    help="Run hyperparameter tuning before training (uses Optuna, costs extra time)",
+)
+@click.option(
+    "--n-trials",
+    default=30,
+    type=int,
+    help="Number of Optuna trials per model if --tune is set",
+)
+@click.option(
+    "--model",
+    "-m",
+    default="all",
+    type=click.Choice(
+        ["all", "classifier", "totals", "adversarial", "permutation", "bootstrap"]
+    ),
+    help="Which model(s) to train. 'all' trains classifier + totals + all post-hoc analyses.",
+)
+@click.option(
+    "--adversarial",
+    is_flag=True,
+    default=False,
+    help="Enable adversarial validation (train/test distribution shift detection)",
+)
+@click.option(
+    "--permutation",
+    is_flag=True,
+    default=False,
+    help="Enable permutation feature importance computation",
+)
+@click.option(
+    "--bootstrap",
+    is_flag=True,
+    default=False,
+    help="Enable bootstrap uncertainty quantification",
+)
+@click.option(
+    "--n-bootstrap",
+    default=50,
+    type=int,
+    help="Number of bootstrap samples if --bootstrap is set",
+)
+@click.option(
+    "--prune-top",
+    default=0,
+    type=int,
+    help="Keep only top N models in ensemble (0 = keep all)",
+)
+@click.option(
+    "--save/--no-save", default=True, help="Save trained models to the model registry"
+)
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    default=False,
+    help="Print detailed training progress",
+)
 def train_pipeline(
     tune: bool,
     n_trials: int,
@@ -659,14 +804,27 @@ def train_pipeline(
         betting-intel train pipeline --model totals --save
     """
     from datetime import datetime as _dt
+
     start_time = _dt.now()
 
-    click.echo(click.style("\n  ═══════════════════════════════════════════", fg="cyan", bold=True))
+    click.echo(
+        click.style(
+            "\n  ═══════════════════════════════════════════", fg="cyan", bold=True
+        )
+    )
     click.echo(click.style("   TRAINING PIPELINE — v6.6", fg="cyan", bold=True))
-    click.echo(click.style("  ═══════════════════════════════════════════\n", fg="cyan", bold=True))
+    click.echo(
+        click.style(
+            "  ═══════════════════════════════════════════\n", fg="cyan", bold=True
+        )
+    )
 
     # ── Phase 1: Load NBA Data ───────────────────────────────────────
-    click.echo(click.style("   Phase 1/5: Loading NBA historical data...", fg="yellow", bold=True))
+    click.echo(
+        click.style(
+            "   Phase 1/5: Loading NBA historical data...", fg="yellow", bold=True
+        )
+    )
 
     import numpy as np
     from betting_intel.data.loader import NBADataLoader
@@ -676,7 +834,9 @@ def train_pipeline(
     raw_df = loader.load_game_logs()
 
     if raw_df is None or raw_df.empty:
-        click.echo(click.style("   No NBA data found! Check your database path.", fg="red"))
+        click.echo(
+            click.style("   No NBA data found! Check your database path.", fg="red")
+        )
         click.echo(f"    DB path: {loader.db_path}")
         raise click.Abort()
 
@@ -685,7 +845,9 @@ def train_pipeline(
     click.echo(f"    Loaded {n_raw} rows ({n_games} games) from {loader.db_path}")
 
     # ── Phase 2: Engineer Features ───────────────────────────────────-
-    click.echo(click.style("   Phase 2/5: Engineering features...", fg="yellow", bold=True))
+    click.echo(
+        click.style("   Phase 2/5: Engineering features...", fg="yellow", bold=True)
+    )
 
     games_df = loader.build_game_dataset(raw_df)
     raw_df = loader.compute_rest_days(raw_df)
@@ -698,24 +860,39 @@ def train_pipeline(
         raise click.Abort()
 
     clean_feature_cols = fe.select_features(features_df)
-    click.echo(f"    {len(clean_feature_cols)} clean features from {features_df.shape[1]} total columns")
-    click.echo(f"    Date range: {features_df['GAME_DATE'].min():%Y-%m-%d} → {features_df['GAME_DATE'].max():%Y-%m-%d}")
+    click.echo(
+        f"    {len(clean_feature_cols)} clean features from {features_df.shape[1]} total columns"
+    )
+    click.echo(
+        f"    Date range: {features_df['GAME_DATE'].min():%Y-%m-%d} → {features_df['GAME_DATE'].max():%Y-%m-%d}"
+    )
 
     # Build feature matrices
     _exclude_target_cols = {
-        "total_points", "point_diff",
-        "market_implied_home_prob", "market_error",
-        "abs_market_error", "market_error_clipped",
-        "market_error_binary", "total_market_error",
-        "weighted_market_error", "elo_error",
-        "market_error_ma_5g", "market_error_ma_10g",
-        "market_error_trend_home", "recent_edge_streak",
+        "total_points",
+        "point_diff",
+        "market_implied_home_prob",
+        "market_error",
+        "abs_market_error",
+        "market_error_clipped",
+        "market_error_binary",
+        "total_market_error",
+        "weighted_market_error",
+        "elo_error",
+        "market_error_ma_5g",
+        "market_error_ma_10g",
+        "market_error_trend_home",
+        "recent_edge_streak",
     }
 
     classifier_cols = [c for c in clean_feature_cols if c not in _exclude_target_cols]
 
     if len(classifier_cols) < 3:
-        click.echo(click.style(f"   Only {len(classifier_cols)} features — need at least 3!", fg="red"))
+        click.echo(
+            click.style(
+                f"   Only {len(classifier_cols)} features — need at least 3!", fg="red"
+            )
+        )
         raise click.Abort()
 
     # Derive home_win target
@@ -733,18 +910,23 @@ def train_pipeline(
 
     n_samples = len(X_class)
     click.echo(f"    Feature matrix: {n_samples} samples × {X_class.shape[1]} features")
-    click.echo(f"    Target distribution: home_win {y_binary.mean():.1%}, away_win {1 - y_binary.mean():.1%}")
+    click.echo(
+        f"    Target distribution: home_win {y_binary.mean():.1%}, away_win {1 - y_binary.mean():.1%}"
+    )
 
     results = {}
     totals_mae = None
 
     # ── Phase 3: Train Classifier (RobustPredictionSystem) ────────────
     if model in ("all", "classifier"):
-        click.echo(click.style(
-            f"   Phase 3/5: Training RobustPredictionSystem "
-            f"({'with' if tune else 'without'} hyperparameter tuning)...",
-            fg="yellow", bold=True,
-        ))
+        click.echo(
+            click.style(
+                f"   Phase 3/5: Training RobustPredictionSystem "
+                f"({'with' if tune else 'without'} hyperparameter tuning)...",
+                fg="yellow",
+                bold=True,
+            )
+        )
 
         from betting_intel.models.robust_ensemble import RobustPredictionSystem
 
@@ -765,7 +947,8 @@ def train_pipeline(
 
         t0 = _dt.now()
         system.fit(
-            X_class, y_binary,
+            X_class,
+            y_binary,
             feature_names=classifier_cols,
             verbose=verbose,
         )
@@ -775,30 +958,39 @@ def train_pipeline(
         results["classifier"] = summary
 
         click.echo(f"     Trained in {training_time:.1f}s")
-        click.echo(f"      Models: {summary.get('n_models', '?')}  "
-                    f"Brier: {summary.get('calibrated_brier', 'N/A')}  "
-                    f"Features: {summary.get('n_features', '?')}")
+        click.echo(
+            f"      Models: {summary.get('n_models', '?')}  "
+            f"Brier: {summary.get('calibrated_brier', 'N/A')}  "
+            f"Features: {summary.get('n_features', '?')}"
+        )
 
         # Overfitting check
         overfit = system.get_overfitting_report()
         if overfit and overfit.is_overfit:
-            click.echo(click.style(
-                f"       Overfitting detected! Train R²={overfit.avg_train_r2:.3f} "
-                f"vs Test R²={overfit.avg_test_r2:.3f} (gap={overfit.r2_gap:.3f})",
-                fg="red",
-            ))
+            click.echo(
+                click.style(
+                    f"       Overfitting detected! Train R²={overfit.avg_train_r2:.3f} "
+                    f"vs Test R²={overfit.avg_test_r2:.3f} (gap={overfit.r2_gap:.3f})",
+                    fg="red",
+                )
+            )
         else:
-            click.echo(f"       No overfitting detected")
+            click.echo("       No overfitting detected")
 
         # Model diagnostics
         diags = system.get_model_diagnostics()
         if diags:
-            click.echo(f"      Per-model OOS accuracy:")
-            for name, d in sorted(diags.items(), key=lambda x: x[1].oos_accuracy, reverse=True):
-                click.echo(f"        {name:22s}  acc={d.oos_accuracy:.3f}  Brier={d.oos_brier:.4f}  {d.status}")
+            click.echo("      Per-model OOS accuracy:")
+            for name, d in sorted(
+                diags.items(), key=lambda x: x[1].oos_accuracy, reverse=True
+            ):
+                click.echo(
+                    f"        {name:22s}  acc={d.oos_accuracy:.3f}  Brier={d.oos_brier:.4f}  {d.status}"
+                )
 
         if save:
             from betting_intel.models.persistence import model_registry
+
             version = model_registry.save(
                 model=system,
                 model_name="robust_prediction_system",
@@ -825,7 +1017,11 @@ def train_pipeline(
 
     # ── Phase 4: Train Totals Model ──────────────────────────────────
     if model in ("all", "totals"):
-        click.echo(click.style("   Phase 4/5: Training TotalsRegressor...", fg="yellow", bold=True))
+        click.echo(
+            click.style(
+                "   Phase 4/5: Training TotalsRegressor...", fg="yellow", bold=True
+            )
+        )
 
         from betting_intel.live.totals_model import TotalsRegressor
 
@@ -839,6 +1035,7 @@ def train_pipeline(
 
             # Mutual information feature selection for regression
             from sklearn.feature_selection import mutual_info_regression
+
             mi_reg = mutual_info_regression(
                 features_df[totals_cols].fillna(0).values,
                 y_total,
@@ -856,7 +1053,8 @@ def train_pipeline(
             regressor = TotalsRegressor(random_state=42)
             t0 = _dt.now()
             regressor.fit(
-                X_total, y_total,
+                X_total,
+                y_total,
                 feature_names=totals_cols,
                 verbose=verbose,
             )
@@ -867,20 +1065,25 @@ def train_pipeline(
             results["totals"] = totals_summary
 
             click.echo(f"     Trained in {training_time:.1f}s")
-            click.echo(f"      Models: {totals_summary.get('n_models', '?')}  "
-                        f"MAE: {totals_mae or '?'}  "
-                        f"Target mean: {totals_summary.get('target_mean', '?'):.1f}")
+            click.echo(
+                f"      Models: {totals_summary.get('n_models', '?')}  "
+                f"MAE: {totals_mae or '?'}  "
+                f"Target mean: {totals_summary.get('target_mean', '?'):.1f}"
+            )
 
             # Per-model diagnostics
             diags = totals_summary.get("model_diagnostics", {})
             if diags:
                 sorted_models = sorted(diags.items(), key=lambda x: x[1]["mae"])
-                click.echo(f"      Per-model MAE:")
+                click.echo("      Per-model MAE:")
                 for name, d in sorted_models:
-                    click.echo(f"        {name:22s}  MAE={d['mae']:.1f}  R²={d.get('r2_score', 0):.3f}  {d.get('status', 'ok')}")
+                    click.echo(
+                        f"        {name:22s}  MAE={d['mae']:.1f}  R²={d.get('r2_score', 0):.3f}  {d.get('status', 'ok')}"
+                    )
 
             if save:
                 from betting_intel.models.persistence import model_registry
+
                 version = model_registry.save(
                     model=regressor,
                     model_name="totals_regressor",
@@ -899,12 +1102,22 @@ def train_pipeline(
     elapsed = (_dt.now() - start_time).total_seconds()
 
     click.echo()
-    click.echo(click.style("  ═══════════════════════════════════════════", fg="cyan", bold=True))
+    click.echo(
+        click.style(
+            "  ═══════════════════════════════════════════", fg="cyan", bold=True
+        )
+    )
     click.echo(click.style("   TRAINING COMPLETE", fg="cyan", bold=True))
-    click.echo(click.style("  ═══════════════════════════════════════════", fg="cyan", bold=True))
+    click.echo(
+        click.style(
+            "  ═══════════════════════════════════════════", fg="cyan", bold=True
+        )
+    )
     click.echo(f"  Duration:         {elapsed:.0f}s")
     click.echo(f"  Dataset:          {n_samples} samples, {X_class.shape[1]} features")
-    click.echo(f"  Date range:       {features_df['GAME_DATE'].min():%Y-%m-%d} → {features_df['GAME_DATE'].max():%Y-%m-%d}")
+    click.echo(
+        f"  Date range:       {features_df['GAME_DATE'].min():%Y-%m-%d} → {features_df['GAME_DATE'].max():%Y-%m-%d}"
+    )
 
     if "classifier" in results:
         s = results["classifier"]

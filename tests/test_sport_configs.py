@@ -39,14 +39,14 @@ class TestSportConfig:
         assert cfg.sport_key == "test_sport"
         assert cfg.display_name == "Test"
         assert cfg.full_name == "Test Sport"
-        assert cfg.has_h2h is True                        # default
-        assert cfg.has_spreads is False                   # default
-        assert cfg.has_totals is False                    # default
-        assert cfg.prediction_strategy == "total"         # default
-        assert cfg.total_min == 180.0                     # default
-        assert cfg.total_max == 260.0                     # default
-        assert cfg.season_start_month == 10               # default
-        assert cfg.season_end_month == 6                  # default
+        assert cfg.has_h2h is True  # default
+        assert cfg.has_spreads is False  # default
+        assert cfg.has_totals is False  # default
+        assert cfg.prediction_strategy == "total"  # default
+        assert cfg.total_min == 180.0  # default
+        assert cfg.total_max == 260.0  # default
+        assert cfg.season_start_month == 10  # default
+        assert cfg.season_end_month == 6  # default
 
     def test_custom_values(self):
         """SportConfig with all fields set returns correct values."""
@@ -74,7 +74,9 @@ class TestSportConfig:
         from betting_intel.live.sport_configs import SportConfig
 
         cfg = SportConfig(
-            sport_key="t", display_name="T", full_name="Test",
+            sport_key="t",
+            display_name="T",
+            full_name="Test",
         )
         assert cfg.markets_to_fetch == ["h2h", "spreads", "totals"]
 
@@ -139,28 +141,31 @@ class TestEuroleagueConfig:
 
         assert EUROLEAGUE.prediction_strategy == "total"
 
-    @pytest.mark.parametrize("full_name,expected", [
-        ("Real Madrid", "Real Madrid"),
-        ("FC Barcelona", "Barcelona"),
-        ("Olympiacos Piraeus", "Olympiacos"),
-        ("Panathinaikos AKTOR", "Panathinaikos"),
-        ("Fenerbahçe Beko", "Fenerbahçe"),
-        ("Anadolu Efes Istanbul", "Anadolu Efes"),
-        ("Crvena Zvezda Meridianbet Belgrade", "Crvena Zvezda"),
-        ("Žalgiris Kaunas", "Žalgiris"),
-        ("Maccabi Rapyd Tel Aviv", "Maccabi Tel Aviv"),
-        ("Paris Basketball", "Paris"),
-        ("AS Monaco", "Monaco"),
-        ("FC Bayern Munich", "Bayern Munich"),
-        ("EA7 Emporio Armani Milan", "Milan"),
-        ("LDLC ASVEL", "ASVEL"),
-        ("Kosner Baskonia Vitoria-Gasteiz", "Baskonia"),
-        ("Valencia Basket", "Valencia"),
-        ("Partizan Mozzart Bet Belgrade", "Partizan"),
-        ("Virtus Segafredo Bologna", "Virtus Bologna"),
-        ("Hapoel IBI Tel Aviv", "Hapoel Tel Aviv"),
-        ("Dubai Basketball", "Dubai"),
-    ])
+    @pytest.mark.parametrize(
+        "full_name,expected",
+        [
+            ("Real Madrid", "Real Madrid"),
+            ("FC Barcelona", "Barcelona"),
+            ("Olympiacos Piraeus", "Olympiacos"),
+            ("Panathinaikos AKTOR", "Panathinaikos"),
+            ("Fenerbahçe Beko", "Fenerbahçe"),
+            ("Anadolu Efes Istanbul", "Anadolu Efes"),
+            ("Crvena Zvezda Meridianbet Belgrade", "Crvena Zvezda"),
+            ("Žalgiris Kaunas", "Žalgiris"),
+            ("Maccabi Rapyd Tel Aviv", "Maccabi Tel Aviv"),
+            ("Paris Basketball", "Paris"),
+            ("AS Monaco", "Monaco"),
+            ("FC Bayern Munich", "Bayern Munich"),
+            ("EA7 Emporio Armani Milan", "Milan"),
+            ("LDLC ASVEL", "ASVEL"),
+            ("Kosner Baskonia Vitoria-Gasteiz", "Baskonia"),
+            ("Valencia Basket", "Valencia"),
+            ("Partizan Mozzart Bet Belgrade", "Partizan"),
+            ("Virtus Segafredo Bologna", "Virtus Bologna"),
+            ("Hapoel IBI Tel Aviv", "Hapoel Tel Aviv"),
+            ("Dubai Basketball", "Dubai"),
+        ],
+    )
     def test_team_name_resolution(self, full_name, expected):
         """All 20 Euroleague teams resolve to correct short names."""
         from betting_intel.live.sport_configs import EUROLEAGUE
@@ -233,7 +238,14 @@ class TestMasterLists:
 
     def test_all_sports_includes_five_leagues(self):
         """ALL_SPORTS should have NBA, NCAAB, Euroleague, EPL, and NFL."""
-        from betting_intel.live.sport_configs import ALL_SPORTS, NBA, NCAAB, EUROLEAGUE, EPL, NFL
+        from betting_intel.live.sport_configs import (
+            ALL_SPORTS,
+            NBA,
+            NCAAB,
+            EUROLEAGUE,
+            EPL,
+            NFL,
+        )
 
         assert len(ALL_SPORTS) == 5
         assert ALL_SPORTS[0] is NBA
@@ -666,48 +678,51 @@ class TestNFLConfig:
 
         assert NFL.prediction_strategy == "total"
 
-    @pytest.mark.parametrize("full_name,expected", [
-        # AFC East
-        ("Buffalo Bills", "Bills"),
-        ("Miami Dolphins", "Dolphins"),
-        ("New England Patriots", "Patriots"),
-        ("New York Jets", "Jets"),
-        # AFC North
-        ("Baltimore Ravens", "Ravens"),
-        ("Cincinnati Bengals", "Bengals"),
-        ("Cleveland Browns", "Browns"),
-        ("Pittsburgh Steelers", "Steelers"),
-        # AFC South
-        ("Houston Texans", "Texans"),
-        ("Indianapolis Colts", "Colts"),
-        ("Jacksonville Jaguars", "Jaguars"),
-        ("Tennessee Titans", "Titans"),
-        # AFC West
-        ("Denver Broncos", "Broncos"),
-        ("Kansas City Chiefs", "Chiefs"),
-        ("Las Vegas Raiders", "Raiders"),
-        ("Los Angeles Chargers", "Chargers"),
-        # NFC East
-        ("Dallas Cowboys", "Cowboys"),
-        ("New York Giants", "Giants"),
-        ("Philadelphia Eagles", "Eagles"),
-        ("Washington Commanders", "Commanders"),
-        # NFC North
-        ("Chicago Bears", "Bears"),
-        ("Detroit Lions", "Lions"),
-        ("Green Bay Packers", "Packers"),
-        ("Minnesota Vikings", "Vikings"),
-        # NFC South
-        ("Atlanta Falcons", "Falcons"),
-        ("Carolina Panthers", "Panthers"),
-        ("New Orleans Saints", "Saints"),
-        ("Tampa Bay Buccaneers", "Buccaneers"),
-        # NFC West
-        ("Arizona Cardinals", "Cardinals"),
-        ("Los Angeles Rams", "Rams"),
-        ("San Francisco 49ers", "49ers"),
-        ("Seattle Seahawks", "Seahawks"),
-    ])
+    @pytest.mark.parametrize(
+        "full_name,expected",
+        [
+            # AFC East
+            ("Buffalo Bills", "Bills"),
+            ("Miami Dolphins", "Dolphins"),
+            ("New England Patriots", "Patriots"),
+            ("New York Jets", "Jets"),
+            # AFC North
+            ("Baltimore Ravens", "Ravens"),
+            ("Cincinnati Bengals", "Bengals"),
+            ("Cleveland Browns", "Browns"),
+            ("Pittsburgh Steelers", "Steelers"),
+            # AFC South
+            ("Houston Texans", "Texans"),
+            ("Indianapolis Colts", "Colts"),
+            ("Jacksonville Jaguars", "Jaguars"),
+            ("Tennessee Titans", "Titans"),
+            # AFC West
+            ("Denver Broncos", "Broncos"),
+            ("Kansas City Chiefs", "Chiefs"),
+            ("Las Vegas Raiders", "Raiders"),
+            ("Los Angeles Chargers", "Chargers"),
+            # NFC East
+            ("Dallas Cowboys", "Cowboys"),
+            ("New York Giants", "Giants"),
+            ("Philadelphia Eagles", "Eagles"),
+            ("Washington Commanders", "Commanders"),
+            # NFC North
+            ("Chicago Bears", "Bears"),
+            ("Detroit Lions", "Lions"),
+            ("Green Bay Packers", "Packers"),
+            ("Minnesota Vikings", "Vikings"),
+            # NFC South
+            ("Atlanta Falcons", "Falcons"),
+            ("Carolina Panthers", "Panthers"),
+            ("New Orleans Saints", "Saints"),
+            ("Tampa Bay Buccaneers", "Buccaneers"),
+            # NFC West
+            ("Arizona Cardinals", "Cardinals"),
+            ("Los Angeles Rams", "Rams"),
+            ("San Francisco 49ers", "49ers"),
+            ("Seattle Seahawks", "Seahawks"),
+        ],
+    )
     def test_team_name_resolution(self, full_name, expected):
         """All 32 NFL teams resolve to correct short names."""
         from betting_intel.live.sport_configs import NFL
@@ -734,8 +749,10 @@ class TestBackfillConstants:
         NBA has additional v6.5 entries for advanced basketball features.
         """
         from betting_intel.data.features import (
-            _NBA_NA_FILL, _NCAAB_NA_FILL,
-            _EUROLEAGUE_NA_FILL, _NFL_NA_FILL,
+            _NBA_NA_FILL,
+            _NCAAB_NA_FILL,
+            _EUROLEAGUE_NA_FILL,
+            _NFL_NA_FILL,
         )
 
         assert len(_NBA_NA_FILL) >= 121
@@ -805,8 +822,10 @@ class TestBackfillConstants:
     def test_nba_highest_avg_pts(self):
         """NBA should have the highest avg_pts among all leagues."""
         from betting_intel.data.features import (
-            _NBA_NA_FILL, _NCAAB_NA_FILL,
-            _EUROLEAGUE_NA_FILL, _NFL_NA_FILL,
+            _NBA_NA_FILL,
+            _NCAAB_NA_FILL,
+            _EUROLEAGUE_NA_FILL,
+            _NFL_NA_FILL,
         )
 
         nba = dict(_NBA_NA_FILL)
@@ -820,8 +839,10 @@ class TestBackfillConstants:
     def test_nfl_lowest_pace(self):
         """NFL should have the lowest pace (fewest possessions)."""
         from betting_intel.data.features import (
-            _NBA_NA_FILL, _NCAAB_NA_FILL,
-            _EUROLEAGUE_NA_FILL, _NFL_NA_FILL,
+            _NBA_NA_FILL,
+            _NCAAB_NA_FILL,
+            _EUROLEAGUE_NA_FILL,
+            _NFL_NA_FILL,
         )
 
         nba = dict(_NBA_NA_FILL)
@@ -853,30 +874,33 @@ class TestBackfillConstants:
         from betting_intel.data.features import FeatureEngineer
 
         import pandas as pd
+
         fe = FeatureEngineer()
         df = pd.DataFrame({"avg_pts": [None, 100.0, None]})
         result = fe.backfill_features(df, league="Euroleague")
         assert result["avg_pts"].iloc[0] == 78.0  # Euroleague default
         assert result["avg_pts"].iloc[1] == 100.0  # unchanged
-        assert result["avg_pts"].iloc[2] == 78.0   # backfilled
+        assert result["avg_pts"].iloc[2] == 78.0  # backfilled
 
     def test_nfl_backfill_applies_correctly(self):
         """backfill_features with league='NFL' uses NFL constants."""
         from betting_intel.data.features import FeatureEngineer
 
         import pandas as pd
+
         fe = FeatureEngineer()
         df = pd.DataFrame({"avg_pts": [None, 100.0, None]})
         result = fe.backfill_features(df, league="NFL")
         assert result["avg_pts"].iloc[0] == 22.0  # NFL default
         assert result["avg_pts"].iloc[1] == 100.0  # unchanged
-        assert result["avg_pts"].iloc[2] == 22.0   # backfilled
+        assert result["avg_pts"].iloc[2] == 22.0  # backfilled
 
     def test_backfill_leaves_non_na_columns_unchanged(self):
         """Columns with no NaN values should not be modified."""
         from betting_intel.data.features import FeatureEngineer
 
         import pandas as pd
+
         fe = FeatureEngineer()
         original = pd.DataFrame({"avg_pts": [100.0, 105.0, 110.0]})
         result = fe.backfill_features(original, league="Euroleague")
@@ -891,6 +915,7 @@ class TestBackfillConstants:
         from betting_intel.data.features import FeatureEngineer
 
         import pandas as pd
+
         fe = FeatureEngineer()
         df = pd.DataFrame({"edge_pct_movement": [None]})
         result = fe.backfill_features(df, league="NFL")
@@ -901,6 +926,7 @@ class TestBackfillConstants:
         from betting_intel.data.features import FeatureEngineer
 
         import pandas as pd
+
         fe = FeatureEngineer()
         df = pd.DataFrame({"avg_pace": [None]})
         result = fe.backfill_features(df, league="NFL")
@@ -911,6 +937,7 @@ class TestBackfillConstants:
         from betting_intel.data.features import FeatureEngineer
 
         import pandas as pd
+
         fe = FeatureEngineer()
         df = pd.DataFrame({"margin_volatility": [None]})
         result = fe.backfill_features(df, league="NFL")
@@ -921,6 +948,7 @@ class TestBackfillConstants:
         from betting_intel.data.features import FeatureEngineer
 
         import pandas as pd
+
         fe = FeatureEngineer()
         df = pd.DataFrame({"opp_avg_pts_scored": [None], "opp_avg_pts_allowed": [None]})
         result = fe.backfill_features(df, league="NFL")
@@ -932,13 +960,16 @@ class TestBackfillConstants:
         from betting_intel.data.features import FeatureEngineer
 
         import pandas as pd
+
         fe = FeatureEngineer()
-        df = pd.DataFrame({
-            "avg_pts": [None, 30.0, None],
-            "avg_pace": [None, 70.0, None],
-            "margin_volatility": [None, 20.0, None],
-            "edge_pct_movement": [None, None, 0.05],  # Known value preserved
-        })
+        df = pd.DataFrame(
+            {
+                "avg_pts": [None, 30.0, None],
+                "avg_pace": [None, 70.0, None],
+                "margin_volatility": [None, 20.0, None],
+                "edge_pct_movement": [None, None, 0.05],  # Known value preserved
+            }
+        )
         result = fe.backfill_features(df, league="NFL")
         # Backfilled values
         assert result["avg_pts"].iloc[0] == 22.0
@@ -961,6 +992,7 @@ class TestBackfillConstants:
         from betting_intel.data.features import FeatureEngineer
 
         import pandas as pd
+
         fe = FeatureEngineer()
         df = pd.DataFrame({"ema_pts": [None]})
         result = fe.backfill_features(df, league="NFL")

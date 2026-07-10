@@ -34,21 +34,45 @@ logger = logging.getLogger(__name__)
 # Maps nba_api team abbreviations to the display names used in our database
 # nba_api returns abbreviations like "ATL", "SAS", "OKC"
 TEAM_NAME_MAP = {
-    "ATL": "Hawks", "BOS": "Celtics", "BKN": "Nets",
-    "CHA": "Hornets", "CHI": "Bulls", "CLE": "Cavaliers",
-    "DAL": "Mavericks", "DEN": "Nuggets", "DET": "Pistons",
-    "GSW": "Warriors", "HOU": "Rockets", "IND": "Pacers",
-    "LAC": "Clippers", "LAL": "Lakers", "MEM": "Grizzlies",
-    "MIA": "Heat", "MIL": "Bucks", "MIN": "Timberwolves",
-    "NOP": "Pelicans", "NYK": "Knicks", "OKC": "Thunder",
-    "ORL": "Magic", "PHI": "76ers", "PHX": "Suns",
-    "POR": "Trail Blazers", "SAC": "Kings", "SAS": "Spurs",
-    "TOR": "Raptors", "UTA": "Jazz", "WAS": "Wizards",
+    "ATL": "Hawks",
+    "BOS": "Celtics",
+    "BKN": "Nets",
+    "CHA": "Hornets",
+    "CHI": "Bulls",
+    "CLE": "Cavaliers",
+    "DAL": "Mavericks",
+    "DEN": "Nuggets",
+    "DET": "Pistons",
+    "GSW": "Warriors",
+    "HOU": "Rockets",
+    "IND": "Pacers",
+    "LAC": "Clippers",
+    "LAL": "Lakers",
+    "MEM": "Grizzlies",
+    "MIA": "Heat",
+    "MIL": "Bucks",
+    "MIN": "Timberwolves",
+    "NOP": "Pelicans",
+    "NYK": "Knicks",
+    "OKC": "Thunder",
+    "ORL": "Magic",
+    "PHI": "76ers",
+    "PHX": "Suns",
+    "POR": "Trail Blazers",
+    "SAC": "Kings",
+    "SAS": "Spurs",
+    "TOR": "Raptors",
+    "UTA": "Jazz",
+    "WAS": "Wizards",
 }
 
 # Position labels assigned based on player height / role
 POSITION_LABELS = [
-    "PG", "SG", "SF", "PF", "C",
+    "PG",
+    "SG",
+    "SF",
+    "PF",
+    "C",
 ]
 
 
@@ -161,83 +185,93 @@ class PlayerPropEngine:
                 pts_line = round(max(projected_pts, 4) * 2) / 2
                 reb_line = round(max(projected_reb, 2) * 2) / 2
                 ast_line = round(max(projected_ast, 1.5) * 2) / 2
-                pra_line = round(max(projected_pts + projected_reb + projected_ast, 8) * 2) / 2
+                pra_line = (
+                    round(max(projected_pts + projected_reb + projected_ast, 8) * 2) / 2
+                )
 
                 # Points prop
-                props.append(PlayerPropBet(
-                    game_id=game_id,
-                    game_date=game_date,
-                    matchup=matchup,
-                    player_name=player_name,
-                    prop_type=BetType.PLAYER_POINTS,
-                    market_line=pts_line,
-                    predicted_value=projected_pts,
-                    side="OVER",
-                    league=league,
-                    confidence=self._prop_confidence(projected_pts - pts_line),
-                    reasoning=(
-                        f"{player_name} real season avg: {player_pts:.1f} PPG. "
-                        f"Team {team_name} scores {team_pts:.1f} PPG. "
-                        f"Home-adjusted projection: {projected_pts:.1f}."
-                    ),
-                ))
+                props.append(
+                    PlayerPropBet(
+                        game_id=game_id,
+                        game_date=game_date,
+                        matchup=matchup,
+                        player_name=player_name,
+                        prop_type=BetType.PLAYER_POINTS,
+                        market_line=pts_line,
+                        predicted_value=projected_pts,
+                        side="OVER",
+                        league=league,
+                        confidence=self._prop_confidence(projected_pts - pts_line),
+                        reasoning=(
+                            f"{player_name} real season avg: {player_pts:.1f} PPG. "
+                            f"Team {team_name} scores {team_pts:.1f} PPG. "
+                            f"Home-adjusted projection: {projected_pts:.1f}."
+                        ),
+                    )
+                )
 
                 # Rebounds prop
                 if reb_line >= 2.5:
-                    props.append(PlayerPropBet(
-                        game_id=game_id,
-                        game_date=game_date,
-                        matchup=matchup,
-                        player_name=player_name,
-                        prop_type=BetType.PLAYER_REBOUNDS,
-                        market_line=reb_line,
-                        predicted_value=projected_reb,
-                        side="OVER",
-                        league=league,
-                        confidence=self._prop_confidence(projected_reb - reb_line),
-                        reasoning=(
-                            f"{player_name} real season avg: {player_reb:.1f} RPG. "
-                            f"Projection: {projected_reb:.1f}."
-                        ),
-                    ))
+                    props.append(
+                        PlayerPropBet(
+                            game_id=game_id,
+                            game_date=game_date,
+                            matchup=matchup,
+                            player_name=player_name,
+                            prop_type=BetType.PLAYER_REBOUNDS,
+                            market_line=reb_line,
+                            predicted_value=projected_reb,
+                            side="OVER",
+                            league=league,
+                            confidence=self._prop_confidence(projected_reb - reb_line),
+                            reasoning=(
+                                f"{player_name} real season avg: {player_reb:.1f} RPG. "
+                                f"Projection: {projected_reb:.1f}."
+                            ),
+                        )
+                    )
 
                 # Assists prop
                 if ast_line >= 2.5:
-                    props.append(PlayerPropBet(
+                    props.append(
+                        PlayerPropBet(
+                            game_id=game_id,
+                            game_date=game_date,
+                            matchup=matchup,
+                            player_name=player_name,
+                            prop_type=BetType.PLAYER_ASSISTS,
+                            market_line=ast_line,
+                            predicted_value=projected_ast,
+                            side="OVER",
+                            league=league,
+                            confidence=self._prop_confidence(projected_ast - ast_line),
+                            reasoning=(
+                                f"{player_name} real season avg: {player_ast:.1f} APG. "
+                                f"Projection: {projected_ast:.1f}."
+                            ),
+                        )
+                    )
+
+                # PRA prop
+                pra = projected_pts + projected_reb + projected_ast
+                props.append(
+                    PlayerPropBet(
                         game_id=game_id,
                         game_date=game_date,
                         matchup=matchup,
                         player_name=player_name,
-                        prop_type=BetType.PLAYER_ASSISTS,
-                        market_line=ast_line,
-                        predicted_value=projected_ast,
+                        prop_type=BetType.PLAYER_PRA,
+                        market_line=pra_line,
+                        predicted_value=pra,
                         side="OVER",
                         league=league,
-                        confidence=self._prop_confidence(projected_ast - ast_line),
+                        confidence=self._prop_confidence(pra - pra_line),
                         reasoning=(
-                            f"{player_name} real season avg: {player_ast:.1f} APG. "
-                            f"Projection: {projected_ast:.1f}."
+                            f"{player_name} combined PRA: {player_pts + player_reb + player_ast:.1f} real avg. "
+                            f"Projection: {pra:.1f}."
                         ),
-                    ))
-
-                # PRA prop
-                pra = projected_pts + projected_reb + projected_ast
-                props.append(PlayerPropBet(
-                    game_id=game_id,
-                    game_date=game_date,
-                    matchup=matchup,
-                    player_name=player_name,
-                    prop_type=BetType.PLAYER_PRA,
-                    market_line=pra_line,
-                    predicted_value=pra,
-                    side="OVER",
-                    league=league,
-                    confidence=self._prop_confidence(pra - pra_line),
-                    reasoning=(
-                        f"{player_name} combined PRA: {player_pts + player_reb + player_ast:.1f} real avg. "
-                        f"Projection: {pra:.1f}."
-                    ),
-                ))
+                    )
+                )
 
         logger.info(
             f"Generated {len(props)} real-data props for {home} vs {away} "
@@ -257,6 +291,7 @@ class PlayerPropEngine:
 
         try:
             import socket
+
             old_timeout = socket.getdefaulttimeout()
             socket.setdefaulttimeout(10)
 
@@ -270,6 +305,7 @@ class PlayerPropEngine:
 
             # Step 1: Try get_active_players() with team_id
             from nba_api.stats.static import players as nba_players_static
+
             active_players = nba_players_static.get_active_players()
 
             # Check if get_active_players() includes team_id
@@ -309,7 +345,9 @@ class PlayerPropEngine:
             else:
                 # Step 2: get_active_players() doesn't have team_id.
                 # Use LeagueLeaders (single API call) to get both team IDs and stats.
-                self._load_players_from_league_leaders(active_players, team_id_to_abbr, team_id_to_full)
+                self._load_players_from_league_leaders(
+                    active_players, team_id_to_abbr, team_id_to_full
+                )
 
             total_players = sum(len(v) for v in self._players_by_team.values())
             logger.info(
@@ -370,9 +408,13 @@ class PlayerPropEngine:
 
                     # Get player name from static data if available
                     static_info = player_info.get(pid, {})
-                    full_name = static_info.get("full_name", str(row.get("PLAYER_NAME", "")))
+                    full_name = static_info.get(
+                        "full_name", str(row.get("PLAYER_NAME", ""))
+                    )
 
-                    gp = max(row.get("GP") or 1, 1)  # Games played (avoid division by zero; handle None)
+                    gp = max(
+                        row.get("GP") or 1, 1
+                    )  # Games played (avoid division by zero; handle None)
                     player_entry = {
                         "id": pid,
                         "full_name": full_name,
@@ -488,6 +530,7 @@ class PlayerPropEngine:
 
         try:
             from betting_intel.data.loader import NBADataLoader
+
             loader = NBADataLoader()
             raw_df = loader.load_game_logs()
 
@@ -503,7 +546,9 @@ class PlayerPropEngine:
                     "fgm": group["FGM"].mean(),
                 }
 
-            logger.info(f"Loaded real team stats for {len(self._team_stats)} teams from database")
+            logger.info(
+                f"Loaded real team stats for {len(self._team_stats)} teams from database"
+            )
         except Exception as e:
             logger.warning(f"Could not load team stats: {e}")
 
@@ -526,8 +571,11 @@ class PlayerPropEngine:
                 # Estimate from team points and position
                 pos = player.get("position", "SF")
                 pos_mult = {
-                    "PG": 0.18, "SG": 0.20, "SF": 0.16,
-                    "PF": 0.15, "C": 0.14,
+                    "PG": 0.18,
+                    "SG": 0.20,
+                    "SF": 0.16,
+                    "PF": 0.15,
+                    "C": 0.14,
                 }.get(pos, 0.16)
                 score = home_pts * pos_mult
 
